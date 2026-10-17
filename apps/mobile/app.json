@@ -21,7 +21,8 @@
       "allowBackup": false,
       "permissions": [
         "USE_EXACT_ALARM",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
       ]
     },
     "web": {
@@ -45,7 +46,25 @@
         }
       ],
       "./plugins/with-release-signing",
-      "expo-background-task"
+      "expo-background-task",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Reminders",
+              "label": "Reminders",
+              "description": "Overdue, today's and upcoming reminders",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "scheme": "noted",
     "backgroundColor": "#212026"

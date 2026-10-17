@@ -1,61 +1,108 @@
 import Svg, { Path } from 'react-native-svg';
-import React, { useState } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
 import { Appearance, View, Text, TextInput, TouchableOpacity, Switch as RNSwitch, StyleSheet } from 'react-native';
 import type { StyleProp, TextStyle } from 'react-native';
 import { mdiEyeOutline, mdiEyeOffOutline, mdiChevronDown, mdiCheck } from '@mdi/js';
 import * as SecureStore from 'expo-secure-store';
 import { resolveTheme, THEME_PRESETS } from '@noted/theme';
-import type { ThemeMode } from '@noted/theme';
+import type { ThemeColors } from '@noted/theme';
 import { getMaterial3Theme, isDynamicThemeSupported } from '@pchmn/expo-material3-theme';
 
 // Colours of the native screens: the same Material 3 roles as the editor page and the desktop.
-// Android 12+ gives the wallpaper's Material You palette (light and dark), used unless turned
-// off in Settings > Appearance; a ready-made theme replaces it. The styles are made once at
-// start, so a change of theme reloads the app (a second; nothing is lost).
-export const THEME_MODE_KEY = 'noted_theme_mode';
-export const MATERIAL_YOU_KEY = 'noted_material_you';
-const readMode = (): ThemeMode => {
-  try {
-    const value = SecureStore.getItem(THEME_MODE_KEY);
-    return value === 'light' || value === 'dark' || THEME_PRESETS.some((p) => p.id === value) ? value! : 'auto';
-  } catch {
-    return 'auto';
-  }
-};
+// Two choices in Settings > Appearance: the palette (Material You = the wallpaper's colours on
+// Android 12+, Noted's own, or a ready-made theme) and the brightness (auto / light / dark;
+// ready-made themes have their own). `T` is changed in place when the theme changes and every
+// `themed` style sheet is made again, so the app repaints without a reload.
+const THEME_MODE_KEY = 'noted_theme_mode';
+const THEME_PALETTE_KEY = 'noted_theme_palette';
+const OLD_MATERIAL_YOU_KEY = 'noted_material_you';
+export type Brightness = 'auto' | 'light' | 'dark';
 export const materialYouAvailable = isDynamicThemeSupported;
-export const materialYouOn = (): boolean => {
+const read = (key: string): string | null => {
   try {
-    return SecureStore.getItem(MATERIAL_YOU_KEY) !== '0';
-  } catch {
-    return true;
-  }
-};
-// The system palette in the shape of a theme file ({light, dark} with our role names).
-const materialYouFile = (): string | null => {
-  if (!materialYouAvailable || !materialYouOn()) return null;
-  try {
-    const m = getMaterial3Theme();
-    const roles = (c: typeof m.dark) => ({
-      background: c.background, surface_container_low: c.surfaceContainerLow, surface_container: c.surfaceContainer,
-      surface_container_high: c.surfaceContainerHigh, surface_container_highest: c.surfaceContainerHighest,
-      on_surface: c.onSurface, on_surface_variant: c.onSurfaceVariant, primary: c.primary, on_primary: c.onPrimary,
-      primary_container: c.primaryContainer, on_primary_container: c.onPrimaryContainer, secondary_container: c.secondaryContainer,
-      on_secondary_container: c.onSecondaryContainer, outline: c.outline, outline_variant: c.outlineVariant, error: c.error,
-    });
-    return JSON.stringify({ light: roles(m.light), dark: roles(m.dark) });
+    return SecureStore.getItem(key);
   } catch {
     return null;
   }
 };
-export const themeMode = readMode();
-// What the colours were made from: when it changes (system light / dark, new wallpaper,
-// another choice in Settings) the app reloads to show the new colours.
-export const themeSignature = (): string => {
-  const mode = readMode();
-  return `${mode}|${materialYouFile() ?? ''}|${mode === 'auto' ? Appearance.getColorScheme() : ''}`;
+export const readBrightness = (): Brightness => {
+  const value = read(THEME_MODE_KEY);
+  return value === 'light' || value === 'dark' ? value : 'auto';
 };
-export const startThemeSignature = themeSignature();
-export const T = resolveTheme(themeMode, materialYouFile(), Appearance.getColorScheme() !== 'light');
+// 'material-you', 'noted' or a preset id. Older versions kept a preset in THEME_MODE_KEY and
+// Material You as an on / off switch.
+export const readPalette = (): string => {
+  const chosen = read(THEME_PALETTE_KEY);
+  const value = chosen ?? read(THEME_MODE_KEY);
+  if (value && THEME_PRESETS.some((p) => p.id === value)) return value;
+  if (value === 'noted' || !materialYouAvailable) return 'noted';
+  return chosen === 'material-you' || read(OLD_MATERIAL_YOU_KEY) !== '0' ? 'material-you' : 'noted';
+};
+export const setThemeChoice = (choice: { palette?: string; brightness?: Brightness }) => {
+  if (choice.palette) SecureStore.setItem(THEME_PALETTE_KEY, choice.palette);
+  if (choice.brightness) SecureStore.setItem(THEME_MODE_KEY, choice.brightness);
+  refreshTheme();
+};
+type Scheme = ReturnType<typeof getMaterial3Theme>['dark'];
+const materialRoles = (c: Scheme) => ({
+  background: c.background, surface_container_low: c.surfaceContainerLow, surface_container: c.surfaceContainer,
+  surface_container_high: c.surfaceContainerHigh, surface_container_highest: c.surfaceContainerHighest,
+  on_surface: c.onSurface, on_surface_variant: c.onSurfaceVariant, primary: c.primary, on_primary: c.onPrimary,
+  primary_container: c.primaryContainer, on_primary_container: c.onPrimaryContainer, secondary_container: c.secondaryContainer,
+  on_secondary_container: c.onSecondaryContainer, outline: c.outline, outline_variant: c.outlineVariant, error: c.error,
+});
+// The system palette in the shape of a theme file ({light, dark} with our role names).
+const materialYouFile = (): string | null => {
+  if (!materialYouAvailable) return null;
+  try {
+    const m = getMaterial3Theme();
+    return JSON.stringify({ light: materialRoles(m.light), dark: materialRoles(m.dark) });
+  } catch {
+    return null;
+  }
+};
+// Light and dark colours of a palette, for the swatches in Settings.
+export const paletteSchemes = (palette: string): { light: ThemeColors; dark: ThemeColors } => {
+  const preset = THEME_PRESETS.find((p) => p.id === palette);
+  if (preset) return { light: preset.colors, dark: preset.colors };
+  const file = palette === 'material-you' ? materialYouFile() : null;
+  return { light: resolveTheme('light', file, false), dark: resolveTheme('dark', file, true) };
+};
+const computeTheme = (): ThemeColors => {
+  const palette = readPalette();
+  if (THEME_PRESETS.some((p) => p.id === palette)) return resolveTheme(palette, null, true);
+  return resolveTheme(readBrightness(), palette === 'material-you' ? materialYouFile() : null, Appearance.getColorScheme() !== 'light');
+};
+export const T: ThemeColors = { ...computeTheme() };
+
+let themeVersion = 0;
+const themeListeners = new Set<() => void>();
+// Makes the colours again (new choice, system light / dark switched, new wallpaper); repaints
+// only when something changed.
+export const refreshTheme = () => {
+  const next = computeTheme();
+  if ((Object.keys(next) as (keyof ThemeColors)[]).every((k) => next[k] === T[k])) return;
+  Object.assign(T, next);
+  themeVersion++;
+  themeListeners.forEach((fn) => fn());
+};
+const subscribeTheme = (fn: () => void) => {
+  themeListeners.add(fn);
+  return () => { themeListeners.delete(fn); };
+};
+// Re-renders the caller when the theme changes (the root uses it, lists pass it as extraData).
+export const useThemeVersion = (): number => useSyncExternalStore(subscribeTheme, () => themeVersion);
+// A style sheet made from the theme's colours, made again after a theme change.
+export function themed<S extends object>(make: () => S): S {
+  let made = make();
+  let madeAt = themeVersion;
+  return new Proxy(made, {
+    get: (_target, key) => {
+      if (madeAt !== themeVersion) { made = make(); madeAt = themeVersion; }
+      return (made as Record<string | symbol, unknown>)[key];
+    },
+  });
+}
 
 // Material Design Icons (@mdi/js paths).
 export function Icon({ path, size = 24, color = T.on_surface }: { path: string; size?: number; color?: string }) {

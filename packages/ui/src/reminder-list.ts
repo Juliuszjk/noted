@@ -71,3 +71,35 @@ export const dueReminderCount = (entries: ReminderEntry[], now: Date): number =>
 
 // Label of an entry: its text, or the note's title for a chip on an empty line.
 export const reminderLabel = (entry: ReminderEntry): string => entry.text || entry.noteTitle || 'Reminder';
+
+// The home screen widget's groups: Overdue, Today, Tomorrow, then by calendar week / month
+// (weeks start on Monday, local time). Not done only, soonest first; empty groups left out.
+export interface ReminderGroup {
+  title: string;
+  overdue: boolean;
+  items: ReminderEntry[];
+}
+export const reminderGroups = (entries: ReminderEntry[], now: Date): ReminderGroup[] => {
+  const day = (offset: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset).getTime();
+  // Monday of the week `n` weeks from this one.
+  const week = (n: number) => day(7 * n - ((now.getDay() + 6) % 7));
+  const month = (n: number) => new Date(now.getFullYear(), now.getMonth() + n, 1).getTime();
+  // [title, due before]
+  const bounds: [string, number][] = [
+    ['Today', day(1)], ['Tomorrow', day(2)], ['This week', week(1)], ['Next week', week(2)],
+    ['This month', month(1)], ['Next month', month(2)], ['Later', Infinity],
+  ];
+  const groups: ReminderGroup[] = [];
+  const add = (title: string, entry: ReminderEntry) => {
+    let group = groups.find((g) => g.title === title);
+    if (!group) groups.push(group = { title, overdue: title === 'Overdue', items: [] });
+    group.items.push(entry);
+  };
+  const open = entries.filter((e) => !e.done).sort((a, b) => reminderDue(a) - reminderDue(b));
+  for (const entry of open) {
+    const due = reminderDue(entry);
+    if (reminderStatus(entry, now) === 'overdue') add('Overdue', entry);
+    else add(bounds.find(([, before]) => due < before)![0], entry);
+  }
+  return groups;
+};

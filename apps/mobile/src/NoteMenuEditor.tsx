@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { mdiTrashCanOutline } from '@mdi/js';
-import { T, Icon } from './ui';
+import { T, Icon, themed } from './ui';
 import { MENU_TOGGLES, MENU_ACTIONS, DEFAULT_NOTE_MENU, getNoteMenuLayout, setNoteMenuLayout } from './note-menu-layout';
 import type { MenuItemDef, NoteMenuLayout } from './note-menu-layout';
 import { DragBoard, DropZone, DragItem } from './DragBoard';
@@ -11,7 +11,9 @@ import type { DragPlace } from './DragBoard';
 // then drag it to another place or down to "Hidden"; from there back up. "Move to trash"
 // always stays last.
 
-const heading = { color: T.primary, fontSize: 12, fontWeight: 'bold' as const, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginTop: 18, marginBottom: 6 };
+const local = themed(() => ({
+  heading: { color: T.primary, fontSize: 12, fontWeight: 'bold' as const, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginTop: 18, marginBottom: 6 },
+}));
 const isToggle = (id: string) => MENU_TOGGLES.some((i) => i.id === id);
 const byId = new Map([...MENU_TOGGLES, ...MENU_ACTIONS].map((i) => [i.id, i]));
 
@@ -80,7 +82,7 @@ export function NoteMenuEditor({ onDragging }: { onDragging: (dragging: boolean)
           </DropZone>
         </View>
 
-        <Text style={heading}>Hidden</Text>
+        <Text style={local.heading}>Hidden</Text>
         <DropZone id="hidden" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, minHeight: 56, padding: 6, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: T.outline_variant }}>
           {hidden.length === 0 ? <Text style={{ color: T.on_surface_variant, fontSize: 13, padding: 8 }}>Nothing hidden. Drag a switch or a tile here to hide it.</Text> : null}
           {hidden.map((item, i) => (

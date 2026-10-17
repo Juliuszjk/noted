@@ -7,8 +7,10 @@ import type { ReminderEntry } from '@noted/ui/src/reminder-list';
 import type { ReminderState } from '@noted/editor/reminder-time';
 import { reminderNotices, parseNoticeId } from '@noted/ui/src/reminder-notify';
 import { syncReminderNotifications, attachReminderHandlers, applyNoticeAction } from './reminder-notifications';
+import { offerUnrestricted } from './battery';
+import { updateReminderWidget } from './reminder-widget';
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, PanResponder, BackHandler, AppState } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, PanResponder, BackHandler, AppState, Linking } from 'react-native';
 import { appAlert } from './Dialog';
 import * as Y from 'yjs';
 import {
@@ -54,7 +56,7 @@ import type { SplitSide } from './SplitIcon';
 import type { SheetRow } from './Sheet';
 import { updateNoteRecord } from './note-actions';
 import { randomUUID } from './uuid';
-import { T, Icon } from './ui';
+import { T, Icon, themed, useThemeVersion } from './ui';
 
 interface NotesScreenProps {
   masterKey: Uint8Array;
@@ -204,6 +206,8 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
   }, [masterKey]);
 
   // Decrypted metadata of every note: list, views, titles of note links.
+  // Rows are painted again after a theme change.
+  const themeVersion = useThemeVersion();
   const metas = useMemo(() => {
     const map = new Map<string, NoteMeta>();
     for (const note of notes) {
@@ -435,8 +439,31 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     changeCatalog((doc) => setOwnReminder(doc, { id: randomUUID(), text, created: Date.now(), ...state }));
   // ---- reminder notifications (reminder-notifications.ts): alarms follow the list ----
   useEffect(() => {
-    if (loaded) void syncReminderNotifications(reminderNotices(reminderList, Date.now()));
+    if (!loaded) return;
+    const notices = reminderNotices(reminderList, Date.now());
+    void syncReminderNotifications(notices).then(() => { if (notices.length) void offerUnrestricted(); });
   }, [reminderList, loaded]);
+  // The home screen widget (reminder-widget.tsx) follows the list and the colours.
+  useEffect(() => {
+    if (loaded) void updateReminderWidget(reminderList);
+  }, [reminderList, loaded, themeVersion]);
+  // The widget's taps: noted://note/<id>, noted://reminders, noted://reminders/new.
+  const openLink = useRef((_: string) => {});
+  openLink.current = (url) => {
+    const match = /^noted:\/\/([^/?#]+)(?:\/([^/?#]+))?/.exec(url);
+    if (!match) return;
+    if (match[1] === 'note' && match[2] && metas.has(match[2])) openFromList(match[2]);
+    else if (match[1] === 'reminders') {
+      openView({ kind: 'reminders' });
+      if (match[2] === 'new') setCreatingReminder(true);
+    }
+  };
+  useEffect(() => {
+    if (!loaded) return;
+    void Linking.getInitialURL().then((url) => { if (url) openLink.current(url); });
+    const sub = Linking.addEventListener('url', ({ url }) => openLink.current(url));
+    return () => sub.remove();
+  }, [loaded]);
   const reminderHandlers = useRef({ open: (_: string) => {}, changed: () => {} });
   reminderHandlers.current = {
     open: (noticeId) => {
@@ -845,6 +872,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
       ) : view.kind === 'tree' ? (
         <FlatList
           data={visibleTree}
+          extraData={themeVersion}
           keyExtractor={(row) => row.key}
           renderItem={({ item: row }) => (
             <TouchableOpacity style={styles.treeRow} onPress={() => openFromList(row.id)} onLongPress={() => setActionsFor(row.id)} delayLongPress={350}>
@@ -865,6 +893,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
         />
       ) : <FlatList
         data={rows}
+        extraData={themeVersion}
         keyExtractor={(row) => row.key}
         renderItem={({ item: row }) => {
           if (row.kind === 'header') {
@@ -1102,7 +1131,7 @@ const dividerStyle = (side: SplitSide, ratio: number) => ({
     : { left: 0, right: 0, top: pct(ratio), height: DIVIDER_TOUCH, marginTop: -DIVIDER_TOUCH / 2 }),
 });
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: { flex: 1, backgroundColor: T.background },
   dividerLine: { position: 'absolute', backgroundColor: T.outline },
   dividerGrip: { borderRadius: 3, backgroundColor: T.primary },
@@ -1133,4 +1162,4 @@ const styles = StyleSheet.create({
   empty: { color: T.on_surface_variant, textAlign: 'center', marginTop: 48 },
   fab: { position: 'absolute', right: 20, bottom: 32, width: 60, height: 60, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: T.primary_container, elevation: 4 },
   hidden: { opacity: 0 },
-});
+}));

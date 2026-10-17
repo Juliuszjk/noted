@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet, TextInput, ActivityIndicator, BackHandler } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet, TextInput, ActivityIndicator, BackHandler, Appearance, AppState } from 'react-native';
 import { appAlert } from './Dialog';
 import * as Clipboard from 'expo-clipboard';
 import * as Sharing from 'expo-sharing';
-import * as SecureStore from 'expo-secure-store';
 import { File, Paths } from 'expo-file-system';
-import { reloadAppAsync } from 'expo';
 import {
   mdiArrowLeft, mdiAccountOutline, mdiSync, mdiPaletteOutline, mdiBackupRestore, mdiChevronRight, mdiShieldKeyOutline,
   mdiFormatText, mdiDockBottom, mdiDotsVertical, mdiLockOutline, mdiShieldLockOutline, mdiCheck, mdiCallMerge, mdiHistory,
@@ -26,16 +24,16 @@ import {
   createBackup, restoreBackup, backupFileName, exportAllNotes, openBackup, compareBackup, restoreBackupNote,
 } from '@noted/sync';
 import type { AccountStats, LocalNoteStore, LocalBlobStore, VaultInfo, BackupDiff, BackupDiffStatus, RestoreMode, SharedEditorPrefs } from '@noted/sync';
-import type { ThemeMode } from '@noted/theme';
 import { THEME_PRESETS } from '@noted/theme';
 import { formatDateTime } from '@noted/ui/src/format-date';
-import { T, Icon, PasswordField, ThemedSwitch, Segmented, Select, THEME_MODE_KEY, MATERIAL_YOU_KEY, themeMode, materialYouAvailable, materialYouOn } from './ui';
+import { T, Icon, PasswordField, ThemedSwitch, Segmented, Select, materialYouAvailable, readPalette, readBrightness, paletteSchemes, setThemeChoice, themed } from './ui';
 import { deriveKeyInWebView } from './kdf';
 import { saveAuthEpoch } from './storage';
 import { readAppLock, writeAppLock } from './LockScreen';
 import { VaultPrompt } from './VaultPrompt';
 import type { AppLock } from './LockScreen';
-import { goingAway, markReloadUnlocked } from './away';
+import { goingAway } from './away';
+import { backgroundRestricted, askUnrestricted } from './battery';
 
 // Settings (the phone's version of the desktop's): Account, Sync, Appearance, Backup & export.
 
@@ -97,6 +95,26 @@ export interface CleanupPlan { deletedNotes: string[]; fileIds: string[]; fileBy
 const sizeText = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
 // Settings > Sync: notes deleted for good and files nothing uses, on the server and here.
+// Background sync (battery.ts): blocked while Android optimizes the app's battery use.
+function BackgroundSyncRow() {
+  const [restricted, setRestricted] = useState<boolean | null>(null);
+  useEffect(() => {
+    const check = () => { void backgroundRestricted().then(setRestricted); };
+    check();
+    // Back from Android's dialog: show the new state.
+    const sub = AppState.addEventListener('change', (state) => { if (state === 'active') check(); });
+    return () => sub.remove();
+  }, []);
+  if (restricted === null) return null;
+  return (
+    <Row title="Background sync" onPress={restricted ? () => { void askUnrestricted(); } : undefined}
+      description={restricted
+        ? 'Blocked by battery saving: reminders set on other devices arrive only when you open Noted. Tap to allow.'
+        : 'On: about every 15 minutes with the app closed, so reminders set on other devices still notify.'}
+      right={<View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: restricted ? T.error : '#3fb950' }} />} />
+  );
+}
+
 function CleanupRows({ find, run }: { find: (includeRecent: boolean) => Promise<CleanupPlan>; run: (plan: CleanupPlan) => Promise<string> }) {
   const [plan, setPlan] = useState<CleanupPlan | null>(null);
   const [recent, setRecent] = useState(false);
@@ -415,18 +433,6 @@ export function SettingsScreen(p: Props) {
     return 'Passphrase changed. New devices unlock with the new one; this and your other devices stay unlocked.';
   });
 
-  // The colours apply at once: the app reloads (a second; notes are saved as they are typed).
-  const setTheme = (mode: ThemeMode) => {
-    SecureStore.setItem(THEME_MODE_KEY, mode);
-    markReloadUnlocked();
-    reloadAppAsync().catch(() => {});
-  };
-  const setMaterialYou = (on: boolean) => {
-    SecureStore.setItem(MATERIAL_YOU_KEY, on ? '1' : '0');
-    markReloadUnlocked();
-    reloadAppAsync().catch(() => {});
-  };
-
   const titles: Record<Page, string> = {
     list: 'Settings', compare: 'Compare backup', lock: 'App lock', vault: 'Vault', account: 'Account', sync: 'Sync', appearance: 'Appearance', editor: 'Editor', toolbar: 'Toolbar', noteMenu: 'Note menu', backup: 'Backup & export',
     recovery: 'Data recovery key', passphrase: 'Change passphrase',
@@ -553,32 +559,46 @@ export function SettingsScreen(p: Props) {
               } />
               <Row title="Sync now" description={`Notes sync by themselves when they change (and every 30 seconds).${p.lastSyncAt ? ` Last sync: ${formatDateTime(p.lastSyncAt).slice(11)}.` : ''}`}
                 right={<SyncButton syncing={p.syncing} onPress={p.onSyncNow} />} />
+              <BackgroundSyncRow />
               <CleanupRows find={p.cleanup.find} run={p.cleanup.run} />
             </>
           )}
 
-          {page === 'appearance' && (
-            <>
-              <Heading>Theme</Heading>
-              {(['auto', 'light', 'dark'] as const).map((mode) => (
-                <Row key={mode} title={mode === 'auto' ? 'Auto (as the system)' : mode === 'light' ? 'Light' : 'Dark'} onPress={() => setTheme(mode)}
-                  right={<View style={[styles.radio, themeMode === mode && styles.radioOn]} />} />
-              ))}
-              {materialYouAvailable ? (
-                <Row title="Wallpaper colours (Material You)" description="The colours of your wallpaper, like other Android apps. Light / dark follows the choice above."
-                  right={<ThemedSwitch value={materialYouOn()} onValueChange={setMaterialYou} />} />
-              ) : null}
-              <Heading>Ready-made themes</Heading>
-              {THEME_PRESETS.map((preset) => (
-                <TouchableOpacity key={preset.id} onPress={() => setTheme(preset.id)} style={[styles.presetRow, { backgroundColor: preset.colors.background, borderColor: themeMode === preset.id ? T.primary : T.outline_variant }]}>
-                  {[preset.colors.primary, preset.colors.on_surface, preset.colors.surface_container_highest, preset.colors.error].map((color, i) => (
-                    <View key={i} style={[styles.swatch, { backgroundColor: color }]} />
-                  ))}
-                  <Text style={{ flex: 1, marginLeft: 8, color: preset.colors.on_surface, fontWeight: '600' }}>{preset.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </>
-          )}
+          {page === 'appearance' && (() => {
+            const palette = readPalette();
+            const brightness = readBrightness();
+            const presetOn = THEME_PRESETS.some((pr) => pr.id === palette);
+            const systemDark = Appearance.getColorScheme() !== 'light';
+            // Material You and Noted's own colours show the scheme they would be used in.
+            const own = (id: string) => {
+              const schemes = paletteSchemes(id);
+              return brightness === 'light' || (brightness === 'auto' && !systemDark) ? schemes.light : schemes.dark;
+            };
+            const choices = [
+              ...(materialYouAvailable ? [{ id: 'material-you', label: 'Material You', hint: 'Your wallpaper\'s colours', colors: own('material-you') }] : []),
+              { id: 'noted', label: 'Noted', hint: null, colors: own('noted') },
+              ...THEME_PRESETS.map((pr) => ({ id: pr.id, label: pr.label, hint: null, colors: pr.colors })),
+            ];
+            return (
+              <>
+                <Heading>Brightness</Heading>
+                <Segmented value={brightness} options={[['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']]}
+                  onChange={(b) => setThemeChoice(presetOn ? { brightness: b, palette: materialYouAvailable ? 'material-you' : 'noted' } : { brightness: b })} />
+                <Text style={styles.note}>{presetOn ? 'Ready-made themes have their own brightness; choosing one here switches back to ' + (materialYouAvailable ? 'Material You.' : 'Noted.') : 'Auto follows the system\'s light / dark setting.'}</Text>
+                <Heading>Theme</Heading>
+                {choices.map((c) => (
+                  <TouchableOpacity key={c.id} onPress={() => setThemeChoice({ palette: c.id })} style={[styles.presetRow, { backgroundColor: c.colors.background, borderColor: palette === c.id ? T.primary : T.outline_variant }]}>
+                    {[c.colors.primary, c.colors.on_surface, c.colors.surface_container_highest, c.colors.error].map((color, i) => (
+                      <View key={i} style={[styles.swatch, { backgroundColor: color }]} />
+                    ))}
+                    <Text style={{ marginLeft: 8, color: c.colors.on_surface, fontWeight: '600' }}>{c.label}</Text>
+                    <Text style={{ flex: 1, marginLeft: 6, color: c.colors.on_surface_variant, fontSize: 13 }} numberOfLines={1}>{c.hint ?? ''}</Text>
+                    {palette === c.id ? <Icon path={mdiCheck} size={20} color={c.colors.primary} /> : null}
+                  </TouchableOpacity>
+                ))}
+              </>
+            );
+          })()}
 
           {page === 'compare' && compare && (() => {
             const when = formatDateTime(compare.createdAt);
@@ -711,7 +731,7 @@ export function SettingsScreen(p: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   screen: { flex: 1, backgroundColor: T.background },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingTop: 44, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: T.outline_variant },
   iconBtn: { padding: 9 },
@@ -734,11 +754,9 @@ const styles = StyleSheet.create({
   buttonText: { color: T.on_surface, fontSize: 15, fontWeight: '600' },
   input: { backgroundColor: T.surface_container_high, color: T.on_surface, padding: 12, borderRadius: 10, marginBottom: 10, fontSize: 16 },
   stepper: { width: 40, height: 36, borderRadius: 18, borderWidth: 1, borderColor: T.outline_variant, alignItems: 'center', justifyContent: 'center' },
-  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: T.outline },
-  radioOn: { borderColor: T.primary, backgroundColor: T.primary },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: T.outline_variant },
   chipOn: { backgroundColor: T.secondary_container, borderColor: T.secondary_container },
   chipText: { color: T.on_surface, fontSize: 14 },
   presetRow: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 12, borderRadius: 12, borderWidth: 2, marginTop: 8 },
   swatch: { width: 18, height: 18, borderRadius: 9, borderWidth: 1, borderColor: 'rgba(127,127,127,0.3)' },
-});
+}));

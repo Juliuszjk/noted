@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dueReminderCount, reminderEntries, reminderLabel, reminderSections } from './reminder-list';
+import { dueReminderCount, reminderEntries, reminderGroups, reminderLabel, reminderSections } from './reminder-list';
 
 const local = (d: number, h: number) => new Date(2026, 9, d, h).getTime();
 const now = new Date(2026, 9, 17, 12);
@@ -36,5 +36,22 @@ describe('reminder list', () => {
   it('filters by text and note title', () => {
     expect(reminderSections(entries, now, 'shop').flatMap((s) => s.items.map((i) => i.id))).toEqual(['a', 'b']);
     expect(reminderSections(entries, now, 'dentist').flatMap((s) => s.items.map((i) => i.id))).toEqual(['x']);
+  });
+});
+
+describe('widget groups', () => {
+  const entry = (id: string, at: number, done = false) => ({ key: `own/${id}`, id, noteId: null, text: id, noteTitle: null, at, repeat: null, done, snooze: null });
+  // Saturday 17 October 2026, noon.
+  it('groups by overdue, day, week and month', () => {
+    const groups = reminderGroups([
+      entry('late', local(17, 9)), entry('today', local(17, 18)), entry('tomorrow', local(18, 9)),
+      entry('monday', local(19, 9)), entry('week2', local(27, 9)), entry('month', local(30, 9)),
+      entry('nov', new Date(2026, 10, 3, 9).getTime()), entry('dec', new Date(2026, 11, 3, 9).getTime()),
+      entry('done', local(17, 18), true),
+    ], now);
+    expect(groups.map((g) => [g.title, g.items.map((i) => i.id)])).toEqual([
+      ['Overdue', ['late']], ['Today', ['today']], ['Tomorrow', ['tomorrow']], ['Next week', ['monday']],
+      ['This month', ['week2', 'month']], ['Next month', ['nov']], ['Later', ['dec']],
+    ]);
   });
 });

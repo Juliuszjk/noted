@@ -5,7 +5,7 @@ import {
   mdiPound, mdiPlus, mdiCogOutline, mdiFileTreeOutline, mdiBellOutline,
 } from '@mdi/js';
 import type { NoteView } from '@noted/ui/src/note-list';
-import { T, Icon } from './ui';
+import { T, Icon, themed } from './ui';
 import { appAlert } from './Dialog';
 
 export interface DrawerEntry {
@@ -150,7 +150,7 @@ export function Drawer({ view, counts, notebooks, tags, onView, onCreate, onRena
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   sync: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 2 },
   syncDot: { width: 8, height: 8, borderRadius: 4 },
   syncText: { color: T.on_surface_variant, fontSize: 12 },
@@ -170,4 +170,4 @@ const styles = StyleSheet.create({
   tabs: { flexDirection: 'row', gap: 8, padding: 12, borderTopWidth: 1, borderTopColor: T.outline_variant },
   tab: { padding: 12, borderRadius: 14 },
   tabActive: { backgroundColor: T.secondary_container },
-});
+}));

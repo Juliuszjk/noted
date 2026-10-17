@@ -7,7 +7,7 @@ import {
   quickReminderChoices, repeatLabel, sameDay,
 } from '@noted/editor/reminder-time';
 import type { ReminderRepeat, ReminderState, ReminderTimes } from '@noted/editor/reminder-time';
-import { T, Icon } from './ui';
+import { T, Icon, themed } from './ui';
 
 export type ReminderSheetResult = { state: ReminderState; text: string } | { delete: true };
 
@@ -153,7 +153,7 @@ export function ReminderSheet({ title, initial, text, times, onResult, onClose }
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: { maxHeight: '92%', backgroundColor: T.surface_container_high, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   handle: { width: 48, height: 5, borderRadius: 3, backgroundColor: T.outline, opacity: 0.6, alignSelf: 'center', marginTop: 10, marginBottom: 6 },
@@ -184,4 +184,4 @@ const styles = StyleSheet.create({
   button: { borderWidth: 1, borderColor: T.outline_variant, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
   primary: { backgroundColor: T.primary, borderColor: T.primary },
   buttonText: { color: T.on_surface, fontSize: 15, fontWeight: '600' },
-});
+}));

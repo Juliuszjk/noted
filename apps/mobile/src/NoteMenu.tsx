@@ -12,7 +12,7 @@ import {
 } from '@mdi/js';
 import { relativeTime } from '@noted/ui/src/note-list';
 import { formatDateTime } from '@noted/ui/src/format-date';
-import { T, Icon, PasswordField, ThemedSwitch, Select } from './ui';
+import { T, Icon, PasswordField, ThemedSwitch, Select, themed } from './ui';
 import { getNoteMenuLayout } from './note-menu-layout';
 
 const HOUR = 60 * 60 * 1000;
@@ -416,7 +416,7 @@ export function NoteMenu(p: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: { backgroundColor: T.surface_container_high, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 24 },
   handle: { width: 48, height: 5, borderRadius: 3, backgroundColor: T.outline, opacity: 0.6, alignSelf: 'center', marginTop: 10, marginBottom: 8 },
@@ -461,4 +461,4 @@ const styles = StyleSheet.create({
   pubInput: { flex: 1, textAlign: 'right', color: T.on_surface, fontSize: 15, paddingVertical: 6 },
   pubButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, borderColor: T.outline_variant },
   pubButtonText: { color: T.primary, fontSize: 16 },
-});
+}));

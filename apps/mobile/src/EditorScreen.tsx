@@ -24,7 +24,7 @@ import { normalizeLinkUrl } from '@noted/editor/link-utils';
 import type { NoteView } from '@noted/ui/src/note-list';
 import type { CatalogEntry, CatalogKind } from '@noted/sync';
 import { mdiArrowLeft, mdiUndo, mdiRedo, mdiDotsVertical, mdiClose, mdiVectorLink } from '@mdi/js';
-import { T, Icon } from './ui';
+import { T, Icon, themed, useThemeVersion } from './ui';
 import { NoteMenu } from './NoteMenu';
 import type { NoteAttachmentItem } from './NoteMenu';
 import type { NoteFlags } from './NoteMenu';
@@ -150,6 +150,11 @@ export function EditorScreen({
       `window.__noted && window.__noted.receive(${literal}); true;`,
     );
   };
+  // A theme change repaints the page too.
+  const themeVersion = useThemeVersion();
+  useEffect(() => {
+    if (readyRef.current) sendToEditor({ type: 'theme', colors: T });
+  }, [themeVersion]);
 
   const loadSealedState = async (): Promise<string | null> => {
     const store = dbStore as LocalNoteStore & { get?(id: string): Promise<{ yjs_state: string } | null> };
@@ -788,7 +793,7 @@ export function EditorScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: { flex: 1, backgroundColor: T.background },
   header: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 8, paddingTop: 48, paddingBottom: 4, backgroundColor: T.background, borderBottomWidth: 1, borderBottomColor: T.outline_variant },
   iconBtn: { padding: 9, borderRadius: 22 },
@@ -801,4 +806,4 @@ const styles = StyleSheet.create({
   lockedTitle: { color: T.on_surface, fontSize: 20, fontWeight: 'bold', marginTop: 12 },
   lockedText: { color: T.on_surface_variant, fontSize: 14, marginTop: 4 },
   lockedButton: { marginTop: 20, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 22, backgroundColor: T.primary },
-});
+}));

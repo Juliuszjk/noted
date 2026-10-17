@@ -4,7 +4,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import { mdiLockOutline, mdiFingerprint } from '@mdi/js';
 import { fetchVault, parseVaultInfo, passphraseOpens, serializeVaultInfo } from '@noted/sync';
-import { T, Icon, PasswordField } from './ui';
+import { T, Icon, PasswordField, themed } from './ui';
 import { deriveKeyInWebView } from './kdf';
 
 // Settings > App lock on the phone: fingerprint / face (when switched on), or the passphrase.
@@ -90,7 +90,7 @@ export function LockScreen({ masterKey, onUnlocked }: { masterKey: Uint8Array; o
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   screen: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: T.background, alignItems: 'center', justifyContent: 'center', padding: 32, zIndex: 1000, elevation: 20 },
   title: { color: T.on_surface, fontSize: 22, fontWeight: 'bold', marginTop: 12 },
   bio: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 28, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 28, backgroundColor: T.primary },
@@ -99,4 +99,4 @@ const styles = StyleSheet.create({
   error: { color: T.error, fontSize: 13, marginBottom: 10, textAlign: 'center' },
   button: { padding: 13, borderRadius: 22, borderWidth: 1, borderColor: T.outline_variant, alignItems: 'center' },
   buttonText: { color: T.on_surface, fontSize: 15, fontWeight: '600' },
-});
+}));

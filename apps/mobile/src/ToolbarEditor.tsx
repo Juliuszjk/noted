@@ -6,7 +6,7 @@ import {
   CELL_TOOLBAR_ITEMS,
 } from '@noted/editor/toolbar-items';
 import type { ToolbarConfig, ToolbarGroup, ToolbarPlatform, ToolbarPreset, ToolbarSlot } from '@noted/editor/toolbar-items';
-import { T, Icon } from './ui';
+import { T, Icon, themed } from './ui';
 import { DragBoard, DropZone, DragItem } from './DragBoard';
 import type { DragPlace } from './DragBoard';
 
@@ -50,8 +50,10 @@ const emptyBox = (text: string) => (
     <Text style={{ color: T.on_surface_variant, fontSize: 12 }}>{text}</Text>
   </View>
 );
-const heading = { color: T.primary, fontSize: 12, fontWeight: 'bold' as const, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginTop: 18, marginBottom: 6 };
-const pill = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderWidth: 1, borderColor: T.outline_variant };
+const local = themed(() => ({
+  heading: { color: T.primary, fontSize: 12, fontWeight: 'bold' as const, textTransform: 'uppercase' as const, letterSpacing: 0.6, marginTop: 18, marginBottom: 6 },
+  pill: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderWidth: 1, borderColor: T.outline_variant },
+}));
 
 const zoneSlot = (zone: string): Omit<ToolbarSlot, 'index'> | null => {
   const [kind, g, s] = zone.split(':');
@@ -133,7 +135,7 @@ export function ToolbarEditor({ platform = 'mobile', config, onChange, onDraggin
           </View>
         )))}
 
-        <Text style={heading}>Toolbar</Text>
+        <Text style={local.heading}>Toolbar</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', borderRadius: 12, backgroundColor: T.surface_container_low, padding: 6 }}>
           {parts.map((g, gi) => (
             <React.Fragment key={gi}>
@@ -152,20 +154,20 @@ export function ToolbarEditor({ platform = 'mobile', config, onChange, onDraggin
         {table ? <Text style={{ color: T.on_surface_variant, fontSize: 12, marginTop: 6 }}>Then the normal toolbar follows (…).</Text> : null}
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-          <TouchableOpacity onPress={() => save([...groups, []])} style={pill}>
+          <TouchableOpacity onPress={() => save([...groups, []])} style={local.pill}>
             <Icon path={mdiPlus} size={18} color={T.on_surface} /><Text style={{ color: T.on_surface, fontSize: 14, fontWeight: '600' }}>Group</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => save(groups.length ? groups.map((g, i) => (i === groups.length - 1 ? [...g, []] : g)) : [[[]]])} style={pill}>
+          <TouchableOpacity onPress={() => save(groups.length ? groups.map((g, i) => (i === groups.length - 1 ? [...g, []] : g)) : [[[]]])} style={local.pill}>
             <Icon path={table ? mdiTableCog : mdiDotsVertical} size={18} color={T.on_surface} /><Text style={{ color: T.on_surface, fontSize: 14, fontWeight: '600' }}>Row in the last group</Text>
           </TouchableOpacity>
           {preset === 'custom' ? (
-            <TouchableOpacity onPress={() => onChange(null)} style={pill}>
+            <TouchableOpacity onPress={() => onChange(null)} style={local.pill}>
               <Text style={{ color: T.on_surface, fontSize: 14, fontWeight: '600' }}>Reset</Text>
             </TouchableOpacity>
           ) : null}
         </View>
 
-        <Text style={heading}>Not in the toolbar</Text>
+        <Text style={local.heading}>Not in the toolbar</Text>
         <DropZone id="unused" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, minHeight: 56, padding: 6, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: T.outline_variant }}>
           {unused.length === 0 ? <Text style={{ color: T.on_surface_variant, fontSize: 13, padding: 8 }}>Every button is in the toolbar. Drag one here to take it out.</Text> : null}
           {unused.map((item, i) => (

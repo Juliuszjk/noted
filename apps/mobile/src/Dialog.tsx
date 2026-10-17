@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, Pressable, StyleSheet } from 'react-native';
 import { mdiAlertCircleOutline, mdiDeleteOutline, mdiInformationOutline } from '@mdi/js';
-import { T, Icon } from './ui';
+import { T, Icon, themed } from './ui';
 
 // The app's own dialogs in the theme's colours, used instead of `Alert.alert` (Android's
 // AlertDialog is a grey box that ignores the app's theme). `appAlert` takes the same arguments;
@@ -98,7 +98,7 @@ export function DialogHost() {
   return <>{list.map((d) => <DialogBox key={d.id} dialog={d} />)}</>;
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   card: { width: '100%', maxWidth: 420, backgroundColor: T.surface_container_high, borderRadius: 28, padding: 24, paddingBottom: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: T.outline_variant },
   head: { flexDirection: 'row', alignItems: 'center', gap: 14 },
@@ -109,4 +109,4 @@ const styles = StyleSheet.create({
   button: { minWidth: 88, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 999, alignItems: 'center' },
   buttonPlain: { borderWidth: 1, borderColor: T.outline_variant },
   buttonText: { fontSize: 15, fontWeight: '600' },
-});
+}));

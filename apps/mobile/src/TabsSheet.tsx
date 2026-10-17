@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import type { GestureResponderEvent } from 'react-native';
 import { mdiClose, mdiFileDocumentOutline } from '@mdi/js';
-import { T, Icon } from './ui';
+import { T, Icon, themed } from './ui';
 import { SplitIcon } from './SplitIcon';
 import type { SplitSide } from './SplitIcon';
 
@@ -117,7 +117,7 @@ export function TabsSheet({ tabs, titles, places = {}, activeId, onOpen, onClose
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: { backgroundColor: T.surface_container_high, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 28, paddingHorizontal: 8 },
   handle: { width: 48, height: 5, borderRadius: 3, backgroundColor: T.outline, opacity: 0.6, alignSelf: 'center', marginTop: 10, marginBottom: 6 },
@@ -132,4 +132,4 @@ const styles = StyleSheet.create({
   zoneOn: { borderStyle: 'solid', borderColor: T.primary, backgroundColor: T.primary_container },
   ghost: { position: 'absolute', width: 180, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14, backgroundColor: T.surface_container_highest, elevation: 8 },
   ghostText: { color: T.on_surface, fontSize: 15, fontWeight: '600' },
-});
+}));

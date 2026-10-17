@@ -2,6 +2,8 @@ import './src/polyfill';
 import { registerRootComponent } from 'expo';
 // Defines the background task of notification buttons (runs headless with the app closed).
 import './src/reminder-notifications';
+// Draws the home screen widget when Android asks (also headless).
+import './src/reminder-widget-task';
 
 import App from './App';
 

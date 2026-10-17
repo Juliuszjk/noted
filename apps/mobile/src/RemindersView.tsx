@@ -5,7 +5,7 @@ import { completeReminder, formatReminderTime, reminderDue, reminderStatus } fro
 import type { ReminderState, ReminderTimes } from '@noted/editor/reminder-time';
 import { reminderLabel, reminderSections } from '@noted/ui/src/reminder-list';
 import type { ReminderEntry } from '@noted/ui/src/reminder-list';
-import { T, Icon } from './ui';
+import { T, Icon, themed, useThemeVersion } from './ui';
 import { ReminderSheet } from './ReminderSheet';
 
 // The Reminders view of the phone (desktop: RemindersList.tsx): reminder chips of every note
@@ -28,6 +28,7 @@ export function RemindersView({ entries, query, times, creating, onCreated, onOp
     return () => clearInterval(timer);
   }, []);
   const [editing, setEditing] = useState<ReminderEntry | null>(null);
+  const themeVersion = useThemeVersion();
   const sections = useMemo(
     () => reminderSections(entries, now, query).map((s) => ({ key: s.kind, title: s.title, kind: s.kind, data: s.items })),
     [entries, now, query],
@@ -41,6 +42,7 @@ export function RemindersView({ entries, query, times, creating, onCreated, onOp
     <>
       <SectionList
         sections={sections}
+        extraData={themeVersion}
         keyExtractor={(entry) => entry.key}
         stickySectionHeadersEnabled={false}
         renderSectionHeader={({ section }) => (
@@ -108,7 +110,7 @@ export function RemindersView({ entries, query, times, creating, onCreated, onOp
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 4 },
   headerText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase', color: T.primary },
   headerCount: { fontSize: 13, color: T.on_surface_variant },
@@ -119,4 +121,4 @@ const styles = StyleSheet.create({
   when: { fontSize: 13, fontWeight: '600' },
   note: { flex: 1, fontSize: 13, color: T.on_surface_variant },
   empty: { color: T.on_surface_variant, textAlign: 'center', marginTop: 40, paddingHorizontal: 32, lineHeight: 22 },
-});
+}));

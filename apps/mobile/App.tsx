@@ -4,6 +4,7 @@ import './src/polyfill';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
 
 import { generateSalt, createVerifier, deriveAuthToken, bytesToBase64, parseRecoveryKey } from '@noted/crypto';
 import { saveMasterKey, getMasterKey, clearMasterKey, getAuthEpochStored, saveAuthEpoch } from './src/storage';
@@ -13,19 +14,18 @@ import type { LocalNoteStore, LocalBlobStore, VaultInfo } from '@noted/sync';
 import { isLightColor } from '@noted/theme';
 import { registerKdf } from './src/kdf';
 import { AppState, Appearance } from 'react-native';
-import { reloadAppAsync } from 'expo';
 import { LockScreen, readAppLock, cacheVaultInfoForLock } from './src/LockScreen';
 import { setVaultKey } from './src/vault-session';
 import { NotesScreen } from './src/NotesScreen';
-import { T, PasswordField, themeSignature, startThemeSignature } from './src/ui';
+import { T, PasswordField, refreshTheme, useThemeVersion, themed } from './src/ui';
 import { KdfRunner, KdfHandle } from './src/KdfRunner';
 import { DialogHost } from './src/Dialog';
 import { API_URL, MIN_PASSPHRASE_LENGTH } from '@noted/config';
-import { backgroundWasIntended, consumeReloadPass, markReloadUnlocked } from './src/away';
+import { backgroundWasIntended } from './src/away';
 
 // Status bar icons (clock, battery) contrast with the app background: light on a dark theme,
 // dark on a light one.
-const STATUS_BAR_STYLE = isLightColor(T.background) ? 'dark' : 'light';
+const statusBarStyle = () => (isLightColor(T.background) ? 'dark' : 'light');
 
 const packBlob = (b: { nonce: Uint8Array; ciphertext: Uint8Array }): string =>
   `${bytesToBase64(b.nonce)}.${bytesToBase64(b.ciphertext)}`;
@@ -55,7 +55,7 @@ function App() {
   const [busy, setBusy] = useState(true);
   const kdfRef = useRef<KdfHandle>(null);
   // Settings > App lock: locked at start (when on) and after time in the background.
-  const [locked, setLocked] = useState(() => readAppLock().enabled && !consumeReloadPass());
+  const [locked, setLocked] = useState(() => readAppLock().enabled);
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
   const intendedAway = useRef(false);
@@ -79,17 +79,11 @@ function App() {
     });
     return () => sub.remove();
   }, []);
-  // New colours (system light / dark switched, new wallpaper for Material You): reload to
-  // show them, checked when the app comes to the front and when the system scheme changes.
+  // New colours (system light / dark switched, new wallpaper for Material You): checked when
+  // the app comes to the front and when the system scheme changes; the app repaints in place.
   useEffect(() => {
-    const check = () => {
-      if (themeSignature() === startThemeSignature) return;
-      // An unlocked app stays unlocked across this reload.
-      if (!lockedRef.current) markReloadUnlocked();
-      reloadAppAsync().catch(() => {});
-    };
-    const app = AppState.addEventListener('change', (state) => { if (state === 'active') check(); });
-    const scheme = Appearance.addChangeListener(check);
+    const app = AppState.addEventListener('change', (state) => { if (state === 'active') refreshTheme(); });
+    const scheme = Appearance.addChangeListener(() => refreshTheme());
     return () => { app.remove(); scheme.remove(); };
   }, []);
   useEffect(() => {
@@ -217,13 +211,13 @@ function App() {
       <DialogHost />
       {masterKey && dbStore && blobStore ? (
         <>
-          <StatusBar style={STATUS_BAR_STYLE} />
+          <StatusBar style={statusBarStyle()} />
           <NotesScreen masterKey={masterKey} dbStore={dbStore} blobStore={blobStore} onLogout={handleLogout} onLockNow={() => setLocked(true)} />
           {locked ? <LockScreen masterKey={masterKey} onUnlocked={() => setLocked(false)} /> : null}
         </>
       ) : (
         <View style={styles.container}>
-          <StatusBar style={STATUS_BAR_STYLE} />
+          <StatusBar style={statusBarStyle()} />
           <Text style={styles.title}>Noted</Text>
           {notice ? <Text style={styles.notice}>{notice}</Text> : null}
           <View style={styles.card}>
@@ -279,7 +273,7 @@ function App() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: T.background },
   title: { fontSize: 28, fontWeight: 'bold', color: T.on_surface, marginBottom: 32, textAlign: 'center' },
   notice: { color: T.on_surface, fontSize: 14, textAlign: 'center', marginBottom: 16 },
@@ -291,11 +285,15 @@ const styles = StyleSheet.create({
   error: { color: T.error, fontSize: 12, marginBottom: 12, textAlign: 'center' },
   link: { marginTop: 14, alignItems: 'center' },
   linkText: { color: T.primary, fontSize: 14 },
-});
+}));
 
 // The keyboard is followed natively, frame by frame (react-native-keyboard-controller): the
 // editor's box shrinks together with the keyboard animation instead of after it.
+// A theme change re-renders everything from here (the colours are read while rendering).
 export default function Root() {
+  const themeVersion = useThemeVersion();
+  // The window behind the app (seen while the keyboard animates) in the theme's background.
+  useEffect(() => { SystemUI.setBackgroundColorAsync(T.background).catch(() => {}); }, [themeVersion]);
   return (
     <KeyboardProvider>
       <App />

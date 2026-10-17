@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
 import { mdiLockOutline } from '@mdi/js';
-import { T, Icon, PasswordField } from './ui';
+import { T, Icon, PasswordField, themed } from './ui';
 
 // Vault password: open the vault (unlock) or choose its password (create). `onSubmit` resolves
 // to an error message, or null when it worked.
@@ -56,7 +56,7 @@ export function VaultPrompt({ mode, onSubmit, onClose }: {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   card: { position: 'absolute', left: 20, right: 20, top: '25%', padding: 20, borderRadius: 18, backgroundColor: T.surface_container_high },
   title: { color: T.on_surface, fontSize: 19, fontWeight: 'bold' },
@@ -66,4 +66,4 @@ const styles = StyleSheet.create({
   button: { paddingHorizontal: 18, paddingVertical: 11, borderRadius: 20, borderWidth: 1, borderColor: T.outline_variant, minWidth: 80, alignItems: 'center' },
   primary: { backgroundColor: T.primary, borderColor: T.primary },
   buttonText: { color: T.on_surface, fontSize: 15, fontWeight: '600' },
-});
+}));

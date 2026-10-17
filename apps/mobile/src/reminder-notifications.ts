@@ -8,6 +8,7 @@ import type { ReminderAction, ReminderTimes } from '@noted/editor/reminder-time'
 import { parseNoticeId, reminderNotices, MISSED_WITHIN_MS } from '@noted/ui/src/reminder-notify';
 import { reminderEntries } from '@noted/ui/src/reminder-list';
 import type { ReminderNotice } from '@noted/ui/src/reminder-notify';
+import type { ReminderEntry } from '@noted/ui/src/reminder-list';
 import { unseal } from '@noted/crypto';
 import {
   CATALOG_ID, buildNoteMeta, decodeNoteMeta, displayTitle, isSystemNote, docFromSealed, getSharedEditorPrefs, listOwnReminders, mergingNoteStore, runSyncEngine, setAuthEpoch,
@@ -18,6 +19,7 @@ import { updateNoteRecord } from './note-actions';
 import { getEditorPrefs, setSharedPrefsCache } from './prefs';
 import { getAuthEpochStored, getMasterKey } from './storage';
 import { createExpoStore } from './store';
+import { updateReminderWidget } from './reminder-widget';
 
 // Reminder notifications of the phone: every reminder that is not done is a scheduled Android
 // alarm (exact, USE_EXACT_ALARM), so it notifies with the app closed. The buttons work without
@@ -126,8 +128,8 @@ export const syncReminderNotifications = (notices: ReminderNotice[]): Promise<vo
   return running;
 };
 
-// The notices straight from the database (the background task has no list screen).
-export const noticesFromStore = async (masterKey: Uint8Array, store: LocalNoteStore): Promise<ReminderNotice[]> => {
+// The reminders straight from the database (background tasks and the widget have no list screen).
+export const entriesFromStore = async (masterKey: Uint8Array, store: LocalNoteStore): Promise<ReminderEntry[]> => {
   const all = await store.getAll();
   const notes = all.filter((n) => !isSystemNote(n.id) && n.content && n.content.includes('.')).flatMap((n) => {
     try {
@@ -139,7 +141,13 @@ export const noticesFromStore = async (masterKey: Uint8Array, store: LocalNoteSt
   });
   const catalog = all.find((n) => n.id === CATALOG_ID)?.yjs_state;
   const own = catalog ? listOwnReminders(docFromSealed(masterKey, catalog)) : [];
-  return reminderNotices(reminderEntries(notes, own), Date.now());
+  return reminderEntries(notes, own);
+};
+// Alarms and the home screen widget after the database changed with no list screen open.
+const followStore = async (masterKey: Uint8Array, store: LocalNoteStore) => {
+  const entries = await entriesFromStore(masterKey, store);
+  await syncReminderNotifications(reminderNotices(entries, Date.now()));
+  await updateReminderWidget(entries);
 };
 
 // ---- buttons ----
@@ -231,7 +239,7 @@ void Notifications.getLastNotificationResponseAsync().then((response) => {
 });
 
 // Opens the database the way the app does (headless: no screen holds it).
-const openStore = async () => {
+export const openStore = async () => {
   const masterKey = await getMasterKey();
   if (!masterKey) return null;
   setAuthEpoch(await getAuthEpochStored());
@@ -249,11 +257,28 @@ const backgroundSync = async () => {
   const opened = await openStore();
   if (!opened) return;
   await runSyncEngine(opened.masterKey, opened.store, null, null);
-  await syncReminderNotifications(await noticesFromStore(opened.masterKey, opened.store));
+  await followStore(opened.masterKey, opened.store);
 };
 
-// A button pressed with the app in the background or closed (runs headless when closed: opens
-// the database itself, changes the reminder, then syncs once so other devices follow).
+// A notification button or the widget's circle: the running app applies it itself (one
+// writer); closed, the database is opened here, the reminder changed and synced once so other
+// devices follow.
+export const runNoticeAction = async (noticeId: string, action: ReminderAction): Promise<void> => {
+  if (appHandlers) {
+    await appHandlers.apply(noticeId, action);
+    return;
+  }
+  const opened = await openStore();
+  if (!opened) return;
+  const { masterKey, store } = opened;
+  if (await applyNoticeAction(masterKey, store, noticeId, action)) {
+    // A snoozed reminder needs its new alarm.
+    await followStore(masterKey, store);
+    await runSyncEngine(masterKey, store, null, null).catch((e) => console.warn('Reminder sync:', e));
+  }
+};
+
+// A button pressed with the app in the background or closed (runs headless when closed).
 TaskManager.defineTask<Notifications.NotificationTaskPayload>(REMINDER_TASK, async ({ data }) => {
   const response = data as Notifications.NotificationResponse;
   const action = response?.actionIdentifier;
@@ -262,18 +287,7 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(REMINDER_TASK, asy
   try {
     const identifier = response.notification?.request?.identifier;
     if (identifier) await Notifications.dismissNotificationAsync(identifier);
-    if (appHandlers) {
-      await appHandlers.apply(noticeId, action as ReminderAction);
-      return;
-    }
-    const opened = await openStore();
-    if (!opened) return;
-    const { masterKey, store: merging } = opened;
-    if (await applyNoticeAction(masterKey, merging, noticeId, action as ReminderAction)) {
-      // A snoozed reminder needs its new alarm.
-      await syncReminderNotifications(await noticesFromStore(masterKey, merging));
-      await runSyncEngine(masterKey, merging, null, null).catch((e) => console.warn('Reminder sync:', e));
-    }
+    await runNoticeAction(noticeId, action as ReminderAction);
   } catch (e) {
     console.warn('Reminder action:', e);
   }

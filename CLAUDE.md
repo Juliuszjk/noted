@@ -237,7 +237,20 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
 - Keyboard: `react-native-keyboard-controller`; modals call `keyboardGone()`. ProseMirror's own
   scrolling is off; `centerCaret` only keeps the caret visible.
 - Dialogs: `src/Dialog.tsx` `appAlert`, never `Alert.alert`.
-- Theme changes reload the app (`reloadAppAsync`); styles are built at start.
+- Theme (`src/ui.tsx`): palette (`material-you` | `noted` | preset id, SecureStore
+  `noted_theme_palette`) + brightness (auto / light / dark, `noted_theme_mode`). No reload:
+  `T` is changed in place by `refreshTheme()`, every module style sheet is
+  `themed(() => StyleSheet.create(...))` (made again per theme version), `Root` re-renders via
+  `useThemeVersion()`, lists pass it as `extraData`, EditorScreen re-sends `{type:'theme'}`.
+  Never keep theme colours in module constants or `useMemo` / `useRef`.
+- Battery (`src/battery.ts`, expo-battery): background sync needs Noted off battery
+  optimization; asked once when reminders exist, Settings > Sync "Background sync" row.
+- Home screen widget "Reminders" (`react-native-android-widget`, app.json plugin):
+  `src/reminder-widget.tsx` (groups = `reminderGroups` in ui/src/reminder-list.ts),
+  task `src/reminder-widget-task.tsx` (headless; circle = `runNoticeAction(.., 'done')`),
+  taps open `noted://note/<id>`, `noted://reminders`, `noted://reminders/new` (NotesScreen
+  Linking). Redrawn when the list / theme changes, after background sync and actions, every 30 min.
+  It shows reminder text on the home screen even with the app lock on.
 
 ## Publishing, backups, import, theme (details in `docs/features.md`)
 
@@ -262,14 +275,12 @@ clean-up only knows ITS OWN history, so it can delete a server file only another
 version uses.
 The user imported all Notesnook notes (2026-10-16) and uses Noted daily: real data now, be careful.
 
-**Reminders done (2026-10-17)**: stages 1 (chips, b60d3fa), 2 (Reminders view, a382bc8) and 3
-(notifications: desktop D-Bus, phone exact alarms + `noted-background-sync`) confirmed and pushed.
-The phone's background sync needs Noted's battery set to "Unrestricted": with Samsung Power
-saving on, Android blocks the job (`readyNotRestrictedInBg: false` in
-`adb shell dumpsys jobscheduler`) and even `jobscheduler run -f` does not start it. Decided: no
-Firebase / push (the user did not want a Google account for it); notification icon = the app's
-"noted" icon; buttons Done / In 1 hour / Tomorrow (English UI). Ideas not asked yet: an in-app
-battery-optimization exemption prompt, Android widgets for reminders.
+**Reminders done (2026-10-17)**: stages 1-3 (chips, Reminders view, notifications) plus the
+battery prompt, theme without reload (Material You as the first palette card) and the home
+screen widget, all confirmed and pushed. The phone's background sync needs Noted's battery
+"Unrestricted": with Samsung Power saving on, Android blocks the job
+(`readyNotRestrictedInBg: false` in `adb shell dumpsys jobscheduler`). Decided: no Firebase /
+push; notification icon = the app's icon; buttons Done / In 1 hour / Tomorrow (English UI).
 
 Git: private GitHub repo (details in CLAUDE.local.md). Personal data stays out of git: server
 addresses (`packages/config/server.ts`, `infra/docker/.env`), `CLAUDE.local.md`, `docs/private/`,
@@ -288,8 +299,6 @@ tracked files for addresses / names again.
   drawing on a canvas (pen only, palm rejection, side button = eraser, coalesced / predicted
   events); later lasso, highlighter, paper, SVG export, ML Kit Digital Ink. Phase 0 = probe S Pen
   pointer events in the WebView over adb.
-- **Reminders**: built (stages 1-3, see Status); maybe Android widgets later.
-- Mobile theme change without a restart (screens reading colours from a context).
 - Attachments > 30 MB: chunked sealed blobs + encrypted manifest, server storing files.
 - Claude integration (postponed): local MCP server as one more device; a public key-holding
   server was advised against.

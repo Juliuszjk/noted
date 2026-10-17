@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, View, Text, TouchableOpacity, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { T, Icon } from './ui';
+import { T, Icon, themed } from './ui';
 
 export interface SheetRow {
   key: string;
@@ -45,7 +45,7 @@ export function Sheet({ title, rows, footer, onClose }: { title: string; rows: S
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: { backgroundColor: T.surface_container_high, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 28, paddingHorizontal: 8 },
   handle: { width: 48, height: 5, borderRadius: 3, backgroundColor: T.outline, opacity: 0.6, alignSelf: 'center', marginTop: 10, marginBottom: 6 },
@@ -54,4 +54,4 @@ const styles = StyleSheet.create({
   active: { backgroundColor: T.secondary_container },
   label: { flex: 1, fontSize: 16, color: T.on_surface },
   trailing: { padding: 8 },
-});
+}));
