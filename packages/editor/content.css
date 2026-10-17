@@ -1,0 +1,370 @@
+/* Note content styles shared by desktop and the mobile WebView. Themed through CSS variables
+   (--bg-*, --text-*, --border*, --primary) that each platform defines. */
+
+:root {
+  --c-red: #ff8a80;
+  --c-orange: #ffb26b;
+  --c-yellow: #ffd666;
+  --c-green: #7fd88a;
+  --c-teal: #5fd4c4;
+  --c-blue: #7db7ff;
+  --c-purple: #c4a1ff;
+  --c-pink: #ff9ecb;
+  --c-gray: #9aa0a6;
+  --hl-red: rgba(255, 138, 128, 0.28);
+  --hl-orange: rgba(255, 178, 107, 0.28);
+  --hl-yellow: rgba(255, 214, 102, 0.28);
+  --hl-green: rgba(127, 216, 138, 0.28);
+  --hl-teal: rgba(95, 212, 196, 0.28);
+  --hl-blue: rgba(125, 183, 255, 0.28);
+  --hl-purple: rgba(196, 161, 255, 0.28);
+  --hl-pink: rgba(255, 158, 203, 0.28);
+  --hl-gray: rgba(154, 160, 166, 0.28);
+  /* Font families offered for notes and selected text (fonts.ts). */
+  --font-sans: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Source Serif 4', 'Noto Serif', Georgia, 'DejaVu Serif', serif;
+  --font-mono: 'JetBrains Mono', 'JetBrainsMono Nerd Font', ui-monospace, 'DejaVu Sans Mono', monospace;
+}
+
+/* Whole-note font (note setting). The wrapper carries data-note-font; the title and the body
+   follow it, code keeps its monospace font. */
+/* Notes without their own font use the default font and size of Settings > Editor
+   (--editor-font, --editor-font-size). */
+.note-title { font-family: var(--editor-font, inherit); }
+.ProseMirror { font-family: var(--editor-font, inherit); font-size: var(--editor-font-size, inherit); }
+[data-note-font="serif"] .ProseMirror, [data-note-font="serif"] .note-title { font-family: var(--font-serif); }
+[data-note-font="mono"] .ProseMirror, [data-note-font="mono"] .note-title { font-family: var(--font-mono); }
+
+.ProseMirror {
+  user-select: text;
+  -webkit-user-select: text;
+  line-height: 1.6;
+  word-wrap: break-word;
+  /* Tab characters (Tab key in plain text) are 4 spaces wide. */
+  tab-size: 4;
+}
+
+.ProseMirror p { margin: 0 0 0.6em; }
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--border-focus);
+  pointer-events: none;
+  height: 0;
+}
+
+.ProseMirror h1, .ProseMirror h2, .ProseMirror h3,
+.ProseMirror h4, .ProseMirror h5, .ProseMirror h6 {
+  text-align: left;
+  line-height: 1.25;
+  margin: 1em 0 0.4em;
+}
+.ProseMirror h1 { font-size: 1.8em; }
+.ProseMirror h2 { font-size: 1.5em; }
+.ProseMirror h3 { font-size: 1.25em; }
+.ProseMirror h4 { font-size: 1.1em; }
+.ProseMirror h5 { font-size: 1em; }
+.ProseMirror h6 { font-size: 0.9em; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.ProseMirror a { color: var(--primary); text-decoration: underline; cursor: pointer; }
+.ProseMirror mark { color: inherit; border-radius: 3px; padding: 0 2px; }
+
+.ProseMirror blockquote {
+  border-left: 3px solid var(--border-focus);
+  margin: 0.8em 0;
+  padding: 0.1em 0 0.1em 14px;
+  color: var(--text-muted);
+}
+
+.ProseMirror hr { border: none; border-top: 1px solid var(--border); margin: 1.2em 0; }
+
+.ProseMirror code {
+  background: var(--bg-surface-high);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: ui-monospace, 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.9em;
+}
+.ProseMirror pre {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+.ProseMirror pre code { background: none; padding: 0; font-size: 0.9em; }
+
+/* Code blocks (code-block.ts): colours from the code theme (Settings > Editor) or the app's
+   palette, a bar with the language and Copy under the code. */
+.ProseMirror .code-block { position: relative; margin: 0.8em 0; border: 1px solid var(--border); border-radius: 8px; background: var(--code-bg, var(--bg-surface)); }
+.ProseMirror .code-block pre { margin: 0; border: none; border-radius: 8px 8px 0 0; background: transparent; color: var(--code-fg, var(--text-main)); }
+.ProseMirror .code-block-bar { display: flex; justify-content: flex-end; align-items: center; gap: 4px; padding: 2px 8px 4px; position: relative; user-select: none; }
+.ProseMirror .code-block-bar button { border: none; background: transparent; color: var(--code-comment, var(--text-muted)); font: 12px var(--font-sans, sans-serif); padding: 3px 8px; border-radius: 6px; cursor: pointer; }
+.ProseMirror .code-block-bar button:hover { background: var(--bg-surface-high); color: var(--text-main); }
+.ProseMirror .code-block-menu { position: absolute; right: 8px; bottom: calc(100% - 2px); z-index: 50; width: 220px; padding: 6px; border-radius: 8px; border: 1px solid var(--border-focus); background: var(--bg-surface-high); box-shadow: 0 8px 16px rgba(0,0,0,0.4); }
+.ProseMirror .code-block-menu input { width: 100%; box-sizing: border-box; margin-bottom: 4px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-main); font: 13px var(--font-sans, sans-serif); outline: none; }
+.ProseMirror .code-block-menu-list { max-height: 240px; overflow-y: auto; }
+.ProseMirror .code-block-menu-list button { display: block; width: 100%; text-align: left; color: var(--text-main); font-size: 13px; }
+.ProseMirror .code-block-menu-list button.active { color: var(--primary); }
+.ProseMirror .hljs-comment, .ProseMirror .hljs-quote { color: var(--code-comment, var(--text-muted)); font-style: italic; }
+.ProseMirror .hljs-keyword, .ProseMirror .hljs-selector-tag, .ProseMirror .hljs-literal, .ProseMirror .hljs-doctag { color: var(--code-keyword, var(--c-purple)); }
+.ProseMirror .hljs-string, .ProseMirror .hljs-regexp, .ProseMirror .hljs-addition, .ProseMirror .hljs-template-tag { color: var(--code-string, var(--c-green)); }
+.ProseMirror .hljs-number, .ProseMirror .hljs-symbol, .ProseMirror .hljs-bullet { color: var(--code-number, var(--c-orange)); }
+.ProseMirror .hljs-title, .ProseMirror .hljs-title.function_, .ProseMirror .hljs-section { color: var(--code-function, var(--c-blue)); }
+.ProseMirror .hljs-type, .ProseMirror .hljs-built_in, .ProseMirror .hljs-title.class_, .ProseMirror .hljs-class .hljs-title { color: var(--code-type, var(--c-teal)); }
+.ProseMirror .hljs-variable, .ProseMirror .hljs-template-variable, .ProseMirror .hljs-params, .ProseMirror .hljs-variable.language_ { color: var(--code-variable, var(--c-red)); }
+.ProseMirror .hljs-attr, .ProseMirror .hljs-attribute, .ProseMirror .hljs-property, .ProseMirror .hljs-selector-class, .ProseMirror .hljs-selector-id { color: var(--code-attr, var(--c-yellow)); }
+.ProseMirror .hljs-meta, .ProseMirror .hljs-meta .hljs-keyword, .ProseMirror .hljs-link { color: var(--code-meta, var(--c-pink)); }
+.ProseMirror .hljs-tag, .ProseMirror .hljs-name { color: var(--code-tag, var(--c-red)); }
+.ProseMirror .hljs-deletion { color: var(--c-red); }
+.ProseMirror .hljs-emphasis { font-style: italic; }
+.ProseMirror .hljs-strong { font-weight: bold; }
+
+.ProseMirror ul, .ProseMirror ol { padding-left: 1.5em; margin: 0.4em 0; }
+.ProseMirror li > p { margin: 0 0 0.2em; }
+
+.ProseMirror ul[data-bullet-style="circle"] { list-style-type: circle; }
+.ProseMirror ul[data-bullet-style="square"] { list-style-type: square; }
+.ProseMirror ul[data-bullet-style="square-open"] { list-style-type: "\25A1  "; }
+.ProseMirror ol[data-number-style="lower-alpha"] { list-style-type: lower-alpha; }
+.ProseMirror ol[data-number-style="upper-alpha"] { list-style-type: upper-alpha; }
+.ProseMirror ol[data-number-style="lower-roman"] { list-style-type: lower-roman; }
+.ProseMirror ol[data-number-style="upper-roman"] { list-style-type: upper-roman; }
+.ProseMirror ol[data-number-style="lower-greek"] { list-style-type: lower-greek; }
+
+.ProseMirror ul[data-type="taskList"] { list-style: none; padding-left: 0.2em; }
+.ProseMirror ul[data-type="taskList"] > li { display: flex; gap: 0.5em; align-items: flex-start; }
+/* The checkbox sits in the middle of the first line (a box as tall as one line of text). */
+.ProseMirror ul[data-type="taskList"] > li > label { flex: 0 0 auto; display: flex; align-items: center; height: 1.6em; user-select: none; }
+.ProseMirror ul[data-type="taskList"] > li > label > span { display: none; }
+/* Task checkbox: a thin grey frame (the native one is a big white box); ticked = filled with
+   the primary colour and a tick drawn with borders. */
+.ProseMirror ul[data-type="taskList"] > li > label input {
+  -webkit-appearance: none; appearance: none; display: grid; place-content: center; margin: 0; cursor: pointer;
+  width: 1.05em; height: 1.05em; border: 1.5px solid var(--text-muted); border-radius: 4px; background: transparent;
+}
+.ProseMirror ul[data-type="taskList"] > li > label input:checked { background: var(--primary); border-color: var(--primary); }
+.ProseMirror ul[data-type="taskList"] > li > label input:checked::after {
+  content: ''; width: 0.28em; height: 0.55em; margin-top: -0.12em; border: solid var(--primary-fg, #fff);
+  border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.ProseMirror ul[data-type="taskList"] > li > div > p:first-child { margin-top: 0; }
+.ProseMirror ul[data-type="taskList"] > li > div { flex: 1 1 auto; }
+.ProseMirror ul[data-type="taskList"] > li[data-checked="true"] > div { text-decoration: line-through; color: var(--text-muted); }
+
+.ProseMirror ul[data-outline="true"] > li { position: relative; }
+.ProseMirror .outline-toggle {
+  position: absolute;
+  /* em of its own (bigger) font: the arrow stays where the smaller one was, left of the bullet. */
+  left: -1.7em;
+  top: 0;
+  width: 1em;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-muted);
+  font-size: 1.15em;
+  line-height: 1.2;
+}
+.ProseMirror .outline-toggle:hover { color: var(--text-main); }
+/* Fingers need a bigger target than the arrow (it was hard to hit on the phone). */
+@media (pointer: coarse) {
+  .ProseMirror .outline-toggle { left: -2.15em; top: -0.25em; width: 1.6em; padding: 0.25em 0; font-size: 1.4em; }
+}
+.ProseMirror .outline-toggle::before { content: "\25BE"; }
+.ProseMirror .outline-toggle[data-collapsed="true"]::before { content: "\25B8"; }
+.ProseMirror li[data-collapsed="true"] > ul,
+.ProseMirror li[data-collapsed="true"] > ol { display: none; }
+
+.ProseMirror img { max-width: 100%; height: auto; border-radius: 6px; }
+.ProseMirror .ProseMirror-selectednode { outline: 2px solid var(--primary); }
+
+.ProseMirror table { border-collapse: collapse; margin: 1rem 0; width: 100%; table-layout: fixed; }
+.ProseMirror td, .ProseMirror th { border: 1px solid var(--border); padding: 8px 12px; position: relative; vertical-align: top; }
+.ProseMirror th { background-color: var(--bg-surface-high); font-weight: bold; }
+/* Columns made wider than the note scroll sideways inside the table's wrapper. */
+.ProseMirror .tableWrapper { overflow-x: auto; }
+/* Dragging the line between columns / rows (table-tools.ts). */
+body.table-resizing-col, body.table-resizing-col * { cursor: col-resize !important; user-select: none; }
+body.table-resizing-row, body.table-resizing-row * { cursor: row-resize !important; user-select: none; }
+.table-resize-guide { position: fixed; z-index: 9999; background: var(--primary); border-radius: 2px; pointer-events: none; }
+/* Cells picked by dragging across a table or with Select in the table menu. */
+.ProseMirror .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--hl-blue);
+  pointer-events: none;
+}
+
+/* Callouts: colour and icon come from the variant unless data-color / data-icon override them. */
+.ProseMirror div[data-type="callout"] {
+  --callout-accent: var(--c-blue);
+  --callout-bg: var(--hl-blue);
+  position: relative;
+  margin: 0.75rem 0;
+  padding: 0.6rem 1rem 0.6rem 2.6rem;
+  border-left: 3px solid var(--callout-accent);
+  border-radius: 6px;
+  background-color: color-mix(in srgb, var(--callout-bg) 55%, transparent);
+}
+.ProseMirror div[data-type="callout"]::before {
+  position: absolute;
+  left: 0.8rem;
+  top: 0.6rem;
+  line-height: 1.6;
+  user-select: none;
+  pointer-events: none;
+}
+.ProseMirror div[data-type="callout"] > :first-child { margin-top: 0; }
+.ProseMirror div[data-type="callout"] > :last-child { margin-bottom: 0; }
+.ProseMirror div[data-type="callout"][data-variant="info"]::before { content: "ℹ️"; }
+.ProseMirror div[data-type="callout"][data-variant="tip"] { --callout-accent: var(--c-green); --callout-bg: var(--hl-green); }
+.ProseMirror div[data-type="callout"][data-variant="tip"]::before { content: "💡"; }
+.ProseMirror div[data-type="callout"][data-variant="warning"] { --callout-accent: var(--c-yellow); --callout-bg: var(--hl-yellow); }
+.ProseMirror div[data-type="callout"][data-variant="warning"]::before { content: "⚠️"; }
+.ProseMirror div[data-type="callout"][data-variant="danger"] { --callout-accent: var(--c-red); --callout-bg: var(--hl-red); }
+.ProseMirror div[data-type="callout"][data-variant="danger"]::before { content: "⛔"; }
+.ProseMirror div[data-type="callout"][data-variant="note"] { --callout-accent: var(--c-gray); --callout-bg: var(--hl-gray); }
+.ProseMirror div[data-type="callout"][data-variant="note"]::before { content: "📝"; }
+.ProseMirror div[data-type="callout"][data-icon]::before { content: attr(data-icon); }
+.ProseMirror div[data-type="callout"][data-color="red"] { --callout-accent: var(--c-red); --callout-bg: var(--hl-red); }
+.ProseMirror div[data-type="callout"][data-color="orange"] { --callout-accent: var(--c-orange); --callout-bg: var(--hl-orange); }
+.ProseMirror div[data-type="callout"][data-color="yellow"] { --callout-accent: var(--c-yellow); --callout-bg: var(--hl-yellow); }
+.ProseMirror div[data-type="callout"][data-color="green"] { --callout-accent: var(--c-green); --callout-bg: var(--hl-green); }
+.ProseMirror div[data-type="callout"][data-color="teal"] { --callout-accent: var(--c-teal); --callout-bg: var(--hl-teal); }
+.ProseMirror div[data-type="callout"][data-color="blue"] { --callout-accent: var(--c-blue); --callout-bg: var(--hl-blue); }
+.ProseMirror div[data-type="callout"][data-color="purple"] { --callout-accent: var(--c-purple); --callout-bg: var(--hl-purple); }
+.ProseMirror div[data-type="callout"][data-color="pink"] { --callout-accent: var(--c-pink); --callout-bg: var(--hl-pink); }
+.ProseMirror div[data-type="callout"][data-color="gray"] { --callout-accent: var(--c-gray); --callout-bg: var(--hl-gray); }
+
+/* Math (KaTeX). Clicking a formula opens the editor on desktop. */
+.ProseMirror .tiptap-mathematics-render--editable { cursor: pointer; border-radius: 4px; }
+.ProseMirror .tiptap-mathematics-render--editable:hover { background-color: var(--bg-surface-high); }
+.ProseMirror span[data-type="inline-math"] { padding: 0 2px; }
+.ProseMirror div[data-type="block-math"] { margin: 0.75rem 0; padding: 0.25rem 0; overflow-x: auto; }
+.ProseMirror .inline-math-error, .ProseMirror .block-math-error {
+  font-family: monospace;
+  font-size: 0.9em;
+  color: var(--c-red);
+}
+
+/* Links to other notes: the label is the target's current title. */
+.ProseMirror .note-link {
+  color: var(--primary);
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0 2px;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  text-underline-offset: 3px;
+}
+.ProseMirror .note-link::before { content: "↗"; font-size: 0.8em; margin-right: 2px; opacity: 0.7; }
+.ProseMirror .note-link:hover { background-color: var(--bg-surface-high); }
+.ProseMirror .note-link--missing { color: var(--text-muted); text-decoration: line-through; }
+
+/* Blob images while they are decrypted / not uploaded yet by the device that added them. */
+.ProseMirror img[data-blob-state="loading"],
+.ProseMirror img[data-blob-state="missing"],
+.ProseMirror img[data-blob-state="error"] {
+  display: block;
+  width: 420px;
+  max-width: 100%;
+  min-height: 120px;
+  background-color: var(--bg-surface-high);
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+/* Attachments: a card per file. */
+.ProseMirror .attachment-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 460px;
+  margin: 0.5rem 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--bg-surface);
+  cursor: default;
+  user-select: none;
+}
+.ProseMirror .attachment-card.ProseMirror-selectednode { outline: 2px solid var(--primary); }
+.ProseMirror .attachment-card.attachment-busy { opacity: 0.6; }
+.ProseMirror .attachment-icon { font-size: 22px; line-height: 1; }
+.ProseMirror .attachment-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ProseMirror .attachment-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-main); }
+.ProseMirror .attachment-meta { font-size: 0.8em; color: var(--text-muted); }
+.ProseMirror .attachment-actions { display: flex; gap: 4px; }
+.ProseMirror .attachment-actions button {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ProseMirror .attachment-actions button:hover { background-color: var(--bg-surface-high); }
+
+/* Image wrapper with a download button that shows on hover (desktop). */
+.ProseMirror .image-node { position: relative; width: fit-content; max-width: 100%; margin: 0.5rem 0; }
+.ProseMirror .image-node > img { display: block; }
+.ProseMirror .image-node.ProseMirror-selectednode { outline: none; }
+.ProseMirror .image-node.ProseMirror-selectednode > img { outline: 2px solid var(--primary); }
+.ProseMirror .image-node[data-align="center"] { margin-left: auto; margin-right: auto; }
+.ProseMirror .image-node[data-align="right"] { margin-left: auto; }
+/* Side by side: consecutive images set so sit in one row while they fit (centred / right rows
+   get a left margin from ImageRowLayout in blob-image.ts). */
+.ProseMirror .image-node[data-align^="inline"] { display: inline-block; vertical-align: top; margin: 0.25rem 0.5rem 0.25rem 0; }
+.ProseMirror .image-node > img { max-width: 100%; height: auto; }
+/* Placed freely by dragging (image-drag.ts): --x = 0 left edge .. 1 right edge of the column.
+   `left` is a share of the column, the translate a share of the image itself. */
+.ProseMirror .image-node[data-x] { margin-left: 0; margin-right: 0; left: calc(var(--x) * 100%); transform: translateX(calc(var(--x) * -100%)); }
+.ProseMirror .image-node.image-dragging { opacity: 0.35; }
+/* Corner grip (bottom right): a dotted square, shown on hover and while the image is selected;
+   dragging it resizes the picture. */
+.ProseMirror .image-grip {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  display: none;
+  touch-action: none;
+  border-radius: 3px;
+  background-color: rgba(0, 0, 0, 0.35);
+  background-image: radial-gradient(circle, #fff 1.1px, transparent 1.5px);
+  background-size: 4.5px 4.5px;
+  background-position: 0.5px 0.5px;
+  z-index: 2;
+}
+.ProseMirror .image-grip-br { right: 4px; bottom: 4px; cursor: nwse-resize; }
+.ProseMirror[contenteditable="true"] .image-node:hover .image-grip,
+.ProseMirror[contenteditable="true"] .image-node.ProseMirror-selectednode .image-grip { display: block; }
+@media (pointer: coarse) {
+  .ProseMirror .image-grip { width: 22px; height: 22px; background-size: 6px 6px; }
+  .ProseMirror[contenteditable="true"] .image-node:hover .image-grip { display: none; }
+  .ProseMirror[contenteditable="true"] .image-node.ProseMirror-selectednode .image-grip { display: block; }
+}
+.ProseMirror .image-node.resizing > img { outline: 2px solid var(--primary); }
+
+/* Find and replace (search.ts). */
+.ProseMirror .search-match { background-color: var(--hl-yellow); border-radius: 2px; }
+.ProseMirror .search-match-current { background-color: var(--hl-orange); box-shadow: 0 0 0 1px var(--c-orange, #ffb26b); }
+
+/* Ctrl+A: the whole note painted by the editor (select-all.ts), not the browser. */
+.ProseMirror.has-all-selection ::selection, .ProseMirror.has-all-selection::selection { background: transparent; }
+.ProseMirror .all-selected-text { background-color: rgba(110, 150, 255, 0.32); background-color: color-mix(in srgb, var(--primary) 32%, transparent); }
+.ProseMirror .all-selected-node { outline: 2px solid var(--primary); outline-offset: -1px; }
+/* WebKit fills the gaps beside selected blocks with the container's selection colour (bars at
+   the left of lists / task lists while selecting); containers paint none, only their text. */
+.ProseMirror :is(ul, ol, li, li > div, li > label, blockquote, div[data-type="callout"])::selection { background: transparent; }
+
+/* Dragging an image (image-drag.ts): the see-through copy under the pointer and the line
+   between the blocks where it lands. Both live in <body>. */
+.image-drag-ghost { position: fixed; left: 0; top: 0; z-index: 30000; pointer-events: none; opacity: 0.6; border-radius: 4px; overflow: hidden; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+.image-drag-ghost img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.image-drop-line { position: fixed; z-index: 29999; height: 3px; border-radius: 2px; background: var(--primary); pointer-events: none; }

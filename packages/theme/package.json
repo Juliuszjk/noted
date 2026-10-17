@@ -1,0 +1,10 @@
+{
+  "name": "@noted/theme",
+  "version": "0.0.0",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts",
+  "devDependencies": {
+    "vitest": "2.1.9"
+  }
+}

@@ -1,0 +1,35 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+target/
+.turbo/
+.expo/
+*.tsbuildinfo
+*.log
+
+# Generated (rebuild: pnpm --filter mobile run build:editor, pnpm --filter api run build:viewer)
+*.generated.ts
+apps/mobile/android/
+apps/mobile/ios/
+
+# Personal / local data (never commit)
+CLAUDE.local.md
+docs/private/
+packages/config/server.ts
+.env
+.env.*
+apps/api/data/
+*.db
+*.db-shm
+*.db-wal
+*.keystore
+*.jks
+signing.properties
+*.apk
+*.aab
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/

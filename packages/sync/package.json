@@ -1,0 +1,22 @@
+{
+  "name": "@noted/sync",
+  "version": "0.0.0",
+  "private": true,
+  "main": "index.ts",
+  "dependencies": {
+    "@noted/config": "workspace:*",
+    "@noted/crypto": "workspace:*",
+    "@noted/editor": "workspace:*",
+    "@noted/types": "workspace:*",
+    "fflate": "^0.8.3",
+    "yjs": "^13.6.33"
+  },
+  "devDependencies": {
+    "vitest": "2.1.9"
+  },
+  "type": "module",
+  "types": "index.ts",
+  "scripts": {
+    "test": "vitest run"
+  }
+}

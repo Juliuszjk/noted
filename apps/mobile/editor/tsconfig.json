@@ -1,0 +1,16 @@
+{
+  // The WebView pages (bundled by scripts/build-editor.mjs) run in a browser, not React Native,
+  // so they are excluded from the app's tsconfig and checked with this one:
+  //   pnpm --filter mobile exec tsc -p editor/tsconfig.json
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["*.ts"]
+}

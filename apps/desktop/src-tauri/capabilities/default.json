@@ -1,0 +1,132 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        {
+          "path": "$APPCACHE/attachments/**"
+        },
+        {
+          "path": "$DOCUMENT/Noted backups"
+        }
+      ]
+    },
+    "sql:default",
+    "sql:allow-execute",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://*"
+        },
+        {
+          "url": "https://*:*"
+        },
+        {
+          "url": "http://*:*"
+        }
+      ]
+    },
+    "fs:default",
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        {
+          "path": "$APPCACHE/attachments"
+        },
+        {
+          "path": "$APPCACHE/attachments/**"
+        },
+        {
+          "path": "$DOCUMENT/Noted backups"
+        },
+        {
+          "path": "$APPDATA"
+        },
+        {
+          "path": "$APPDATA/blobs"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        {
+          "path": "$APPCACHE/attachments/**"
+        },
+        {
+          "path": "$DOCUMENT/Noted backups/**"
+        },
+        {
+          "path": "$APPDATA/blobs/*"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [
+        {
+          "path": "$APPCACHE/attachments"
+        },
+        {
+          "path": "$APPCACHE/attachments/**"
+        },
+        {
+          "path": "$DOCUMENT/Noted backups/*.nbackup"
+        },
+        {
+          "path": "$APPDATA/blobs/*"
+        }
+      ]
+    },
+    "dialog:default",
+    "dialog:allow-save",
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        {
+          "path": "$DOCUMENT/Noted backups"
+        }
+      ]
+    },
+    "fs:allow-read-text-file",
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [
+        {
+          "path": "$DOCUMENT/Noted backups/*.nbackup"
+        }
+      ]
+    },
+    "dialog:allow-open",
+    "core:webview:allow-set-webview-zoom",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
+    "fs:allow-read-file",
+    "fs:allow-read-dir",
+    "fs:allow-stat",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        {
+          "path": "$APPDATA/blobs"
+        },
+        {
+          "path": "$APPDATA/blobs/*"
+        }
+      ]
+    }
+  ]
+}

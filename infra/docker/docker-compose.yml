@@ -1,0 +1,26 @@
+# Lives on Mercury in ~/docker/noted/. Project and volume names are pinned so that moving this
+# directory can never attach an empty database (the volume was created as "docker_noted_data"
+# when the project name came from infra/docker).
+name: noted
+
+services:
+  noted-api:
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.api
+    container_name: noted_api
+    ports:
+      # Private API: Tailscale address only (NOTED_BIND_IP in .env next to this file, not in git).
+      - "${NOTED_BIND_IP:-127.0.0.1}:3333:3000"
+      # Published notes (viewer + sealed copies): localhost only; Tailscale Funnel exposes it.
+      - "127.0.0.1:3334:3001"
+    volumes:
+      - noted_data:/app/apps/api/data
+    restart: unless-stopped
+
+volumes:
+  # External: compose never creates or deletes it (`down -v` cannot wipe the database).
+  # On a fresh server: `docker volume create docker_noted_data` first.
+  noted_data:
+    name: docker_noted_data
+    external: true
