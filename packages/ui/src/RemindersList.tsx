@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import {
   mdiChevronDoubleLeft, mdiMagnify, mdiPlus, mdiCheckboxBlankCircleOutline, mdiCheckCircle, mdiRepeat, mdiNoteTextOutline,
-  mdiBellOutline, mdiBellPlusOutline,
+  mdiBellOutline, mdiBellPlusOutline, mdiBellSleepOutline,
 } from '@mdi/js';
-import { completeReminder, formatReminderTime, reminderStatus } from '@noted/editor/reminder-time';
+import { completeReminder, formatReminderTime, reminderDue, reminderStatus } from '@noted/editor/reminder-time';
 import type { ReminderState, ReminderTimes } from '@noted/editor/reminder-time';
 import type { ReminderCommit } from '@noted/editor';
 import { Icon } from './Icon';
@@ -123,8 +123,9 @@ export function RemindersList({ entries, times, onOpenNote, onChange, onCreate, 
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, fontSize: 11, color: 'var(--text-muted)', minWidth: 0 }}>
                       <span style={{ color: STATUS_COLOR[status], fontWeight: status === 'overdue' || status === 'today' ? 600 : 400, whiteSpace: 'nowrap' }}>
-                        {formatReminderTime(entry.at, now)}
+                        {formatReminderTime(reminderDue(entry), now)}
                       </span>
+                      {entry.snooze && !entry.done && <span title="Snoozed" style={{ display: 'flex' }}><Icon path={mdiBellSleepOutline} size={12} /></span>}
                       {entry.repeat && <Icon path={mdiRepeat} size={12} />}
                       {entry.noteId && entry.text && (
                         <span style={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 0 }}>

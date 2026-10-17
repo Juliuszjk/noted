@@ -81,14 +81,35 @@ export interface ReminderState {
   at: number;
   repeat: ReminderRepeat | null;
   done: boolean;
+  // Snoozed from a notification ("In 1 hour", "Tomorrow"): it is due then instead of `at`,
+  // which keeps the series of a repeating reminder. Absent / null = not snoozed.
+  snooze?: number | null;
 }
 
+// When the reminder is due (and notifies): the snoozed time, else its own.
+export const reminderDue = (state: ReminderState): number => state.snooze || state.at;
+
 // "Done": a one-off reminder is ticked off, a repeating one moves to its next time after now
-// (missed times in between are skipped).
+// (missed times in between are skipped). Either way a snooze ends.
 export const completeReminder = (state: ReminderState, now: number): ReminderState =>
   state.repeat
-    ? { ...state, at: nextOccurrence(state.at, state.repeat, Math.max(now, state.at)), done: false }
-    : { ...state, done: true };
+    ? { ...state, at: nextOccurrence(state.at, state.repeat, Math.max(now, state.at)), done: false, snooze: null }
+    : { ...state, done: true, snooze: null };
+
+export type ReminderAction = 'done' | 'hour' | 'tomorrow';
+
+// A button of a notification. `due` is the time the notification was for: when the reminder
+// has changed since (done, moved or snoozed on another device, or the same button pressed
+// twice), it returns null and nothing changes.
+export const applyReminderAction = (
+  state: ReminderState, action: ReminderAction, due: number, now: number, times: ReminderTimes = DEFAULT_REMINDER_TIMES,
+): ReminderState | null => {
+  if (state.done || reminderDue(state) !== due) return null;
+  if (action === 'done') return completeReminder(state, now);
+  if (action === 'hour') return { ...state, snooze: now + 60 * 60 * 1000 };
+  const today = new Date(now);
+  return { ...state, snooze: atClock(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1), times.morning).getTime() };
+};
 
 export interface QuickChoice {
   label: string;
@@ -176,6 +197,7 @@ export type ReminderStatus = 'done' | 'overdue' | 'today' | 'upcoming';
 
 export const reminderStatus = (state: ReminderState, now: Date): ReminderStatus => {
   if (state.done) return 'done';
-  if (state.at <= now.getTime()) return 'overdue';
-  return dayNumber(new Date(state.at)) === dayNumber(now) ? 'today' : 'upcoming';
+  const due = reminderDue(state);
+  if (due <= now.getTime()) return 'overdue';
+  return dayNumber(new Date(due)) === dayNumber(now) ? 'today' : 'upcoming';
 };

@@ -191,7 +191,18 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   reminders of their own in the catalog Y.Map `reminders` (`sync/reminders.ts`, also
   `updateReminderInDoc` for chips outside the editor), list logic `ui/src/reminder-list.ts`,
   desktop `RemindersList.tsx` + `ReminderPopover.tsx`, phone `RemindersView.tsx` +
-  RN `ReminderSheet.tsx` (same pure functions as the page picker); colours `palette.ts` (CSS variable refs, custom = raw hex);
+  RN `ReminderSheet.tsx` (same pure functions as the page picker). Notifications: attr / field
+  `snooze` (ms, null = none; due = `reminderDue` = snooze || at, keeps a repeating series),
+  buttons Done / In 1 hour / Tomorrow = `applyReminderAction` (ignores stale notices: due must
+  match), notice list `ui/src/reminder-notify.ts` (id "<entry key>@<due>", missed ones within
+  12 h notify once). Desktop: Rust `src-tauri/src/reminders.rs` (timer thread + notify-rust
+  D-Bus actions, `set_reminder_notices`, events `noted:reminder-shown` / `noted:reminder-action`,
+  shown ids in localStorage `noted_reminders_shown`). Phone: `src/reminder-notifications.ts`
+  (expo-notifications exact alarms, `USE_EXACT_ALARM`; buttons run the headless task
+  `noted-reminder-action` defined via `index.ts`: opens the DB, changes the reminder, reschedules,
+  syncs once; scheduled / shown ids in `<documents>/reminder-notices.json`; `noted-background-sync`
+  (expo-background-task, ~15 min) syncs with the app closed). No Firebase / push: the user
+  rejected it (2026-10-17), reminders set elsewhere reach a closed phone within ~15 min. Colours `palette.ts` (CSS variable refs, custom = raw hex);
   shared `content.css`.
 - `/goto` and `/linkto` (`appendNoteLink` in sync/json-to-y.ts, never twice, not into locked notes).
 - HEIC: desktop `src/heic.ts` (libheif-js), phone RN `{type:'convertHeic'}`.
@@ -239,7 +250,7 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
 - Theme: `@noted/theme` CSS variables; desktop polls `$APPCONFIG/theme.json` (matugen).
   **Do NOT run `matugen` to test** (post hooks); `matugen image <wall> --dry-run -j hex` is safe.
 
-## Status (2026-10-16)
+## Status (2026-10-17)
 
 Rounds up to 28 confirmed (history in docs; round 26/27 detail: `notePlaces` in
 `ui/src/note-place.ts`, archived notes out of pickers, phone file paste / drop, Markdown zip with
@@ -250,6 +261,15 @@ Mercury `~/docker/noted/` and added to `mercury-update`). **Caveat** (round 27):
 clean-up only knows ITS OWN history, so it can delete a server file only another device's old
 version uses.
 The user imported all Notesnook notes (2026-10-16) and uses Noted daily: real data now, be careful.
+
+**Reminders done (2026-10-17)**: stages 1 (chips, b60d3fa), 2 (Reminders view, a382bc8) and 3
+(notifications: desktop D-Bus, phone exact alarms + `noted-background-sync`) confirmed and pushed.
+The phone's background sync needs Noted's battery set to "Unrestricted": with Samsung Power
+saving on, Android blocks the job (`readyNotRestrictedInBg: false` in
+`adb shell dumpsys jobscheduler`) and even `jobscheduler run -f` does not start it. Decided: no
+Firebase / push (the user did not want a Google account for it); notification icon = the app's
+"noted" icon; buttons Done / In 1 hour / Tomorrow (English UI). Ideas not asked yet: an in-app
+battery-optimization exemption prompt, Android widgets for reminders.
 
 Git: private GitHub repo (details in CLAUDE.local.md). Personal data stays out of git: server
 addresses (`packages/config/server.ts`, `infra/docker/.env`), `CLAUDE.local.md`, `docs/private/`,
@@ -268,7 +288,7 @@ tracked files for addresses / names again.
   drawing on a canvas (pen only, palm rejection, side button = eraser, coalesced / predicted
   events); later lasso, highlighter, paper, SVG export, ML Kit Digital Ink. Phase 0 = probe S Pen
   pointer events in the WebView over adb.
-- **Reminders**: "/reminder" -> date / time / repeat; maybe Android widgets.
+- **Reminders**: built (stages 1-3, see Status); maybe Android widgets later.
 - Mobile theme change without a restart (screens reading colours from a context).
 - Attachments > 30 MB: chunked sealed blobs + encrypted manifest, server storing files.
 - Claude integration (postponed): local MCP server as one more device; a public key-holding

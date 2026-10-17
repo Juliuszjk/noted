@@ -4,6 +4,8 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, State, WindowEvent};
 
+mod reminders;
+
 // Settings > Desktop integration: what closing / minimizing the window does.
 #[derive(Default)]
 struct TrayBehaviour {
@@ -335,7 +337,9 @@ pub fn run() {
         // The autostart entry starts the app with `--autostart`: it then stays in the tray.
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![AUTOSTART_ARG])))
         .manage(TrayBehaviour::default())
+        .manage(reminders::Reminders::default())
         .setup(|app| {
+            reminders::start(app.handle().clone(), app.state::<reminders::Reminders>().inner().clone());
             // Tray icon: click shows the window; the menu has Show and Quit.
             let show = MenuItem::with_id(app, "show", "Show Noted", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -407,7 +411,8 @@ pub fn run() {
             open_folder,
             notify,
             read_local_file,
-            clipboard_file_paths
+            clipboard_file_paths,
+            reminders::set_reminder_notices
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

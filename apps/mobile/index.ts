@@ -1,4 +1,7 @@
+import './src/polyfill';
 import { registerRootComponent } from 'expo';
+// Defines the background task of notification buttons (runs headless with the app closed).
+import './src/reminder-notifications';
 
 import App from './App';
 

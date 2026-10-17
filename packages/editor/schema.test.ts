@@ -33,7 +33,7 @@ describe('note document schema', () => {
     expect(Object.keys(schema.nodes.noteLink.spec.attrs ?? {})).toEqual(['noteId']);
     expect(Object.keys(schema.nodes.image.spec.attrs ?? {})).toEqual(expect.arrayContaining(['src', 'alt', 'title', 'blob']));
     expect(Object.keys(schema.nodes.attachment.spec.attrs ?? {})).toEqual(['blob', 'name', 'size', 'mime']);
-    expect(Object.keys(schema.nodes.reminder.spec.attrs ?? {})).toEqual(['id', 'at', 'repeat', 'done']);
+    expect(Object.keys(schema.nodes.reminder.spec.attrs ?? {})).toEqual(['id', 'at', 'repeat', 'done', 'snooze']);
   });
 
   it('keeps the textStyle attributes', () => {

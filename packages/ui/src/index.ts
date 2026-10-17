@@ -29,4 +29,5 @@ export * from './shortcuts';
 export * from './note-groups';
 export * from './note-place';
 export * from './reminder-list';
+export * from './reminder-notify';
 export * from './RemindersList';

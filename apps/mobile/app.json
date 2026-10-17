@@ -18,13 +18,24 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.apollo.noted",
       "versionCode": 1,
-      "allowBackup": false
+      "allowBackup": false,
+      "permissions": [
+        "USE_EXACT_ALARM",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-sharing",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#212026"
+        }
+      ],
       [
         "expo-build-properties",
         {
@@ -33,7 +44,8 @@
           }
         }
       ],
-      "./plugins/with-release-signing"
+      "./plugins/with-release-signing",
+      "expo-background-task"
     ],
     "scheme": "noted",
     "backgroundColor": "#212026"

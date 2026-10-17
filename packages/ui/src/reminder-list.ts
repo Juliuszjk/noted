@@ -1,4 +1,4 @@
-import { reminderStatus } from '@noted/editor/reminder-time';
+import { reminderDue, reminderStatus } from '@noted/editor/reminder-time';
 import type { ReminderState } from '@noted/editor/reminder-time';
 import type { NoteReminder, OwnReminder } from '@noted/sync';
 
@@ -29,10 +29,10 @@ export const reminderEntries = (notes: ReminderNoteSource[], own: OwnReminder[])
   for (const note of notes) {
     if (note.trashedAt) continue;
     for (const r of note.reminders ?? []) {
-      entries.push({ key: `${note.id}/${r.id}`, id: r.id, noteId: note.id, text: r.text, noteTitle: note.title, at: r.at, repeat: r.repeat, done: r.done });
+      entries.push({ key: `${note.id}/${r.id}`, id: r.id, noteId: note.id, text: r.text, noteTitle: note.title, at: r.at, repeat: r.repeat, done: r.done, snooze: r.snooze ?? null });
     }
   }
-  for (const r of own) entries.push({ key: `own/${r.id}`, id: r.id, noteId: null, text: r.text, noteTitle: null, at: r.at, repeat: r.repeat, done: r.done });
+  for (const r of own) entries.push({ key: `own/${r.id}`, id: r.id, noteId: null, text: r.text, noteTitle: null, at: r.at, repeat: r.repeat, done: r.done, snooze: r.snooze ?? null });
   return entries;
 };
 
@@ -55,9 +55,10 @@ export const reminderSections = (entries: ReminderEntry[], now: Date, query = ''
   const matches = (e: ReminderEntry) => words.every((w) => `${e.text} ${e.noteTitle ?? ''}`.toLowerCase().includes(w));
   const groups: Record<ReminderSectionKind, ReminderEntry[]> = { overdue: [], today: [], upcoming: [], done: [] };
   for (const entry of entries) if (matches(entry)) groups[reminderStatus(entry, now)].push(entry);
-  groups.overdue.sort((a, b) => a.at - b.at);
-  groups.today.sort((a, b) => a.at - b.at);
-  groups.upcoming.sort((a, b) => a.at - b.at);
+  const byDue = (a: ReminderEntry, b: ReminderEntry) => reminderDue(a) - reminderDue(b);
+  groups.overdue.sort(byDue);
+  groups.today.sort(byDue);
+  groups.upcoming.sort(byDue);
   groups.done = groups.done.sort((a, b) => b.at - a.at).slice(0, DONE_LIMIT);
   return (Object.keys(groups) as ReminderSectionKind[])
     .filter((kind) => groups[kind].length)

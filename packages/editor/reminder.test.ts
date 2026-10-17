@@ -61,7 +61,7 @@ describe('reminder chips', () => {
   it('survives HTML, gives pasted copies new ids and exports a date', () => {
     const { editor } = setup();
     editor.commands.setContent('<p>Pay rent <span data-reminder data-id="abc" data-at="1790000000000" data-repeat="monthly"></span></p>');
-    expect(reminders(editor)).toEqual([{ id: 'abc', at: 1790000000000, repeat: 'monthly', done: false }]);
+    expect(reminders(editor)).toEqual([{ id: 'abc', at: 1790000000000, repeat: 'monthly', done: false, snooze: null }]);
     editor.view.pasteHTML(editor.getHTML());
     const ids = reminders(editor).map((r) => r.id);
     expect(ids).toHaveLength(2);

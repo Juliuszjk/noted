@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, SectionList, StyleSheet } from 'react-native';
-import { mdiCheckboxBlankCircleOutline, mdiCheckCircle, mdiRepeat, mdiNoteTextOutline, mdiBellPlusOutline } from '@mdi/js';
-import { completeReminder, formatReminderTime, reminderStatus } from '@noted/editor/reminder-time';
+import { mdiCheckboxBlankCircleOutline, mdiCheckCircle, mdiRepeat, mdiNoteTextOutline, mdiBellPlusOutline, mdiBellSleepOutline } from '@mdi/js';
+import { completeReminder, formatReminderTime, reminderDue, reminderStatus } from '@noted/editor/reminder-time';
 import type { ReminderState, ReminderTimes } from '@noted/editor/reminder-time';
 import { reminderLabel, reminderSections } from '@noted/ui/src/reminder-list';
 import type { ReminderEntry } from '@noted/ui/src/reminder-list';
@@ -61,7 +61,8 @@ export function RemindersView({ entries, query, times, creating, onCreated, onOp
             <View style={{ flex: 1 }}>
               <Text style={[styles.text, entry.done && styles.done]} numberOfLines={2}>{reminderLabel(entry)}</Text>
               <View style={styles.sub}>
-                <Text style={[styles.when, { color: statusColor(entry) }]}>{formatReminderTime(entry.at, now)}</Text>
+                <Text style={[styles.when, { color: statusColor(entry) }]}>{formatReminderTime(reminderDue(entry), now)}</Text>
+                {entry.snooze && !entry.done ? <Icon path={mdiBellSleepOutline} size={14} color={T.on_surface_variant} /> : null}
                 {entry.repeat ? <Icon path={mdiRepeat} size={14} color={T.on_surface_variant} /> : null}
                 {entry.noteId && entry.text ? (
                   <>

@@ -5,8 +5,10 @@ import { RemindersView } from './RemindersView';
 import { reminderEntries, dueReminderCount } from '@noted/ui/src/reminder-list';
 import type { ReminderEntry } from '@noted/ui/src/reminder-list';
 import type { ReminderState } from '@noted/editor/reminder-time';
+import { reminderNotices, parseNoticeId } from '@noted/ui/src/reminder-notify';
+import { syncReminderNotifications, attachReminderHandlers, applyNoticeAction } from './reminder-notifications';
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, PanResponder, BackHandler } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, PanResponder, BackHandler, AppState } from 'react-native';
 import { appAlert } from './Dialog';
 import * as Y from 'yjs';
 import {
@@ -77,10 +79,13 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
   const syncingRef = useRef(false);
   const syncAgainRef = useRef(false);
 
+  // The notes have been read once (notifications wait for it: an empty list would cancel them).
+  const [loaded, setLoaded] = useState(false);
   const loadNotes = async () => {
     const list = await dbStore.getAll();
     const sorted = list.sort((a, b) => b.updated_at - a.updated_at);
     setNotes(sorted);
+    setLoaded(true);
   };
 
   const syncWithServer = async () => {
@@ -428,6 +433,33 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
   };
   const createReminder = (text: string, state: ReminderState) =>
     changeCatalog((doc) => setOwnReminder(doc, { id: randomUUID(), text, created: Date.now(), ...state }));
+  // ---- reminder notifications (reminder-notifications.ts): alarms follow the list ----
+  useEffect(() => {
+    if (loaded) void syncReminderNotifications(reminderNotices(reminderList, Date.now()));
+  }, [reminderList, loaded]);
+  const reminderHandlers = useRef({ open: (_: string) => {}, changed: () => {} });
+  reminderHandlers.current = {
+    open: (noticeId) => {
+      const notice = parseNoticeId(noticeId);
+      const noteId = notice && !notice.key.startsWith('own/') ? notice.key.slice(0, notice.key.indexOf('/')) : null;
+      if (noteId && metas.has(noteId)) openFromList(noteId);
+      else openView({ kind: 'reminders' });
+    },
+    changed: () => { void loadNotes(); syncWithServer(); },
+  };
+  // After the first load: a tap that started the app opens its note.
+  useEffect(() => (loaded ? attachReminderHandlers({
+    apply: async (noticeId, action) => {
+      if (await applyNoticeAction(masterKey, dbStore, noticeId, action)) reminderHandlers.current.changed();
+    },
+    changed: () => reminderHandlers.current.changed(),
+    open: (noticeId) => reminderHandlers.current.open(noticeId),
+  }) : undefined), [masterKey, dbStore, loaded]);
+  // A button pressed while the app was closed changed the database behind the list.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => { if (state === 'active') void loadNotes(); });
+    return () => sub.remove();
+  }, [dbStore]);
 
   const counts = useMemo(() => ({
     notes: notesInView(items, { kind: 'notes' }).length,

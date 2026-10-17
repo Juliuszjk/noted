@@ -36,13 +36,25 @@ describe('reminders in a note', () => {
     const ydoc = new Y.Doc();
     const editor = editorWith(ydoc, '<p>Call <span data-reminder data-id="r1" data-at="1000"></span> back</p>');
     expect(updateReminderInDoc(ydoc, 'r1', { at: 9000, repeat: 'daily', done: true })).toBe(true);
-    expect(chips(editor)).toEqual([{ id: 'r1', at: 9000, repeat: 'daily', done: true }]);
+    expect(chips(editor)).toEqual([{ id: 'r1', at: 9000, repeat: 'daily', done: true, snooze: null }]);
     expect(updateReminderInDoc(ydoc, 'r1', { at: 9000, repeat: null, done: false })).toBe(true);
-    expect(chips(editor)).toEqual([{ id: 'r1', at: 9000, repeat: null, done: false }]);
+    expect(chips(editor)).toEqual([{ id: 'r1', at: 9000, repeat: null, done: false, snooze: null }]);
     expect(updateReminderInDoc(ydoc, 'nope', null)).toBe(false);
     expect(updateReminderInDoc(ydoc, 'r1', null)).toBe(true);
     expect(chips(editor)).toEqual([]);
     expect(editor.getText()).toContain('Call');
+  });
+
+  it('carries a snooze from a notification into the editor and the meta', () => {
+    const ydoc = new Y.Doc();
+    const editor = editorWith(ydoc, '<p>Water the plants <span data-reminder data-id="r1" data-at="1000"></span></p>');
+    expect(updateReminderInDoc(ydoc, 'r1', { at: 1000, repeat: null, done: false, snooze: 4000 })).toBe(true);
+    expect(chips(editor)).toEqual([{ id: 'r1', at: 1000, repeat: null, done: false, snooze: 4000 }]);
+    const meta = buildNoteMeta(ydoc);
+    expect(meta.reminders).toEqual([{ id: 'r1', at: 1000, repeat: null, done: false, snooze: 4000, text: 'Water the plants' }]);
+    expect(decodeNoteMeta(encodeNoteMeta(meta)).reminders).toEqual(meta.reminders);
+    updateReminderInDoc(ydoc, 'r1', { at: 1000, repeat: null, done: true, snooze: null });
+    expect(chips(editor)[0].snooze).toBeNull();
   });
 });
 

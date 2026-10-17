@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import Database from '@tauri-apps/plugin-sql';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { API_URL, SYNC_INTERVAL_MS, WS_URL, WS_STALE_MS, KEY_STORAGE, VERIFIER_STORAGE } from '@noted/config';
@@ -16,8 +17,8 @@ import {
   fetchVault, passphraseOpens, parseVaultInfo, serializeVaultInfo,
   getVaultSetup, createVault, openVault, changeVaultPassword, isNoteLocked, lockNote, unlockNote, readLockedBody, writeLockedBody, noteBodyJson, noteAttachments,
 } from '@noted/sync';
-import { formatBlobRef, parseBlobRef, parseEditorPrefs, DEFAULT_EDITOR_PREFS, newReminderId } from '@noted/editor';
-import type { ReminderState } from '@noted/editor';
+import { formatBlobRef, parseBlobRef, parseEditorPrefs, DEFAULT_EDITOR_PREFS, newReminderId, applyReminderAction } from '@noted/editor';
+import type { ReminderState, ReminderAction } from '@noted/editor';
 import { exportNote } from '@noted/editor/export';
 import { PINCH_EVENT } from '@noted/editor/image-viewer';
 import type { CatalogKind } from '@noted/sync';
@@ -32,7 +33,7 @@ import * as Y from 'yjs';
 import { mdiDotsVertical, mdiBookOutline, mdiDockLeft, mdiFormatListText } from '@mdi/js';
 import {
   SettingsDialog, LockScreen, VaultDialog, LockedNote, NotePicker, NoteEditor, UnlockScreen, NoteList, TabBar, StatusBar, NavPanel, NoteProperties, CatalogPicker, HistoryPreview,
-  IconBtn, Icon, confirmDialog, messageDialog, showDialog, linkDescendants, matchesShortcut, setShortcutOverrides, getShortcutOverrides, notesInView, Resizer, RESIZE_SNAP, LinkTree, RemindersList, reminderEntries, dueReminderCount, NAV_MIN_WIDTH, NAV_RAIL_WIDTH,
+  IconBtn, Icon, confirmDialog, messageDialog, showDialog, linkDescendants, matchesShortcut, setShortcutOverrides, getShortcutOverrides, notesInView, Resizer, RESIZE_SNAP, LinkTree, RemindersList, reminderEntries, dueReminderCount, reminderNotices, parseNoticeId, MISSED_WITHIN_MS, NAV_MIN_WIDTH, NAV_RAIL_WIDTH,
 } from '@noted/ui';
 import type { NoteSummary, NoteListItem, TextStats, NoteAction, NoteView, PropertyFlags, HistoryEntry, ImportedNote, AttachmentEntry, ReminderEntry } from '@noted/ui';
 import { notePlaces, parseImport, IMPORT_SOURCES, expandZips, noteFilesFor } from '@noted/ui';
@@ -64,6 +65,23 @@ type ActiveNote = { id: string; ydoc: Y.Doc };
 type Picker = { kind: CatalogKind; x: number; y: number };
 
 const PROBE_INTERVAL_MS = 5000;
+
+// Reminder notices this device has shown (kept across restarts so a restart does not notify
+// them again; ids name the time, so old ones are dropped once past the "missed" window).
+const SHOWN_NOTICES = 'noted_reminders_shown';
+const readShownNotices = (): string[] => {
+  try {
+    const list = JSON.parse(localStorage.getItem(SHOWN_NOTICES) ?? '[]');
+    return Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+const rememberShownNotice = (id: string) => {
+  const oldest = Date.now() - MISSED_WITHIN_MS;
+  const list = readShownNotices().filter((shown) => shown !== id && (parseNoticeId(shown)?.due ?? 0) > oldest);
+  try { localStorage.setItem(SHOWN_NOTICES, JSON.stringify([...list, id])); } catch { /* not kept: may notify again after a restart */ }
+};
 const PROBE_TIMEOUT_MS = 3000;
 
 const VIEW_TITLES = { notes: 'Notes', favorites: 'Favorites', archive: 'Archive', trash: 'Trash', tree: 'Links tree', published: 'Published', reminders: 'Reminders' } as const;
@@ -999,6 +1017,34 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   const createReminder = (text: string, state: ReminderState) => {
     changeCatalog((doc) => setOwnReminder(doc, { id: newReminderId(), text, created: Date.now(), ...state }));
   };
+  // ---- reminder notifications: the timer and the notifications live in Rust (reminders.rs) ----
+  const reminderNoticeList = useMemo(() => reminderNotices(reminderList, Date.now()), [reminderList]);
+  useEffect(() => {
+    invoke('set_reminder_notices', { notices: reminderNoticeList, shown: readShownNotices() }).catch((e) => console.warn('Reminder notifications:', e));
+  }, [reminderNoticeList]);
+  const reminderActionRef = useRef<(id: string, action: string) => void>(() => {});
+  reminderActionRef.current = (id, action) => {
+    const notice = parseNoticeId(id);
+    const entry = notice && reminderList.find((e) => e.key === notice.key);
+    if (!notice || !entry) return;
+    if (action === 'default') {
+      if (entry.noteId) openNote(entry.noteId, {});
+      else { setPref('view', { kind: 'reminders' }); setPref('listHidden', false); }
+      return;
+    }
+    if (action !== 'done' && action !== 'hour' && action !== 'tomorrow') return;
+    const next = applyReminderAction(entry, action as ReminderAction, notice.due, Date.now(), reminderTimes);
+    if (next) changeReminder(entry, next);
+  };
+  useEffect(() => {
+    const unlistenShown = listen<string>('noted:reminder-shown', (event) => rememberShownNotice(event.payload));
+    const unlistenAction = listen<{ id: string; action: string }>('noted:reminder-action', (event) =>
+      reminderActionRef.current(event.payload.id, event.payload.action));
+    return () => {
+      void unlistenShown.then((unlisten) => unlisten());
+      void unlistenAction.then((unlisten) => unlisten());
+    };
+  }, []);
 
   const counts = useMemo(() => ({
     notes: notesInView(listItems, { kind: 'notes' }).length,

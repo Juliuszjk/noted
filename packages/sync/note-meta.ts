@@ -45,6 +45,7 @@ export interface NoteReminder {
   at: number;
   repeat: ReminderRepeat | null;
   done: boolean;
+  snooze?: number | null;
   // The line the chip stands in, without the chip.
   text: string;
 }
@@ -209,11 +210,13 @@ const readReminder = (element: Y.XmlElement, parent: Y.XmlElement | Y.XmlFragmen
   const at = Number(element.getAttribute('at'));
   if (typeof id !== 'string' || !id || !Number.isFinite(at)) return null;
   const repeat = element.getAttribute('repeat');
+  const snooze = Number(element.getAttribute('snooze'));
   return {
     id,
     at,
     repeat: isReminderRepeat(repeat) ? repeat : null,
     done: (element.getAttribute('done') as unknown) === true,
+    ...(snooze > 0 ? { snooze } : {}),
     text: parent instanceof Y.XmlElement ? blockText(parent) : '',
   };
 };
@@ -274,6 +277,7 @@ const parseNoteReminder = (r: unknown): NoteReminder | null => {
     at: data.at,
     repeat: isReminderRepeat(data.repeat) ? data.repeat : null,
     done: data.done === true,
+    ...(typeof data.snooze === 'number' && data.snooze > 0 ? { snooze: data.snooze } : {}),
     text: typeof data.text === 'string' ? data.text : '',
   };
 };

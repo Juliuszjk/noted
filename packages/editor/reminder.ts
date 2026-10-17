@@ -3,16 +3,17 @@ import type { Editor } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Fragment, Slice } from '@tiptap/pm/model';
 import type { Node as PmNode } from '@tiptap/pm/model';
-import { mdiBellOutline, mdiBellCheckOutline, mdiRepeat } from '@mdi/js';
+import { mdiBellOutline, mdiBellCheckOutline, mdiBellSleepOutline, mdiRepeat } from '@mdi/js';
 import {
   DEFAULT_REMINDER_TIMES, formatReminderTime, formatReminderDate, isReminderRepeat, reminderStatus, repeatLabel,
-  reminderDateLabel, reminderPlainText,
+  reminderDateLabel, reminderPlainText, reminderDue,
 } from './reminder-time';
 import type { ReminderRepeat, ReminderState, ReminderTimes } from './reminder-time';
 
 // Reminder chip inside the text ("/reminder"): an inline atom holding its own state, so it
 // syncs and merges like the rest of the note. `id` names it for notifications and the
-// reminders view; `at` is a moment (ms), `repeat` null = once, `done` ticked off.
+// reminders view; `at` is a moment (ms), `repeat` null = once, `done` ticked off, `snooze` the
+// time a notification was put off to (null = not snoozed).
 // The picker is platform UI (onEdit), like math.
 
 export interface ReminderAttrs extends ReminderState {
@@ -53,6 +54,7 @@ export const reminderAttrs = (node: PmNode): ReminderAttrs => ({
   at: Number(node.attrs.at) || 0,
   repeat: isReminderRepeat(node.attrs.repeat) ? node.attrs.repeat : null,
   done: node.attrs.done === true,
+  snooze: Number(node.attrs.snooze) || null,
 });
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -106,6 +108,11 @@ export const Reminder = Node.create<{ onEdit: ReminderEditHandler | null }, Remi
         parseHTML: (el: HTMLElement) => el.hasAttribute('data-done'),
         renderHTML: (attrs: Record<string, any>) => (attrs.done ? { 'data-done': '' } : {}),
       },
+      snooze: {
+        default: null,
+        parseHTML: (el: HTMLElement) => Number(el.getAttribute('data-snooze')) || null,
+        renderHTML: (attrs: Record<string, any>) => (attrs.snooze ? { 'data-snooze': String(attrs.snooze) } : {}),
+      },
     };
   },
 
@@ -146,9 +153,10 @@ export const Reminder = Node.create<{ onEdit: ReminderEditHandler | null }, Remi
           dom.setAttribute('data-at', String(attrs.at));
           if (attrs.repeat) dom.setAttribute('data-repeat', attrs.repeat); else dom.removeAttribute('data-repeat');
           dom.toggleAttribute('data-done', attrs.done);
-          dom.title = `${formatReminderDate(attrs.at)} · ${repeatLabel(attrs.repeat)}`;
-          dom.innerHTML = `${svg(attrs.done ? mdiBellCheckOutline : mdiBellOutline)}<span></span>${attrs.repeat ? svg(mdiRepeat) : ''}`;
-          dom.querySelector('span')!.textContent = formatReminderTime(attrs.at, now);
+          const snoozed = !attrs.done && !!attrs.snooze;
+          dom.title = `${formatReminderDate(attrs.at)} · ${repeatLabel(attrs.repeat)}${snoozed ? ` · snoozed to ${formatReminderDate(reminderDue(attrs))}` : ''}`;
+          dom.innerHTML = `${svg(attrs.done ? mdiBellCheckOutline : snoozed ? mdiBellSleepOutline : mdiBellOutline)}<span></span>${attrs.repeat ? svg(mdiRepeat) : ''}`;
+          dom.querySelector('span')!.textContent = formatReminderTime(snoozed ? reminderDue(attrs) : attrs.at, now);
         },
       };
       const open = (event: Event) => {
@@ -226,6 +234,7 @@ export const requestReminderAtSelection = (editor: Editor): boolean => {
 };
 
 export type ReminderCommit =
+  // A save from the picker ends a snooze.
   | { kind: 'save'; at: number; repeat: ReminderRepeat | null; done?: boolean }
   | { kind: 'delete' };
 
@@ -234,7 +243,7 @@ export const commitReminderEdit = (editor: Editor, request: ReminderEditRequest,
   const chain = editor.chain().focus();
   if (request.mode === 'insert') {
     if (commit.kind === 'delete') return void chain.run();
-    const attrs: ReminderAttrs = { id: newReminderId(), at: commit.at, repeat: commit.repeat, done: false };
+    const attrs: ReminderAttrs = { id: newReminderId(), at: commit.at, repeat: commit.repeat, done: false, snooze: null };
     chain.insertContentAt(request.pos, [{ type: 'reminder', attrs }, { type: 'text', text: ' ' }]).run();
     return;
   }
@@ -246,7 +255,7 @@ export const commitReminderEdit = (editor: Editor, request: ReminderEditRequest,
   }
   const done = commit.done ?? (commit.at !== request.attrs.at ? false : request.attrs.done);
   chain.command(({ tr }) => {
-    tr.setNodeMarkup(request.pos, undefined, { ...node.attrs, at: commit.at, repeat: commit.repeat, done });
+    tr.setNodeMarkup(request.pos, undefined, { ...node.attrs, at: commit.at, repeat: commit.repeat, done, snooze: null });
     return true;
   }).run();
 };

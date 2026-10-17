@@ -40,6 +40,8 @@ export const updateReminderInDoc = (doc: Y.Doc, id: string, change: ReminderStat
     if (change.repeat) element.setAttribute('repeat', change.repeat);
     else element.removeAttribute('repeat');
     element.setAttribute('done', change.done as unknown as string);
+    if (change.snooze) element.setAttribute('snooze', change.snooze as unknown as string);
+    else element.removeAttribute('snooze');
   }, origin);
   return true;
 };
@@ -66,15 +68,17 @@ export const listOwnReminders = (catalog: Y.Doc): OwnReminder[] => {
       at: data.at,
       repeat: isReminderRepeat(data.repeat) ? data.repeat : null,
       done: data.done === true,
+      ...(typeof data.snooze === 'number' && data.snooze > 0 ? { snooze: data.snooze } : {}),
       created: typeof data.created === 'number' ? data.created : 0,
     });
   });
   return list;
 };
 
+// Only the known fields are stored (callers may pass a whole list entry).
 export const setOwnReminder = (catalog: Y.Doc, reminder: OwnReminder): void => {
-  const { id, ...value } = reminder;
-  ownMap(catalog).set(id, value);
+  const { id, text, at, repeat, done, created, snooze } = reminder;
+  ownMap(catalog).set(id, { text, at, repeat, done, created, ...(snooze ? { snooze } : {}) });
 };
 
 export const deleteOwnReminder = (catalog: Y.Doc, id: string): void => {

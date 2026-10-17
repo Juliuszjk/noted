@@ -44,13 +44,13 @@ describe('nextOccurrence', () => {
 
 describe('completeReminder', () => {
   it('ticks off a one-off reminder', () => {
-    expect(completeReminder({ at: 1, repeat: null, done: false }, 5)).toEqual({ at: 1, repeat: null, done: true });
+    expect(completeReminder({ at: 1, repeat: null, done: false }, 5)).toEqual({ at: 1, repeat: null, done: true, snooze: null });
   });
 
   it('moves a repeating one past now, skipping missed times', () => {
     const at = local(2026, 10, 10, 8);
     const next = completeReminder({ at, repeat: 'daily', done: false }, local(2026, 10, 17, 9));
-    expect(next).toEqual({ at: local(2026, 10, 18, 8), repeat: 'daily', done: false });
+    expect(next).toEqual({ at: local(2026, 10, 18, 8), repeat: 'daily', done: false, snooze: null });
   });
 
   it('moves a repeating one done early to the next time', () => {
