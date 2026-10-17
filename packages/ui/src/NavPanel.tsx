@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  mdiHomeOutline, mdiBookOutline, mdiPound, mdiNoteTextOutline, mdiStarOutline, mdiTrashCanOutline, mdiWeb,
+  mdiHomeOutline, mdiBookOutline, mdiPound, mdiNoteTextOutline, mdiStarOutline, mdiBellOutline, mdiTrashCanOutline, mdiWeb,
   mdiArchiveOutline, mdiPlus, mdiPencilOutline, mdiDeleteOutline, mdiChevronDoubleLeft, mdiChevronDoubleRight, mdiFileTreeOutline, mdiCogOutline,
 } from '@mdi/js';
 import { Icon } from './Icon';
@@ -16,7 +16,7 @@ export interface NavEntry {
 interface Props {
   view: NoteView;
   onView: (view: NoteView) => void;
-  counts: { notes: number; favorites: number; trash: number; archive: number; published?: number };
+  counts: { notes: number; favorites: number; trash: number; archive: number; published?: number; reminders?: number };
   notebooks: NavEntry[];
   tags: NavEntry[];
   onCreate: (kind: 'notebooks' | 'tags', name: string) => void;
@@ -96,6 +96,8 @@ export function NavPanel({ view, onView, counts, notebooks, tags, onCreate, onRe
   const home: { view: NoteView; icon: string; label: string; n: number }[] = [
     { view: { kind: 'notes' }, icon: mdiNoteTextOutline, label: 'Notes', n: counts.notes },
     { view: { kind: 'favorites' }, icon: mdiStarOutline, label: 'Favorites', n: counts.favorites },
+    // Count: reminders due now or today.
+    { view: { kind: 'reminders' }, icon: mdiBellOutline, label: 'Reminders', n: counts.reminders ?? 0 },
     { view: { kind: 'trash' }, icon: mdiTrashCanOutline, label: 'Trash', n: counts.trash },
     { view: { kind: 'archive' }, icon: mdiArchiveOutline, label: 'Archive', n: counts.archive },
     // Notes published to the web (only shown once there is one).

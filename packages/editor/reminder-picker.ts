@@ -1,6 +1,7 @@
 import { mdiChevronLeft, mdiChevronRight } from '@mdi/js';
 import {
-  REMINDER_REPEATS, MONTH_NAMES, atClock, completeReminder, formatClock, formatReminderTime, parseClock, quickReminderChoices,
+  REMINDER_REPEATS, MONTH_NAMES, WEEKDAY_SHORT, atClock, completeReminder, formatClock, formatReminderTime, monthGrid, parseClock,
+  quickReminderChoices, sameDay,
 } from './reminder-time';
 import type { ReminderRepeat, ReminderState, ReminderTimes } from './reminder-time';
 import type { ReminderCommit } from './reminder';
@@ -26,6 +27,7 @@ const CSS = `
 .nrp-grid > span { color: var(--text-muted); font-size: 11px; padding: 2px 0; }
 .nrp-grid button { height: 32px; border: 1px solid transparent; border-radius: 6px; background: transparent; }
 .nrp-grid button:hover { background: var(--bg-surface); }
+.nrp button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .nrp-grid button.other { color: var(--text-muted); opacity: 0.6; }
 .nrp-grid button.past { opacity: 0.45; }
 .nrp-grid button.today { border-color: var(--primary); }
@@ -75,8 +77,6 @@ const iconButton = (path: string, label: string, run: () => void) => {
   return b;
 };
 
-const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-
 export interface ReminderPickerOptions {
   // The reminder being edited; absent for a new one.
   initial?: ReminderState;
@@ -87,7 +87,14 @@ export interface ReminderPickerOptions {
   touch?: boolean;
 }
 
-export const renderReminderPicker = (container: HTMLElement, options: ReminderPickerOptions): { focusTime: () => void } => {
+export interface ReminderPickerHandle {
+  focusTime: () => void;
+  // Keyboard: the selected day of the calendar (arrows move it, Enter saves).
+  focusDay: () => void;
+  save: () => void;
+}
+
+export const renderReminderPicker = (container: HTMLElement, options: ReminderPickerOptions): ReminderPickerHandle => {
   ensureStyle();
   const now = new Date();
   const initial = options.initial;
@@ -153,30 +160,54 @@ export const renderReminderPicker = (container: HTMLElement, options: ReminderPi
   };
   time.addEventListener('input', renderSummary);
 
+  // Calendar keys: arrows move a day / week, PageUp / PageDown a month, Enter saves. Only the
+  // selected day is in the Tab order.
+  let selectedButton: HTMLButtonElement | null = null;
+  const moveDay = (to: Date, focus: boolean) => {
+    day = to;
+    if (to.getMonth() !== shown.getMonth() || to.getFullYear() !== shown.getFullYear()) shown = new Date(to.getFullYear(), to.getMonth(), 1);
+    renderGrid();
+    renderSummary();
+    if (focus) selectedButton?.focus();
+  };
+  grid.addEventListener('keydown', (event) => {
+    const step: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+    if (event.key in step) {
+      event.preventDefault();
+      moveDay(new Date(day.getFullYear(), day.getMonth(), day.getDate() + step[event.key]), true);
+    } else if (event.key === 'PageUp' || event.key === 'PageDown') {
+      event.preventDefault();
+      const months = event.key === 'PageUp' ? -1 : 1;
+      const target = new Date(day.getFullYear(), day.getMonth() + months, 1);
+      const last = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+      moveDay(new Date(target.getFullYear(), target.getMonth(), Math.min(day.getDate(), last)), true);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      save();
+    }
+  });
+
   const renderGrid = () => {
     monthLabel.textContent = `${MONTH_NAMES[shown.getMonth()]} ${shown.getFullYear()}`;
-    grid.replaceChildren(...['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((d) => el('span', '', d)));
-    // Weeks start on Monday; six rows keep the picker the same height every month.
-    const offset = (shown.getDay() + 6) % 7;
-    const today = new Date();
-    for (let i = 0; i < 42; i++) {
-      const date = new Date(shown.getFullYear(), shown.getMonth(), 1 - offset + i);
+    grid.replaceChildren(...WEEKDAY_SHORT.map((d) => el('span', '', d)));
+    selectedButton = null;
+    for (const cell of monthGrid(shown, new Date())) {
+      const date = cell.date;
       const classes = [
-        date.getMonth() !== shown.getMonth() ? 'other' : '',
-        date < new Date(today.getFullYear(), today.getMonth(), today.getDate()) ? 'past' : '',
-        sameDay(date, today) ? 'today' : '',
+        cell.inMonth ? '' : 'other',
+        cell.past ? 'past' : '',
+        cell.today ? 'today' : '',
         sameDay(date, day) ? 'selected' : '',
       ].filter(Boolean).join(' ');
       const b = el('button', classes, String(date.getDate()));
       b.type = 'button';
-      b.addEventListener('click', () => {
-        day = date;
-        if (date.getMonth() !== shown.getMonth()) shown = new Date(date.getFullYear(), date.getMonth(), 1);
-        renderGrid();
-        renderSummary();
-      });
+      b.tabIndex = sameDay(date, day) ? 0 : -1;
+      if (sameDay(date, day)) selectedButton = b;
+      b.addEventListener('click', () => moveDay(date, document.activeElement === b));
       grid.append(b);
     }
+    // Another month shown with the arrows above: its first day takes the Tab stop.
+    if (!selectedButton) grid.querySelector<HTMLButtonElement>('button:not(.other)')?.setAttribute('tabindex', '0');
   };
 
   const save = () => {
@@ -216,5 +247,9 @@ export const renderReminderPicker = (container: HTMLElement, options: ReminderPi
   renderGrid();
   renderSummary();
   container.replaceChildren(root);
-  return { focusTime: () => { time.focus(); time.select(); } };
+  return {
+    focusTime: () => { time.focus(); time.select(); },
+    focusDay: () => selectedButton?.focus(),
+    save,
+  };
 };

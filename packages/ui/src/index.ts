@@ -28,3 +28,5 @@ export * from './NotePicker';
 export * from './shortcuts';
 export * from './note-groups';
 export * from './note-place';
+export * from './reminder-list';
+export * from './RemindersList';

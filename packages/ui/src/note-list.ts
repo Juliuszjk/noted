@@ -17,9 +17,10 @@ export interface NoteListItem {
 }
 
 // What the list shows: the main views of the navigation, or one notebook / tag. 'tree' shows
-// the note links as a tree (link-tree.ts) instead of a list.
+// the note links as a tree (link-tree.ts) instead of a list, 'reminders' the reminders
+// (reminder-list.ts).
 export type NoteView =
-  | { kind: 'notes' | 'favorites' | 'archive' | 'trash' | 'tree' | 'published' }
+  | { kind: 'notes' | 'favorites' | 'archive' | 'trash' | 'tree' | 'published' | 'reminders' }
   | { kind: 'notebook' | 'tag'; id: string };
 
 // edited / created / title sort; notebook / tag group the list by them (newest first inside).
@@ -37,6 +38,7 @@ export const notesInView = (items: NoteListItem[], view: NoteView): NoteListItem
     case 'trash': return items.filter((n) => !!n.trashedAt);
     case 'notebook': return items.filter((n) => !n.trashedAt && (n.notebooks ?? []).includes(view.id));
     case 'tag': return items.filter((n) => !n.trashedAt && (n.tags ?? []).includes(view.id));
+    case 'reminders': return [];
   }
 };
 

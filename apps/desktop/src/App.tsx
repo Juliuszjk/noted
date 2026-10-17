@@ -11,12 +11,13 @@ import {
   runSyncEngine, uploadPendingBlobs, LocalNoteStore, mergingNoteStore, configureVerifierCache, buildNoteMeta, encodeNoteMeta,
   decodeNoteMeta, displayTitle, setTitle, markNoteCreated, setNoteFlag, getNoteFlag, setNoteTrashed,
   deleteNoteForever, unpublishQuietly, uploadPublished, deletePublished, publishedExists, publishExpired, getNotePublish, setNotePublish, setNoteNotebook, getNoteNotebooks, setNoteTag, getNoteTags, setNoteFont, getNoteFont, CATALOG_ID, isSystemNote,
-  listCatalog, getSharedEditorPrefs, setSharedEditorPrefs, sharedPrefsChange, SHARED_EDITOR_PREFS, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, purgeExpiredTrash, getTitleText, getNoteSettings,
+  listCatalog, getSharedEditorPrefs, refreshStaleNoteMeta, listOwnReminders, setOwnReminder, deleteOwnReminder, updateReminderInDoc, setSharedEditorPrefs, sharedPrefsChange, SHARED_EDITOR_PREFS, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, purgeExpiredTrash, getTitleText, getNoteSettings,
   currentAuthToken, sessionStillValid, setAuthEpoch, getAuthEpoch, exportAttachments, zipNoteWithFiles, backupVault, restoreServerVault, createBackup, restoreBackup, backupFileName, openBackup, compareBackup, restoreBackupNote, findUnusedBlobs, deleteServerBlobs, deletedNoteIds, purgeDeletedNotes, usedBlobIds, BLOB_GRACE_MS, noteBlobIds, docFromSealed, noteBodyText, applyDefaultTitle, setNoteBodyJson, appendNoteLink,
   fetchVault, passphraseOpens, parseVaultInfo, serializeVaultInfo,
   getVaultSetup, createVault, openVault, changeVaultPassword, isNoteLocked, lockNote, unlockNote, readLockedBody, writeLockedBody, noteBodyJson, noteAttachments,
 } from '@noted/sync';
-import { formatBlobRef, parseBlobRef, parseEditorPrefs, DEFAULT_EDITOR_PREFS } from '@noted/editor';
+import { formatBlobRef, parseBlobRef, parseEditorPrefs, DEFAULT_EDITOR_PREFS, newReminderId } from '@noted/editor';
+import type { ReminderState } from '@noted/editor';
 import { exportNote } from '@noted/editor/export';
 import { PINCH_EVENT } from '@noted/editor/image-viewer';
 import type { CatalogKind } from '@noted/sync';
@@ -31,9 +32,9 @@ import * as Y from 'yjs';
 import { mdiDotsVertical, mdiBookOutline, mdiDockLeft, mdiFormatListText } from '@mdi/js';
 import {
   SettingsDialog, LockScreen, VaultDialog, LockedNote, NotePicker, NoteEditor, UnlockScreen, NoteList, TabBar, StatusBar, NavPanel, NoteProperties, CatalogPicker, HistoryPreview,
-  IconBtn, Icon, confirmDialog, messageDialog, showDialog, linkDescendants, matchesShortcut, setShortcutOverrides, getShortcutOverrides, notesInView, Resizer, RESIZE_SNAP, LinkTree, NAV_MIN_WIDTH, NAV_RAIL_WIDTH,
+  IconBtn, Icon, confirmDialog, messageDialog, showDialog, linkDescendants, matchesShortcut, setShortcutOverrides, getShortcutOverrides, notesInView, Resizer, RESIZE_SNAP, LinkTree, RemindersList, reminderEntries, dueReminderCount, NAV_MIN_WIDTH, NAV_RAIL_WIDTH,
 } from '@noted/ui';
-import type { NoteSummary, NoteListItem, TextStats, NoteAction, NoteView, PropertyFlags, HistoryEntry, ImportedNote, AttachmentEntry } from '@noted/ui';
+import type { NoteSummary, NoteListItem, TextStats, NoteAction, NoteView, PropertyFlags, HistoryEntry, ImportedNote, AttachmentEntry, ReminderEntry } from '@noted/ui';
 import { notePlaces, parseImport, IMPORT_SOURCES, expandZips, noteFilesFor } from '@noted/ui';
 import type { BlobHandlers } from '@noted/editor';
 import type { JSONContent } from '@tiptap/core';
@@ -65,7 +66,7 @@ type Picker = { kind: CatalogKind; x: number; y: number };
 const PROBE_INTERVAL_MS = 5000;
 const PROBE_TIMEOUT_MS = 3000;
 
-const VIEW_TITLES = { notes: 'Notes', favorites: 'Favorites', archive: 'Archive', trash: 'Trash', tree: 'Links tree', published: 'Published' } as const;
+const VIEW_TITLES = { notes: 'Notes', favorites: 'Favorites', archive: 'Archive', trash: 'Trash', tree: 'Links tree', published: 'Published', reminders: 'Reminders' } as const;
 
 // `restoreText`: a backup to restore at start (the vault was just set up from it).
 function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array; onLogout: (reason?: string) => void; restoreText?: string }) {
@@ -337,6 +338,10 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   };
 
   const selectNote = (note: NoteRecord): boolean => {
+    // The open note keeps its live doc. A new doc from the stored state would leave the editor
+    // (created once) on the old doc while saves read the new one: edits made after opening
+    // the open note again (note list, Reminders) were never saved and vanished on restart.
+    if (activeRef.current?.id === note.id) return true;
     const ydoc = docOf(note);
     if (!ydoc) {
       setSyncMessage('Cannot decrypt this note');
@@ -535,6 +540,13 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
         migrateBlobsToFiles(sqlite).then((n) => { if (n) console.info(`Moved ${n} blobs into files`); }, (e) => console.error('Blob move failed:', e));
         // Notes in the trash for more than 7 days are deleted for good.
         if (await purgeExpiredTrash(masterKey, noteStore(sqlite))) console.info('Emptied old trash');
+        // Meta saved by older versions gets its reminders (locally, nothing is uploaded).
+        try {
+          const indexed = await refreshStaleNoteMeta(masterKey, noteStore(sqlite));
+          if (indexed) console.info(`Indexed reminders of ${indexed} notes`);
+        } catch (e) {
+          console.error('Indexing reminders failed:', e);
+        }
         const list = await loadNotes(sqlite);
         // Reopen the tabs of the last session.
         const saved = loadPrefs();
@@ -961,13 +973,41 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     const name = target?.title ?? 'the note';
     if (result) showToast(result === 'already' ? `“${name}” already links to this note` : `Link added at the end of “${name}”`);
   };
+  // ---- reminders: chips of every note and reminders of their own (catalog) ----
+  const reminderList = useMemo(() => reminderEntries(
+    metas.map(({ note, meta }) => ({ id: note.id, title: displayTitle(meta), reminders: meta.reminders, trashedAt: meta.trashedAt })),
+    catalogDoc ? listOwnReminders(catalogDoc) : [],
+  ), [metas, catalogDoc]);
+  // The navigation count (due now or today) follows the clock.
+  const [minuteTick, setMinuteTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setMinuteTick((n) => n + 1), 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const dueReminders = useMemo(() => dueReminderCount(reminderList, new Date()), [reminderList, minuteTick]);
+  const changeReminder = (entry: ReminderEntry, state: ReminderState | null, text?: string) => {
+    if (!entry.noteId) {
+      changeCatalog((doc) => {
+        const own = listOwnReminders(doc).find((r) => r.id === entry.id);
+        if (!state) deleteOwnReminder(doc, entry.id);
+        else setOwnReminder(doc, { id: entry.id, text: text ?? own?.text ?? entry.text, created: own?.created ?? Date.now(), ...state });
+      });
+      return;
+    }
+    updateNoteDoc(entry.noteId, (doc) => updateReminderInDoc(doc, entry.id, state));
+  };
+  const createReminder = (text: string, state: ReminderState) => {
+    changeCatalog((doc) => setOwnReminder(doc, { id: newReminderId(), text, created: Date.now(), ...state }));
+  };
+
   const counts = useMemo(() => ({
     notes: notesInView(listItems, { kind: 'notes' }).length,
     favorites: notesInView(listItems, { kind: 'favorites' }).length,
     trash: notesInView(listItems, { kind: 'trash' }).length,
     archive: notesInView(listItems, { kind: 'archive' }).length,
     published: notesInView(listItems, { kind: 'published' }).length,
-  }), [listItems]);
+    reminders: dueReminders,
+  }), [listItems, dueReminders]);
   const navNotebooks = notebooks.map((e) => ({ ...e, count: notesInView(listItems, { kind: 'notebook', id: e.id }).length }));
   const navTags = tagEntries.map((e) => ({ ...e, count: notesInView(listItems, { kind: 'tag', id: e.id }).length }));
   const catalogNames = useMemo(() => ({
@@ -1357,7 +1397,16 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
         {!prefs.focusMode && !prefs.listHidden && (
           <>
             <aside style={{ width: Math.max(prefs.listWidth, listMin), flex: '0 0 auto', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-surface-low)', borderRight: '1px solid var(--border)' }}>
-              {prefs.view.kind === 'tree' ? (
+              {prefs.view.kind === 'reminders' ? (
+                <RemindersList
+                  entries={reminderList}
+                  times={reminderTimes}
+                  onOpenNote={(id, newTab) => openNote(id, { newTab })}
+                  onChange={changeReminder}
+                  onCreate={createReminder}
+                  onHide={() => setPref('listHidden', true)}
+                />
+              ) : prefs.view.kind === 'tree' ? (
                 <LinkTree
                   notes={treeNotes}
                   activeId={activeNote?.id ?? null}

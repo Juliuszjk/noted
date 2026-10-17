@@ -185,7 +185,13 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   (plain DOM: desktop `ReminderEditor.tsx` popover, phone sheet with the toolbar row hidden,
   `hideBar`), shortcut `reminder` (Ctrl+Alt+R, `requestReminderAtSelection`), copied text
   "» <date>" (no emoji), published copy shows the full date (publish-html.ts), morning / evening = EditorPrefs `reminderMorning` / `reminderEvening`,
-  shared via the catalog (`SHARED_EDITOR_PREFS` with `titleTemplate`); colours `palette.ts` (CSS variable refs, custom = raw hex);
+  shared via the catalog (`SHARED_EDITOR_PREFS` with `titleTemplate`). Reminders view (NoteView
+  `reminders`): note meta `reminders` [{id, at, repeat, done, text of the line}] (absent = old
+  meta; `refreshStaleNoteMeta` re-indexes locally at start, same timestamp, no upload),
+  reminders of their own in the catalog Y.Map `reminders` (`sync/reminders.ts`, also
+  `updateReminderInDoc` for chips outside the editor), list logic `ui/src/reminder-list.ts`,
+  desktop `RemindersList.tsx` + `ReminderPopover.tsx`, phone `RemindersView.tsx` +
+  RN `ReminderSheet.tsx` (same pure functions as the page picker); colours `palette.ts` (CSS variable refs, custom = raw hex);
   shared `content.css`.
 - `/goto` and `/linkto` (`appendNoteLink` in sync/json-to-y.ts, never twice, not into locked notes).
 - HEIC: desktop `src/heic.ts` (libheif-js), phone RN `{type:'convertHeic'}`.
@@ -283,6 +289,10 @@ tracked files for addresses / names again.
 - All-zero key: a hot reload reset the key and a note was sealed with zeros. Guard: verifier
   check before sync; restart windows after entry-file changes.
 - Lost text on slow connections (sync engine overwriting newer saves) -> `mergingNoteStore`.
+- Lost edits after opening the already open note again (desktop note list / Reminders list,
+  2026-10-17): `selectNote` made a new Y.Doc while the editor (created once) stayed on the old
+  one and saves read the new one; edits vanished on restart. `selectNote` now keeps the live doc
+  of the active note. Never swap `activeNote.ydoc` for the same note id.
 - Notebooks missing after an import: `loadNotes` read the catalog before its pending 500 ms save;
   it now keeps notes with a pending save from memory.
 - Import with duplicate file names -> "UNIQUE constraint failed: notes.id" -> ids per file.

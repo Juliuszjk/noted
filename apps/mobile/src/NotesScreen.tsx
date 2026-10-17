@@ -1,6 +1,10 @@
 import { KeyboardEvents } from 'react-native-keyboard-controller';
 import { runAutoBackupIfDue } from './backups';
-import { setSharedPrefsCache } from './prefs';
+import { setSharedPrefsCache, getEditorPrefs } from './prefs';
+import { RemindersView } from './RemindersView';
+import { reminderEntries, dueReminderCount } from '@noted/ui/src/reminder-list';
+import type { ReminderEntry } from '@noted/ui/src/reminder-list';
+import type { ReminderState } from '@noted/editor/reminder-time';
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, PanResponder, BackHandler } from 'react-native';
 import { appAlert } from './Dialog';
@@ -25,6 +29,7 @@ import { seal, unseal, decryptBlob, base64ToBytes, bytesToBase64, deriveAuthToke
 import {
   LocalNoteStore, LocalBlobStore, runSyncEngine, uploadPendingBlobs, decodeNoteMeta, displayTitle, markNoteCreated,
   isSystemNote, setNoteFlag, setNoteTrashed, deleteNoteForever, unpublishQuietly, setNoteNotebook, setNoteTag, purgeExpiredTrash,
+  refreshStaleNoteMeta, listOwnReminders, setOwnReminder, deleteOwnReminder, updateReminderInDoc,
   CATALOG_ID, docFromSealed, noteBodyJson, noteBodyText, listCatalog, getSharedEditorPrefs, setSharedEditorPrefs, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, setTitle, buildNoteMeta, encodeNoteMeta, getNoteSettings,
   currentAuthToken, sessionStillValid, getVaultSetup, createVault, changeVaultPassword, openVault,
 } from '@noted/sync';
@@ -36,7 +41,7 @@ import {
   deletedNoteIds, findUnusedBlobs, purgeDeletedNotes, deleteServerBlobs, usedBlobIds, BLOB_GRACE_MS, noteBlobIds,
 } from '@noted/sync';
 import { SettingsScreen } from './SettingsScreen';
-import type { NoteMeta, CatalogKind, CatalogEntry, SharedEditorPrefs } from '@noted/sync';
+import type { NoteMeta, CatalogKind, CatalogEntry, SharedEditorPrefs, OwnReminder } from '@noted/sync';
 import { NoteRecord } from '@noted/types';
 import { WS_URL, SYNC_INTERVAL_MS, WS_STALE_MS } from '@noted/config';
 import { EditorScreen } from './EditorScreen';
@@ -175,7 +180,10 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
 
     connect();
     // Notes in the trash for more than 7 days are deleted for good, then the list loads.
-    purgeExpiredTrash(masterKey, dbStore).catch(() => 0).then(() => loadNotes());
+    // Meta saved by older versions gets its reminders indexed (locally, nothing is uploaded).
+    purgeExpiredTrash(masterKey, dbStore).catch(() => 0)
+      .then(() => refreshStaleNoteMeta(masterKey, dbStore).catch(() => 0))
+      .then(() => loadNotes());
     // Settings > Backup: an automatic backup when one is due (after the first sync).
     const backupTimer = setTimeout(() => { runAutoBackupIfDue(masterKey, dbStore, blobStore).catch(() => {}); }, 15000);
     syncWithServer();
@@ -276,12 +284,12 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     return null;
   };
   const catalog = useMemo(() => {
-    if (!catalogRecord?.yjs_state) return { notebooks: [] as CatalogEntry[], tags: [] as CatalogEntry[], shared: {} as SharedEditorPrefs };
+    if (!catalogRecord?.yjs_state) return { notebooks: [] as CatalogEntry[], tags: [] as CatalogEntry[], shared: {} as SharedEditorPrefs, reminders: [] as OwnReminder[] };
     try {
       const doc = docFromSealed(masterKey, catalogRecord.yjs_state);
-      return { notebooks: listCatalog(doc, 'notebooks'), tags: listCatalog(doc, 'tags'), shared: getSharedEditorPrefs(doc) };
+      return { notebooks: listCatalog(doc, 'notebooks'), tags: listCatalog(doc, 'tags'), shared: getSharedEditorPrefs(doc), reminders: listOwnReminders(doc) };
     } catch {
-      return { notebooks: [], tags: [], shared: {} };
+      return { notebooks: [], tags: [], shared: {}, reminders: [] };
     }
   }, [catalogRecord?.yjs_state, masterKey]);
   useEffect(() => { setSharedPrefsCache(catalog.shared); }, [catalog]);
@@ -399,6 +407,28 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
       ...sec.items.map((n) => ({ kind: 'note' as const, key: `search:${sec.title}/${n.id}`, item: n, depth: 0, hasChildren: false, collapsed: false, foldKey: '' })),
     ]);
   }, [viewItems, query, now, sort, grouping, view, catalogNames, linksOf, toggledFolds]);
+  // ---- reminders: chips of every note and reminders of their own (catalog) ----
+  const reminderList = useMemo(() => reminderEntries(
+    [...metas.entries()].map(([id, meta]) => ({ id, title: displayTitle(meta), reminders: meta.reminders, trashedAt: meta.trashedAt })),
+    catalog.reminders,
+  ), [metas, catalog]);
+  const [creatingReminder, setCreatingReminder] = useState(false);
+  const changeReminder = async (entry: ReminderEntry, state: ReminderState | null, text?: string) => {
+    if (!entry.noteId) {
+      await changeCatalog((doc) => {
+        const own = listOwnReminders(doc).find((r) => r.id === entry.id);
+        if (!state) deleteOwnReminder(doc, entry.id);
+        else setOwnReminder(doc, { id: entry.id, text: text ?? own?.text ?? entry.text, created: own?.created ?? Date.now(), ...state });
+      });
+      return;
+    }
+    await updateNoteRecord(masterKey, dbStore, entry.noteId, (doc) => updateReminderInDoc(doc, entry.id, state));
+    await loadNotes();
+    syncWithServer();
+  };
+  const createReminder = (text: string, state: ReminderState) =>
+    changeCatalog((doc) => setOwnReminder(doc, { id: randomUUID(), text, created: Date.now(), ...state }));
+
   const counts = useMemo(() => ({
     notes: notesInView(items, { kind: 'notes' }).length,
     favorites: notesInView(items, { kind: 'favorites' }).length,
@@ -406,10 +436,11 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     trash: notesInView(items, { kind: 'trash' }).length,
     tree: treeRows.filter((r) => r.depth === 0).length,
     published: notesInView(items, { kind: 'published' }).length,
-  }), [items, treeRows]);
+    reminders: dueReminderCount(reminderList, new Date(now)),
+  }), [items, treeRows, reminderList, now]);
   const viewTitle = view.kind === 'notebook' ? catalog.notebooks.find((n) => n.id === view.id)?.name ?? 'Notebook'
     : view.kind === 'tag' ? `#${catalog.tags.find((t) => t.id === view.id)?.name ?? 'tag'}`
-    : { notes: 'Notes', favorites: 'Favorites', archive: 'Archive', trash: 'Trash', tree: 'Links tree', published: 'Published' }[view.kind];
+    : { notes: 'Notes', favorites: 'Favorites', archive: 'Archive', trash: 'Trash', tree: 'Links tree', published: 'Published', reminders: 'Reminders' }[view.kind];
 
   // ---- open notes: tabs, back history, editors, split view ----
   // The editor lies over the list. Leaving it hides it at once; it stays mounted (hidden) until
@@ -740,7 +771,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
             <Icon path={mdiDeleteSweepOutline} size={24} color={T.error} />
           </TouchableOpacity>
         ) : null}
-        {view.kind !== 'tree' ? (
+        {view.kind !== 'tree' && view.kind !== 'reminders' ? (
           <TouchableOpacity onPress={() => setSortOpen(true)} style={styles.iconBtn} accessibilityLabel="Sort">
             <Icon path={mdiSortVariant} size={24} />
           </TouchableOpacity>
@@ -757,7 +788,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Search in notes"
+          placeholder={view.kind === 'reminders' ? 'Search reminders' : 'Search in notes'}
           placeholderTextColor={T.on_surface_variant}
           style={styles.searchInput}
         />
@@ -768,7 +799,18 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
         ) : null}
       </View>
 
-      {view.kind === 'tree' ? (
+      {view.kind === 'reminders' ? (
+        <RemindersView
+          entries={reminderList}
+          query={query}
+          times={{ morning: getEditorPrefs().reminderMorning, evening: getEditorPrefs().reminderEvening }}
+          creating={creatingReminder}
+          onCreated={() => setCreatingReminder(false)}
+          onOpenNote={(id) => openFromList(id)}
+          onChange={(entry, state, text) => { changeReminder(entry, state, text); }}
+          onCreate={(text, state) => { createReminder(text, state); }}
+        />
+      ) : view.kind === 'tree' ? (
         <FlatList
           data={visibleTree}
           keyExtractor={(row) => row.key}
@@ -841,7 +883,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
 
       {/* Only over the list: Android draws elevated views above the editor overlay. */}
       {editors.some((e) => !e.closing) ? null : (
-        <TouchableOpacity onPress={handleCreateNote} style={styles.fab} accessibilityLabel="New note">
+        <TouchableOpacity onPress={view.kind === 'reminders' ? () => setCreatingReminder(true) : handleCreateNote} style={styles.fab} accessibilityLabel={view.kind === 'reminders' ? 'New reminder' : 'New note'}>
           <Icon path={mdiPlus} size={28} color={T.on_primary_container} />
         </TouchableOpacity>
       )}

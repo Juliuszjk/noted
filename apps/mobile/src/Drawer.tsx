@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, Pressable } from 'react-native';
 import {
   mdiNoteTextOutline, mdiStarOutline, mdiArchiveOutline, mdiTrashCanOutline, mdiHomeOutline, mdiBookOutline, mdiWeb,
-  mdiPound, mdiPlus, mdiCogOutline, mdiFileTreeOutline,
+  mdiPound, mdiPlus, mdiCogOutline, mdiFileTreeOutline, mdiBellOutline,
 } from '@mdi/js';
 import type { NoteView } from '@noted/ui/src/note-list';
 import { T, Icon } from './ui';
@@ -16,7 +16,8 @@ export interface DrawerEntry {
 
 interface Props {
   view: NoteView;
-  counts: { notes: number; favorites: number; archive: number; trash: number; tree: number; published: number };
+  // reminders: due now or today.
+  counts: { notes: number; favorites: number; archive: number; trash: number; tree: number; published: number; reminders: number };
   notebooks: DrawerEntry[];
   tags: DrawerEntry[];
   onView: (view: NoteView) => void;
@@ -90,6 +91,7 @@ export function Drawer({ view, counts, notebooks, tags, onView, onCreate, onRena
             <>
               {row('notes', mdiNoteTextOutline, 'Notes', counts.notes, { kind: 'notes' })}
               {row('favorites', mdiStarOutline, 'Favorites', counts.favorites, { kind: 'favorites' })}
+              {row('reminders', mdiBellOutline, 'Reminders', counts.reminders, { kind: 'reminders' })}
               {row('archive', mdiArchiveOutline, 'Archive', counts.archive, { kind: 'archive' })}
               {row('trash', mdiTrashCanOutline, 'Trash', counts.trash, { kind: 'trash' })}
               {row('tree', mdiFileTreeOutline, 'Links tree', counts.tree, { kind: 'tree' })}

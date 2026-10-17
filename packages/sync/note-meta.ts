@@ -1,5 +1,7 @@
 import * as Y from 'yjs';
 import { formatTitleTemplate } from '@noted/editor/title-template';
+import { isReminderRepeat } from '@noted/editor/reminder-time';
+import type { ReminderRepeat } from '@noted/editor/reminder-time';
 
 // Every note is one Y.Doc: the ProseMirror document lives in the XmlFragment 'default'
 // (y-prosemirror's default), the title in the Y.Text 'title'.
@@ -33,7 +35,21 @@ export interface NoteMeta {
   locked: boolean;
   // Published to the web (settings `published`, publish.ts); the "Published" view lists these.
   published: boolean;
+  // Reminder chips in the body, with the text of their line (the Reminders view). Absent in
+  // meta saved before reminders were indexed (refreshStaleNoteMeta rebuilds those).
+  reminders?: NoteReminder[];
 }
+
+export interface NoteReminder {
+  id: string;
+  at: number;
+  repeat: ReminderRepeat | null;
+  done: boolean;
+  // The line the chip stands in, without the chip.
+  text: string;
+}
+
+const REMINDER_TEXT_CHARS = 200;
 
 export const getTitleText = (doc: Y.Doc): Y.Text => doc.getText(TITLE_KEY);
 
@@ -176,7 +192,31 @@ export const markNoteCreated = (doc: Y.Doc, at: number = Date.now(), origin?: un
   doc.transact(() => getNoteSettings(doc).set('createdAt', at), origin);
 };
 
-type Walk = { text: string; links: Set<string> };
+type Walk = { text: string; links: Set<string>; reminders: NoteReminder[] };
+
+// Plain text of a text block (paragraph, heading): its own text, not that of nested blocks.
+const blockText = (block: Y.XmlElement): string => {
+  let text = '';
+  for (const child of block.toArray()) {
+    if (!(child instanceof Y.XmlText)) continue;
+    for (const op of child.toDelta() as { insert: unknown }[]) if (typeof op.insert === 'string') text += op.insert;
+  }
+  return text.replace(/\s+/g, ' ').trim().slice(0, REMINDER_TEXT_CHARS);
+};
+
+const readReminder = (element: Y.XmlElement, parent: Y.XmlElement | Y.XmlFragment): NoteReminder | null => {
+  const id = element.getAttribute('id');
+  const at = Number(element.getAttribute('at'));
+  if (typeof id !== 'string' || !id || !Number.isFinite(at)) return null;
+  const repeat = element.getAttribute('repeat');
+  return {
+    id,
+    at,
+    repeat: isReminderRepeat(repeat) ? repeat : null,
+    done: (element.getAttribute('done') as unknown) === true,
+    text: parent instanceof Y.XmlElement ? blockText(parent) : '',
+  };
+};
 
 const walk = (node: Y.XmlElement | Y.XmlFragment | Y.XmlText, acc: Walk) => {
   if (node instanceof Y.XmlText) {
@@ -192,6 +232,11 @@ const walk = (node: Y.XmlElement | Y.XmlFragment | Y.XmlText, acc: Walk) => {
     if (typeof id === 'string' && id) acc.links.add(id);
   }
   for (const child of node.toArray()) {
+    if (child instanceof Y.XmlElement && child.nodeName === 'reminder') {
+      const reminder = readReminder(child, node as Y.XmlElement | Y.XmlFragment);
+      if (reminder) acc.reminders.push(reminder);
+      continue;
+    }
     walk(child as Y.XmlElement | Y.XmlText, acc);
   }
   // Blocks are separated by a space in the excerpt.
@@ -199,7 +244,7 @@ const walk = (node: Y.XmlElement | Y.XmlFragment | Y.XmlText, acc: Walk) => {
 };
 
 export function buildNoteMeta(doc: Y.Doc): NoteMeta {
-  const acc: Walk = { text: '', links: new Set() };
+  const acc: Walk = { text: '', links: new Set(), reminders: [] };
   const locked = typeof getNoteSettings(doc).get('locked') === 'string';
   if (!locked) walk(doc.getXmlFragment(BODY_KEY), acc);
   return {
@@ -216,8 +261,22 @@ export function buildNoteMeta(doc: Y.Doc): NoteMeta {
     tags: getNoteTags(doc),
     locked,
     published: getNotePublish(doc) !== null,
+    reminders: acc.reminders,
   };
 }
+
+const parseNoteReminder = (r: unknown): NoteReminder | null => {
+  if (!r || typeof r !== 'object') return null;
+  const data = r as Record<string, unknown>;
+  if (typeof data.id !== 'string' || typeof data.at !== 'number') return null;
+  return {
+    id: data.id,
+    at: data.at,
+    repeat: isReminderRepeat(data.repeat) ? data.repeat : null,
+    done: data.done === true,
+    text: typeof data.text === 'string' ? data.text : '',
+  };
+};
 
 const EMPTY_FLAGS = {
   pinned: false, created: null, favorite: false, archived: false, trashedAt: null, deleted: false, notebooks: [] as string[], tags: [] as string[],
@@ -249,6 +308,7 @@ export function decodeNoteMeta(plain: string | null | undefined): NoteMeta {
           tags: Array.isArray(data.tags) ? data.tags.filter((t: unknown) => typeof t === 'string') : [],
           locked: data.locked === true,
           published: data.published === true,
+          ...(Array.isArray(data.reminders) ? { reminders: data.reminders.map(parseNoteReminder).filter(Boolean) as NoteReminder[] } : {}),
         };
       }
     } catch {

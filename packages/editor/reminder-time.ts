@@ -116,6 +116,30 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+export const WEEKDAY_SHORT = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+
+export interface CalendarDay {
+  date: Date;
+  // In the shown month (other days are greyed out).
+  inMonth: boolean;
+  past: boolean;
+  today: boolean;
+}
+
+// Six weeks (Monday first) around the month of `shown`, so the calendar keeps its height.
+export const monthGrid = (shown: Date, now: Date): CalendarDay[] => {
+  const first = new Date(shown.getFullYear(), shown.getMonth(), 1);
+  const offset = (first.getDay() + 6) % 7;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Array.from({ length: 42 }, (_, i) => {
+    const date = new Date(first.getFullYear(), first.getMonth(), 1 - offset + i);
+    return { date, inMonth: date.getMonth() === first.getMonth(), past: date < today, today: date.getTime() === today.getTime() };
+  });
+};
+
+export const sameDay = (a: Date, b: Date): boolean =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
 const dayNumber = (date: Date) => Math.round(new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() / 86400000);
 
 // Short label of a reminder time: "Today 17:00", "Tomorrow 07:00", "Yesterday 09:00",
