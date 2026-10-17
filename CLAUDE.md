@@ -11,7 +11,10 @@ encryption and UI). Personal tool of one user (personal details in `CLAUDE.local
 ## Working rules (from the user, always apply)
 
 - Talk to the user in **Polish**. Write all code and code comments in **English**.
-- **Never run git commands and never commit**, unless the user explicitly asks in that message.
+- **Git / GitHub** (private repo, see CLAUDE.local.md): commit and push **only after the user has
+  tested a finished feature and confirmed it works as wanted**; then commit (message, splitting,
+  branches as you see fit) and push without asking. Before every commit grep the staged files for
+  personal data (addresses, names, e-mail). Never force-push or rewrite history unasked.
 - The user's shell is **fish** (Mercury's too). Commands you hand to the user must work in fish,
   or be wrapped with `bash -c '...'`. Heredocs and `$(...)` do not work in fish; use `; and`.
 - After any change to an app entry file (e.g. `apps/desktop/src/App.tsx`) **restart the app
