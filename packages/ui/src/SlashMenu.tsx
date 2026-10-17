@@ -54,7 +54,10 @@ function Row({ item, active, onHover, onPick }: { item: SlashItem; active: boole
   }, [active]);
 
   const preview = item.preview;
-  const label =
+  const icon = item.icon ? (
+    <svg width={16} height={16} viewBox="0 0 24 24" aria-hidden><path d={item.icon} fill="currentColor" /></svg>
+  ) : preview?.kind === 'icon' ? (preview.path ? <svg width={16} height={16} viewBox="0 0 24 24" aria-hidden><path d={preview.path} fill="currentColor" /></svg> : preview.icon) : null;
+  const title =
     preview?.kind === 'heading' ? (
       <span
         style={{
@@ -66,16 +69,15 @@ function Row({ item, active, onHover, onPick }: { item: SlashItem; active: boole
       >
         {item.title}
       </span>
-    ) : preview?.kind === 'icon' ? (
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ width: 18, display: 'flex', justifyContent: 'center', color: 'var(--text-muted)' }}>
-          {preview.path ? <svg width={16} height={16} viewBox="0 0 24 24" aria-hidden><path d={preview.path} fill="currentColor" /></svg> : preview.icon}
-        </span>
-        {item.title}
-      </span>
     ) : (
       <span>{item.title}</span>
     );
+  const label = icon ? (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ width: 18, flexShrink: 0, display: 'flex', justifyContent: 'center', color: 'var(--text-muted)' }}>{icon}</span>
+      {title}
+    </span>
+  ) : title;
 
   return (
     <div

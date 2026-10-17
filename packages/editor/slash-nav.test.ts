@@ -83,8 +83,21 @@ describe('slash navigation', () => {
 const titlesOf = (level: NavLevel): string[] => (level.kind === 'table' ? [] : level.items.map((i) => i.title));
 
 describe('slash items', () => {
+  it('gives every row an icon (tiles show markers, callouts their emoji)', () => {
+    const missing: string[] = [];
+    const visit = (items: typeof slashItems) => {
+      for (const item of items) {
+        if (!item.icon && item.preview?.kind !== 'icon') missing.push(item.title);
+        if (item.submenu?.kind === 'list') visit(item.submenu.items);
+        if (item.searchChildren) visit(item.searchChildren);
+      }
+    };
+    visit(slashItems);
+    expect(missing).toEqual([]);
+  });
+
   it('has a compact root menu', () => {
-    expect(slashItems.map((i) => i.title)).toEqual(['Heading', 'Quote', 'List', 'Divider', 'Code block', 'Table', 'Image', 'File', 'Callout', 'Math', 'Reminder', 'Link to note', 'Link from another note', 'Go to note', 'Notebook', 'Tag', 'Export', 'Publish']);
+    expect(slashItems.map((i) => i.title)).toEqual(['Heading', 'Quote', 'List', 'Divider', 'Code block', 'Table', 'Image', 'File', 'Callout', 'Math', 'Drawing', 'Reminder', 'Link to note', 'Link from another note', 'Go to note', 'Notebook', 'Tag', 'Export', 'Publish']);
   });
 });
 

@@ -1,5 +1,6 @@
 import type { JSONContent } from '@tiptap/core';
 import { isReminderRepeat, reminderPlainText } from './reminder-time';
+import { drawingSvg, strokeData } from './drawing-render';
 
 // Export of a note (the editor's JSON) as Markdown or plain text. Pure functions, tested in
 // export.test.ts. Images are encrypted blobs without an address, so they become a placeholder.
@@ -131,6 +132,12 @@ const block = (node: JSONContent, ctx: Ctx): string => {
       const file = ctx.files[String(node.attrs?.blob ?? '')];
       if (md && file) return `[${escapeMd(name)}](${fileUrl(file)} "${name.replace(/"/g, "'")}")`;
       return md ? `*Attachment: ${escapeMd(name)}*` : `[Attachment: ${name}]`;
+    }
+    case 'drawing': {
+      // Markdown allows HTML: the drawing goes in as an inline SVG.
+      if (!md) return '[drawing]';
+      const strokes = (node.content ?? []).filter((c) => c.type === 'drawingStroke').map((c) => strokeData(c.attrs ?? {}));
+      return drawingSvg(node.attrs?.height, strokes);
     }
     case 'table': {
       const rows = (node.content ?? []).map((row) => (row.content ?? []).map((cell) => cellText(cell, ctx)));

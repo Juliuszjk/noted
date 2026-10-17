@@ -21,6 +21,25 @@ describe('locked notes', () => {
     expect(openVault(getVaultSetup(catalog)!, pw)).toBeNull();
   });
 
+  it('seals drawings with the body and brings them back', () => {
+    const drawing = {
+      type: 'doc',
+      content: [{ type: 'drawing', attrs: { height: 300 }, content: [
+        { type: 'drawingStroke', attrs: { points: '1:AgQG', color: 'var(--c-red)', size: 5, tool: 'pen' } },
+        { type: 'drawingStroke', attrs: { points: '1:CAoM', color: null, size: 8, tool: 'highlighter' } },
+      ] }],
+    };
+    const doc = new Y.Doc();
+    setNoteBodyJson(doc, drawing);
+    const vk = generateKey();
+    lockNote(doc, vk);
+    expect(doc.getXmlFragment('default').length).toBe(0);
+    expect(unlockNote(doc, vk)).toBe(true);
+    const back = noteBodyJson(doc);
+    expect(back.content?.[0].content?.map((s) => s.attrs?.points)).toEqual(['1:AgQG', '1:CAoM']);
+    expect(back.content?.[0].content?.[0].attrs).toMatchObject({ color: 'var(--c-red)', size: 5, tool: 'pen' });
+  });
+
   it('locks, edits and unlocks a note; the meta shows no text', () => {
     const doc = new Y.Doc();
     setTitle(doc, 'Diary');

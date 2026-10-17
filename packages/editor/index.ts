@@ -32,3 +32,6 @@ export * from './blob-url-cache';
 export * from './reminder';
 export * from './reminder-time';
 export * from './reminder-picker';
+export * from './drawing';
+export * from './drawing-codec';
+export * from './drawing-render';

@@ -11,7 +11,7 @@ describe('note document schema', () => {
   it('keeps all node types', () => {
     expect(Object.keys(schema.nodes)).toEqual(
       expect.arrayContaining([
-        'attachment', 'blockMath', 'blockquote', 'bulletList', 'callout', 'codeBlock', 'heading', 'horizontalRule', 'image',
+        'attachment', 'blockMath', 'blockquote', 'bulletList', 'callout', 'codeBlock', 'drawing', 'drawingStroke', 'heading', 'horizontalRule', 'image',
         'inlineMath', 'listItem', 'noteLink', 'orderedList', 'paragraph', 'reminder', 'table', 'tableCell', 'tableHeader', 'tableRow',
         'taskItem', 'taskList',
       ]),
@@ -34,6 +34,8 @@ describe('note document schema', () => {
     expect(Object.keys(schema.nodes.image.spec.attrs ?? {})).toEqual(expect.arrayContaining(['src', 'alt', 'title', 'blob']));
     expect(Object.keys(schema.nodes.attachment.spec.attrs ?? {})).toEqual(['blob', 'name', 'size', 'mime']);
     expect(Object.keys(schema.nodes.reminder.spec.attrs ?? {})).toEqual(['id', 'at', 'repeat', 'done', 'snooze']);
+    expect(Object.keys(schema.nodes.drawing.spec.attrs ?? {})).toEqual(['height']);
+    expect(Object.keys(schema.nodes.drawingStroke.spec.attrs ?? {})).toEqual(['points', 'color', 'size', 'tool']);
   });
 
   it('keeps the textStyle attributes', () => {

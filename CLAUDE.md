@@ -204,6 +204,16 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   (expo-background-task, ~15 min) syncs with the app closed). No Firebase / push: the user
   rejected it (2026-10-17), reminders set elsewhere reach a closed phone within ~15 min. Colours `palette.ts` (CSS variable refs, custom = raw hex);
   shared `content.css`.
+- **Drawing** (S Pen step 1, 2026-10-17): block `drawing` {height} (`drawing.ts`) whose content is
+  `drawingStroke*` atoms {points, color, size, tool} -> strokes live IN the body (merge, Yjs undo,
+  locked notes, copy / paste, history, export for free; a separate Y.Map would have leaked from
+  locked notes). Points: `drawing-codec.ts` ("1:" + base64 zigzag varint deltas, x/y in drawing
+  units, width 1000 = note width, pressure 0..1); shapes `drawing-render.ts` (perfect-freehand,
+  `drawingSize` grows right / down beyond the strokes, `drawingSvg` for Markdown). Node view: pen
+  or mouse draws, finger scrolls (a finger tap blurs = keyboard away), the block scrolls sideways
+  and follows a stroke ending at the right edge, pointer down blurs the editor and saving keeps
+  the scroll (WebKit scrolled to the selection). Slash rows all carry an MDI `icon`
+  (`SlashItem.icon`, shared by desktop and phone, test enforces it).
 - `/goto` and `/linkto` (`appendNoteLink` in sync/json-to-y.ts, never twice, not into locked notes).
 - HEIC: desktop `src/heic.ts` (libheif-js), phone RN `{type:'convertHeic'}`.
 - Files pasted from a file manager on desktop: WebKitGTK gives no data, so Rust
@@ -288,6 +298,11 @@ addresses (`packages/config/server.ts`, `infra/docker/.env`), `CLAUDE.local.md`,
 after a fresh clone run `build:editor` and `build:viewer` first. Before going public: grep the
 tracked files for addresses / names again.
 
+**Drawing step 1 done (2026-10-17)**: block, rendering everywhere, basic pen / mouse input,
+confirmed. Next (decided): step 2 phone drawing (Expo config plugin: `requestUnbufferedDispatch`
++ side button -> eraser, toolbar: palette colours, 3 widths, eraser whole stroke / part (default
+whole stroke), undo / redo), step 3 desktop tools, then the "whole note" idea (TODO).
+
 ## TODO / ideas (not decided yet, ask before doing)
 
 - **Shared editing by link**: guests edit one note live with a limited editor; share key in the
@@ -297,8 +312,24 @@ tracked files for addresses / names again.
   strokes in the note's Y.Doc (`Y.Map 'drawings'` id -> Y.Array of compact strokes: logical
   x/y, pressure, tool, palette colour name) so devices merge; SVG via `perfect-freehand`;
   drawing on a canvas (pen only, palm rejection, side button = eraser, coalesced / predicted
-  events); later lasso, highlighter, paper, SVG export, ML Kit Digital Ink. Phase 0 = probe S Pen
-  pointer events in the WebView over adb.
+  events); later lasso, highlighter, paper, SVG export, ML Kit Digital Ink. **The user's wish
+  (2026-10-17)**: the whole note text + drawing (draw anywhere over / between text, like Samsung
+  Notes; "stage B" overlay anchored to blocks); fallback if that proves hard: pulling the S Pen
+  out inserts a drawing block under the cursor. Ask again after the drawing toolbar (step 2). **Phase 0 done
+  (2026-10-17)**, probe in Vivaldi and injected over CDP into the editor WebView: pen =
+  `pointerType 'pen'`, palm / finger = `touch` (ignore it; pen strokes never cancelled by the
+  palm); pressure fine-grained but tops out ~0.47-0.59 (needs scaling); tiltX/Y + altitude /
+  azimuth yes, twist no; `desynchronized` canvas yes. The page gets NO hover and never sees the
+  side button (a stroke with it held never arrives; a click in the air = Samsung Air Command).
+  Phase 0b (native probe in MainActivity, removed again): the Activity DOES get
+  `BUTTON_STYLUS_PRIMARY` (buttonState 32) on DOWN/MOVE/UP and `ACTION_HOVER_*`; re-dispatching
+  a copy with the button bit cleared makes the WebView see a normal pen stroke -> plan: native
+  code strips the bit and tells the page "eraser" (held button = eraser like Samsung Notes).
+  WebView pointermove is ~60 Hz (7-8 historical points per event natively);
+  `window.decorView.requestUnbufferedDispatch(e)` on stylus ACTION_DOWN gives ~476 Hz in the
+  WebView (like Chrome). An https `baseUrl` makes the page a secure context (coalesced events,
+  `crypto.randomUUID`) but was not needed for the rate. Native code needs an Expo config plugin
+  (android/ is generated). The editor under an overlay grabbed focus (keyboard): drawing mode must blur it.
 - Attachments > 30 MB: chunked sealed blobs + encrypted manifest, server storing files.
 - Claude integration (postponed): local MCP server as one more device; a public key-holding
   server was advised against.

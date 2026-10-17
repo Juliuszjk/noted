@@ -2,19 +2,13 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection, Selection, TextSelection } from '@tiptap/pm/state';
 import katex from 'katex';
 import {
-  mdiPlus, mdiArrowRightBoldBoxOutline, mdiLinkVariantPlus, mdiFormatBold, mdiFormatItalic, mdiFormatUnderline, mdiDotsVertical, mdiMinus, mdiChevronDown,
-  mdiChevronUp, mdiChevronRight, mdiArrowLeft, mdiFormatListBulleted, mdiFormatListNumbered,
-  mdiFormatListCheckbox, mdiNoteTextOutline, mdiLinkPlus, mdiFormatAlignLeft, mdiFormatAlignCenter,
-  mdiFormatAlignRight, mdiViewColumnOutline, mdiArrowExpandVertical, mdiFormatAlignJustify, mdiFormatIndentDecrease, mdiFormatIndentIncrease,
-  mdiFormatStrikethrough, mdiCodeTags, mdiFormatSubscript, mdiFormatSuperscript, mdiMarker, mdiFormatColorText,
-  mdiFunctionVariant, mdiPin, mdiPinOutline, mdiInvertColorsOff, mdiClose, mdiFormatHeaderPound,
-  mdiFormatQuoteClose, mdiCodeBraces, mdiTable, mdiCommentOutline, mdiMathIntegral, mdiSigma, mdiFileTreeOutline,
-  mdiFormatHeader1, mdiFormatHeader2, mdiFormatHeader3, mdiFormatHeader4, mdiFormatHeader5, mdiFormatHeader6,
-  mdiMinusBoxMultipleOutline, mdiVectorLink, mdiOpenInNew, mdiLinkVariantOff, mdiContentCopy, mdiPencilOutline,
-  mdiBookOutline, mdiPound, mdiCheck, mdiTabPlus, mdiImageOutline, mdiUpload, mdiLinkVariant, mdiExportVariant,
-  mdiLanguageMarkdownOutline, mdiTextBoxOutline, mdiFilePdfBox, mdiShareVariantOutline, mdiWeb, mdiPaperclip,
-  mdiTableCog, mdiTableEdit, mdiPaletteOutline, mdiEyeOutline, mdiDownload, mdiImageSizeSelectLarge,
-  mdiBellOutline,
+  mdiPlus, mdiFormatBold, mdiFormatItalic, mdiFormatUnderline, mdiDotsVertical, mdiMinus, mdiChevronDown, mdiChevronUp, mdiChevronRight,
+  mdiArrowLeft, mdiFormatListBulleted, mdiFormatListNumbered, mdiFormatListCheckbox, mdiNoteTextOutline, mdiLinkPlus, mdiFormatAlignLeft,
+  mdiFormatAlignCenter, mdiFormatAlignRight, mdiViewColumnOutline, mdiArrowExpandVertical, mdiFormatAlignJustify, mdiFormatIndentDecrease,
+  mdiFormatIndentIncrease, mdiFormatStrikethrough, mdiCodeTags, mdiFormatSubscript, mdiFormatSuperscript, mdiMarker, mdiFormatColorText,
+  mdiFunctionVariant, mdiPin, mdiPinOutline, mdiInvertColorsOff, mdiClose, mdiTable, mdiVectorLink, mdiOpenInNew, mdiLinkVariantOff,
+  mdiContentCopy, mdiPencilOutline, mdiBookOutline, mdiPound, mdiCheck, mdiTabPlus, mdiLanguageMarkdownOutline, mdiTextBoxOutline,
+  mdiFilePdfBox, mdiShareVariantOutline, mdiTableCog, mdiTableEdit, mdiPaletteOutline, mdiEyeOutline, mdiDownload, mdiImageSizeSelectLarge
 } from '@mdi/js';
 import {
   moveTableRowBy, moveTableColumnBy, selectTablePart, equalColumnWidths, equalRowHeights, resetRowHeights, TABLE_MOVE_MERGED,
@@ -23,7 +17,7 @@ import type { TableMoveResult } from '@noted/editor/table-tools';
 import { insertImageFromUrl } from '@noted/editor/blob-image';
 import { toolbarGroups, toolbarItem, CELL_TOOLBAR_ITEMS } from '@noted/editor/toolbar-items';
 import type { ToolbarConfig } from '@noted/editor/toolbar-items';
-import { slashItems } from '@noted/editor/slash-items';
+import { slashItems, HEADING_ICONS } from '@noted/editor/slash-items';
 import type { SlashItem } from '@noted/editor/slash';
 import { activate, searchNav } from '@noted/editor/slash-nav';
 import type { NavModel } from '@noted/editor/slash-nav';
@@ -113,17 +107,6 @@ const svg = (path: string, size = 22) =>
 const UNAVAILABLE_ON_MOBILE = new Set<string>([]);
 const unavailable = (item: SlashItem) => item.title.split(' › ').some((part) => UNAVAILABLE_ON_MOBILE.has(part));
 
-const ITEM_ICONS: Record<string, string> = {
-  Heading: mdiFormatHeaderPound, Quote: mdiFormatQuoteClose, List: mdiFormatListBulleted, Divider: mdiMinusBoxMultipleOutline,
-  'Code block': mdiCodeBraces, Table: mdiTable, Callout: mdiCommentOutline, Math: mdiMathIntegral,
-  'Link to note': mdiNoteTextOutline, 'Bullet list': mdiFormatListBulleted, 'Numbered list': mdiFormatListNumbered,
-  'Task list': mdiFormatListCheckbox, 'Outline list': mdiFileTreeOutline, 'Inline math': mdiFunctionVariant,
-  'Math block': mdiSigma, 'Heading 1': mdiFormatHeader1, 'Heading 2': mdiFormatHeader2, 'Heading 3': mdiFormatHeader3,
-  'Heading 4': mdiFormatHeader4, 'Heading 5': mdiFormatHeader5, 'Heading 6': mdiFormatHeader6,
-  Image: mdiImageOutline, 'Upload image': mdiUpload, 'Image from URL': mdiLinkVariant, Notebook: mdiBookOutline, Tag: mdiPound,
-  Export: mdiExportVariant, Publish: mdiWeb, File: mdiPaperclip, 'Go to note': mdiArrowRightBoldBoxOutline,
-  'Link from another note': mdiLinkVariantPlus, Reminder: mdiBellOutline,
-};
 
 const ALIGN_ICONS = { left: mdiFormatAlignLeft, center: mdiFormatAlignCenter, right: mdiFormatAlignRight, justify: mdiFormatAlignJustify } as const;
 // List styles drawn like the slash menu tiles: markers next to text bars.
@@ -389,7 +372,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       }
       for (const item of insertItems(items)) {
         const preview = item.preview;
-        const icon = ITEM_ICONS[item.title];
+        const icon = item.icon;
         const label = preview?.kind === 'markers' ? `${preview.markers.join('  ')}   ${item.title}`
           : preview?.kind === 'icon' && !icon ? `${preview.icon}   ${item.title}` : item.title;
         body.append(row(label, () => {
@@ -478,7 +461,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     body.append(row('Paragraph', () => runInEditor(() => chain().setParagraph().run()), { active: editor.isActive('paragraph') }));
     ([1, 2, 3, 4, 5, 6] as const).forEach((level) => {
       body.append(row(`Heading ${level}`, () => runInEditor(() => chain().setHeading({ level }).run()), {
-        icon: ITEM_ICONS[`Heading ${level}`], active: editor.isActive('heading', { level }),
+        icon: HEADING_ICONS[level - 1], active: editor.isActive('heading', { level }),
         style: { fontSize: `${[22, 20, 18, 17, 16, 14][level - 1]}px`, fontWeight: '700' },
       }));
     });
@@ -1179,7 +1162,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       }, { icon: mdiArrowLeft }));
     }
     if (level.kind === 'table') {
-      rows.push(row('Table', () => pickSlash({ title: 'Table', submenu: { kind: 'table' } }, range), { icon: ITEM_ICONS.Table, chevron: true }));
+      rows.push(row('Table', () => pickSlash({ title: 'Table', submenu: { kind: 'table' } }, range), { icon: mdiTable, chevron: true }));
     } else if (level.kind === 'tiles') {
       const grid = h('div', 'tb-tiles');
       for (const item of level.items) {
@@ -1189,10 +1172,10 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       rows.push(grid);
     } else {
       level.items.forEach((item, i) => {
-        const base = item.title.split(' › ').pop()!;
         if (unavailable(item)) return;
         if (level.divider === i && rows.length) rows.push(h('div', 'tb-divider'));
-        rows.push(row(item.title, () => pickSlash(item, range), { icon: ITEM_ICONS[base], chevron: !!item.submenu }));
+        const label = !item.icon && item.preview?.kind === 'icon' ? `${item.preview.icon}   ${item.title}` : item.title;
+        rows.push(row(label, () => pickSlash(item, range), { icon: item.icon, chevron: !!item.submenu }));
       });
     }
     if (!rows.length) return hideSlashPanelOnly();

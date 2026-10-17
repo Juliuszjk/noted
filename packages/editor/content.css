@@ -308,6 +308,21 @@ body.table-resizing-row, body.table-resizing-row * { cursor: row-resize !importa
   font-size: 0.85em;
 }
 
+/* Hand drawings (drawing.ts): an SVG as wide as the note; strokes fill with the text colour
+   unless they carry their own. The dashed frame only shows while editing. */
+.ProseMirror [data-type="drawing"] {
+  display: block;
+  margin: 0.5rem 0;
+  color: var(--text-main);
+  border-radius: 8px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ProseMirror [data-type="drawing"] .drawing-scroll { overflow-x: auto; overflow-y: hidden; }
+.ProseMirror [data-type="drawing"] svg { display: block; width: 100%; min-width: 100%; height: auto; }
+.ProseMirror[contenteditable="true"] [data-type="drawing"] { outline: 1px dashed var(--border); cursor: crosshair; }
+.ProseMirror[contenteditable="true"] [data-type="drawing"].ProseMirror-selectednode { outline: 2px solid var(--primary); }
+
 /* Attachments: a card per file. */
 .ProseMirror .attachment-card {
   display: flex;

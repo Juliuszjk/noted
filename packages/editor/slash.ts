@@ -24,6 +24,8 @@ export interface SlashItem {
   // Extra search terms matched by the slash menu filter.
   keywords?: string[];
   preview?: SlashPreview;
+  // MDI icon path shown in front of the title (every platform's menu).
+  icon?: string;
   // Leaf action. Rows with a submenu have none.
   command?: (params: SlashCommandParams) => void;
   submenu?: SlashSubmenu;

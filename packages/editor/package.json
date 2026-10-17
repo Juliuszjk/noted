@@ -30,6 +30,7 @@
     "katex": "^0.18.10",
     "lowlight": "^3.3.0",
     "marked": "^18.1.0",
+    "perfect-freehand": "1.2.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "yjs": "^13.6.33"

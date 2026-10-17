@@ -6,13 +6,22 @@ import { pickImagesInto, pickAttachmentsInto, requestImageUrl } from './blob-ima
 import type { MathKind } from './math';
 import { requestNoteAction } from './note-actions';
 import { requestReminderEdit } from './reminder';
-import { mdiBellOutline } from '@mdi/js';
+import {
+  mdiBellOutline, mdiDraw, mdiFormatHeaderPound, mdiFormatHeader1, mdiFormatHeader2, mdiFormatHeader3, mdiFormatHeader4,
+  mdiFormatHeader5, mdiFormatHeader6, mdiFormatQuoteClose, mdiFormatListBulleted, mdiFormatListNumbered, mdiFormatListCheckbox,
+  mdiFileTreeOutline, mdiMinusBoxMultipleOutline, mdiCodeBraces, mdiTable, mdiFileDelimitedOutline, mdiImageOutline, mdiUpload,
+  mdiLinkVariant, mdiPaperclip, mdiCommentOutline, mdiMathIntegral, mdiFunctionVariant, mdiSigma, mdiNoteTextOutline,
+  mdiLinkVariantPlus, mdiArrowRightBoldBoxOutline, mdiBookOutline, mdiPound, mdiExportVariant, mdiWeb,
+} from '@mdi/js';
 
 // Slash menu content, shared by every platform that offers a "/" menu. The menu is a tree:
 // rows with a `submenu` open a second (or third) panel, rows with a `command` run it.
 
+export const HEADING_ICONS = [mdiFormatHeader1, mdiFormatHeader2, mdiFormatHeader3, mdiFormatHeader4, mdiFormatHeader5, mdiFormatHeader6];
+
 const headingItems: SlashItem[] = ([1, 2, 3, 4, 5, 6] as const).map((level) => ({
   title: `Heading ${level}`,
+  icon: HEADING_ICONS[level - 1],
   keywords: [`h${level}`],
   preview: { kind: 'heading', level },
   command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode('heading', { level }).run(),
@@ -42,6 +51,7 @@ const bulletTile = (title: string, style: string, marker: string, keywords: stri
 
 const numberedList: SlashItem = {
   title: 'Numbered list',
+  icon: mdiFormatListNumbered,
   keywords: ['ordered', 'ol', 'roman', 'alpha', 'greek', 'letters'],
   submenu: {
     kind: 'tiles',
@@ -59,6 +69,7 @@ const numberedList: SlashItem = {
 
 const bulletList: SlashItem = {
   title: 'Bullet list',
+  icon: mdiFormatListBulleted,
   keywords: ['unordered', 'ul', 'dots'],
   submenu: {
     kind: 'tiles',
@@ -74,12 +85,14 @@ const bulletList: SlashItem = {
 
 const taskList: SlashItem = {
   title: 'Task list',
+  icon: mdiFormatListCheckbox,
   keywords: ['todo', 'checklist', 'checkbox'],
   command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleTaskList().run(),
 };
 
 const outlineList: SlashItem = {
   title: 'Outline list',
+  icon: mdiFileTreeOutline,
   keywords: ['collapsible', 'fold', 'toggle', 'tree'],
   command: ({ editor, range }) => {
     const chain = editor.chain().focus().deleteRange(range);
@@ -90,11 +103,13 @@ const outlineList: SlashItem = {
 
 const tableItem: SlashItem = {
   title: 'Table',
+  icon: mdiTable,
   keywords: ['grid', 'csv'],
   submenu: { kind: 'table' },
   searchChildren: [
     {
       title: 'Import CSV',
+      icon: mdiFileDelimitedOutline,
       keywords: ['csv', 'import', 'spreadsheet'],
       command: ({ editor, range }) => importCsvInto(editor, range),
     },
@@ -103,6 +118,7 @@ const tableItem: SlashItem = {
 
 const calloutItem: SlashItem = {
   title: 'Callout',
+  icon: mdiCommentOutline,
   keywords: ['admonition', 'alert', 'box', 'highlight block'],
   submenu: {
     kind: 'list',
@@ -118,7 +134,7 @@ const calloutItem: SlashItem = {
 const mathItem = (title: string, kind: MathKind, keywords: string[]): SlashItem => ({
   title,
   keywords,
-  preview: { kind: 'icon', icon: kind === 'inline' ? 'x²' : '∑' },
+  icon: kind === 'inline' ? mdiFunctionVariant : mdiSigma,
   command: ({ editor, range }) => {
     editor.chain().focus().deleteRange(range).run();
     requestMathEdit(editor, { mode: 'insert', kind, pos: range.from });
@@ -127,6 +143,7 @@ const mathItem = (title: string, kind: MathKind, keywords: string[]): SlashItem 
 
 const mathMenu: SlashItem = {
   title: 'Math',
+  icon: mdiMathIntegral,
   keywords: ['latex', 'katex', 'equation', 'formula', 'tex'],
   submenu: {
     kind: 'list',
@@ -141,34 +158,45 @@ const mathMenu: SlashItem = {
 const reminderItem: SlashItem = {
   title: 'Reminder',
   keywords: ['remind', 'alarm', 'due', 'date', 'deadline', 'notification', 'przypomnienie'],
-  preview: { kind: 'icon', icon: '', path: mdiBellOutline },
+  icon: mdiBellOutline,
   command: ({ editor, range }) => {
     editor.chain().focus().deleteRange(range).run();
     requestReminderEdit(editor, { mode: 'insert', pos: range.from });
   },
 };
 
+// An empty drawing block; a pen or the mouse draws in it (drawing.ts).
+const drawingItem: SlashItem = {
+  title: 'Drawing',
+  keywords: ['draw', 'sketch', 'pen', 'handwriting', 'ink', 'stylus', 'rysunek', 'rysuj'],
+  icon: mdiDraw,
+  command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertContent({ type: 'drawing' }).run(),
+};
+
 // Types "[[" so the note picker (NoteLinkSuggestion) opens.
 const noteLinkItem: SlashItem = {
   title: 'Link to note',
   keywords: ['note link', 'wiki', 'reference', 'page', 'backlink', '[['],
-  preview: { kind: 'icon', icon: '↗' },
+  icon: mdiNoteTextOutline,
   command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertContent('[[').run(),
 };
 
 const imageItem: SlashItem = {
   title: 'Image',
+  icon: mdiImageOutline,
   keywords: ['picture', 'photo', 'img', 'screenshot'],
   submenu: {
     kind: 'list',
     items: [
       {
         title: 'Upload image',
+        icon: mdiUpload,
         keywords: ['picture', 'photo', 'upload', 'disk', 'screenshot'],
         command: ({ editor, range }) => pickImagesInto(editor, range),
       },
       {
         title: 'Image from URL',
+        icon: mdiLinkVariant,
         keywords: ['picture', 'link', 'web', 'download', 'url'],
         command: ({ editor, range }) => requestImageUrl(editor, range),
       },
@@ -178,6 +206,7 @@ const imageItem: SlashItem = {
 
 const fileItem: SlashItem = {
   title: 'File',
+  icon: mdiPaperclip,
   keywords: ['attachment', 'attach', 'upload', 'pdf', 'document'],
   command: ({ editor, range }) => pickAttachmentsInto(editor, range),
 };
@@ -185,6 +214,7 @@ const fileItem: SlashItem = {
 // Put the note into a notebook (category) or tag it; the picker is app UI (NoteActions).
 const notebookItem: SlashItem = {
   title: 'Notebook',
+  icon: mdiBookOutline,
   keywords: ['category', 'kategoria', 'folder', 'move', 'notebook'],
   command: ({ editor, range }) => {
     editor.chain().focus().deleteRange(range).run();
@@ -194,6 +224,7 @@ const notebookItem: SlashItem = {
 
 const tagItem: SlashItem = {
   title: 'Tag',
+  icon: mdiPound,
   keywords: ['tags', 'label', 'hashtag', '#'],
   command: ({ editor, range }) => {
     editor.chain().focus().deleteRange(range).run();
@@ -204,6 +235,7 @@ const tagItem: SlashItem = {
 // Export the note (Markdown, plain text, PDF); the format picker is app UI (NoteActions).
 const exportItem: SlashItem = {
   title: 'Export',
+  icon: mdiExportVariant,
   keywords: ['markdown', 'pdf', 'text', 'download', 'save as', 'eksport'],
   command: ({ editor, range }) => {
     editor.chain().focus().deleteRange(range).run();
@@ -214,6 +246,7 @@ const exportItem: SlashItem = {
 // Publish the note as a public, read-only page (the dialog is app UI).
 const publishItem: SlashItem = {
   title: 'Publish',
+  icon: mdiWeb,
   keywords: ['share', 'public', 'link', 'web', 'monograph', 'opublikuj'],
   command: ({ editor, range }) => {
     editor.chain().focus().deleteRange(range).run();
@@ -225,7 +258,7 @@ const publishItem: SlashItem = {
 const gotoItem: SlashItem = {
   title: 'Go to note',
   keywords: ['goto', 'open', 'jump', 'switch', 'find note', 'przejdz'],
-  preview: { kind: 'icon', icon: '→' },
+  icon: mdiArrowRightBoldBoxOutline,
   command: ({ editor, range }) => {
     editor.chain().focus().deleteRange(range).run();
     requestNoteAction(editor, { kind: 'goto', pos: range.from });
@@ -236,7 +269,7 @@ const gotoItem: SlashItem = {
 const linkToItem: SlashItem = {
   title: 'Link from another note',
   keywords: ['linkto', 'link to', 'backlink', 'add to note', 'parent'],
-  preview: { kind: 'icon', icon: '↙' },
+  icon: mdiLinkVariantPlus,
   command: ({ editor, range }) => {
     editor.chain().focus().deleteRange(range).run();
     requestNoteAction(editor, { kind: 'linkto', pos: range.from });
@@ -244,24 +277,28 @@ const linkToItem: SlashItem = {
 };
 
 export const slashItems: SlashItem[] = [
-  { title: 'Heading', keywords: ['title', 'header'], submenu: { kind: 'list', items: headingItems } },
+  { title: 'Heading', icon: mdiFormatHeaderPound, keywords: ['title', 'header'], submenu: { kind: 'list', items: headingItems } },
   {
     title: 'Quote',
+    icon: mdiFormatQuoteClose,
     keywords: ['blockquote', 'citation'],
     command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleBlockquote().run(),
   },
   {
     title: 'List',
+    icon: mdiFormatListBulleted,
     keywords: ['bullet', 'numbered', 'todo', 'task', 'checklist', 'outline'],
     submenu: { kind: 'list', items: [bulletList, numberedList, taskList, outlineList] },
   },
   {
     title: 'Divider',
+    icon: mdiMinusBoxMultipleOutline,
     keywords: ['horizontal rule', 'hr', 'line', 'separator'],
     command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
   },
   {
     title: 'Code block',
+    icon: mdiCodeBraces,
     keywords: ['code', 'snippet', 'pre'],
     command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setCodeBlock().run(),
   },
@@ -270,6 +307,7 @@ export const slashItems: SlashItem[] = [
   fileItem,
   calloutItem,
   mathMenu,
+  drawingItem,
   reminderItem,
   noteLinkItem,
   linkToItem,
