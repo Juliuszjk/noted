@@ -27,6 +27,8 @@ export interface Prefs {
   toolbar: 'top' | 'floating';
   // The table menu floats at the table, or is a row under the toolbar.
   tableMenu: 'floating' | 'toolbar';
+  // The drawing menu floats at the drawing, or under the toolbar (over the note).
+  drawingMenu: 'floating' | 'toolbar';
   tabs: string[];
   activeTab: string | null;
 }
@@ -36,7 +38,7 @@ const KEY = 'noted_ui_prefs';
 export const PROPS_MIN_WIDTH = 250;
 export const PROPS_MAX_WIDTH = 560;
 
-const DEFAULTS: Prefs = { view: { kind: 'notes' }, sort: 'edited', grouping: 'notebook', listFolds: [], propsOpen: false, navHidden: false, navCompact: false, listHidden: false, navWidth: 236, listWidth: 290, propsWidth: 300, fullWidth: false, focusMode: false, zoom: 1, toolbar: 'top', tableMenu: 'floating', tabs: [], activeTab: null };
+const DEFAULTS: Prefs = { view: { kind: 'notes' }, sort: 'edited', grouping: 'notebook', listFolds: [], propsOpen: false, navHidden: false, navCompact: false, listHidden: false, navWidth: 236, listWidth: 290, propsWidth: 300, fullWidth: false, focusMode: false, zoom: 1, toolbar: 'top', tableMenu: 'floating', drawingMenu: 'floating', tabs: [], activeTab: null };
 
 export const loadPrefs = (): Prefs => {
   try {
@@ -61,6 +63,7 @@ export const loadPrefs = (): Prefs => {
       zoom: typeof data.zoom === 'number' && data.zoom >= 0.5 && data.zoom <= 2 ? data.zoom : 1,
       toolbar: data.toolbar === 'floating' ? 'floating' : 'top',
       tableMenu: data.tableMenu === 'toolbar' ? 'toolbar' : 'floating',
+      drawingMenu: data.drawingMenu === 'toolbar' ? 'toolbar' : 'floating',
       tabs: Array.isArray(data.tabs) ? data.tabs.filter((t: unknown) => typeof t === 'string') : [],
       activeTab: typeof data.activeTab === 'string' ? data.activeTab : null,
     };

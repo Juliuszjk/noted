@@ -17,6 +17,7 @@ import * as Y from 'yjs';
 import { SlashMenu } from './SlashMenu';
 import { FormatMenu } from './FormatMenu';
 import { TableMenu } from './TableMenu';
+import { DrawingMenu } from './DrawingMenu';
 import { LinkContextMenu } from './LinkContextMenu';
 import { MathEditor } from './MathEditor';
 import { ReminderEditor } from './ReminderEditor';
@@ -31,7 +32,7 @@ import { setNoteFont, setTitle } from '@noted/sync';
 import type { JSONContent } from '@tiptap/core';
 import { TopToolbar } from './TopToolbar';
 import { FindBar } from './FindBar';
-import { setLigatures } from '@noted/editor';
+import { setLigatures, restoreDrawingTools, serializeDrawingTools, onDrawingChange } from '@noted/editor';
 import type { ToolbarConfig } from '@noted/editor';
 import { ExportDialog, printNote } from './ExportDialog';
 import type { ExportFormat } from './ExportDialog';
@@ -61,7 +62,7 @@ export interface NoteSummary {
 
 export function NoteEditor({
   noteId, ydoc, onUpdate, onOpenLink, notes = [], onOpenNote, onCreateNote, blobs,
-  toolbarMode = 'floating', toolbarSlot = null, tableMenuSlot = null, tableToolbarConfig = null, onStats, fullWidth = false, readOnly = false, spellcheck = true,
+  toolbarMode = 'floating', toolbarSlot = null, tableMenuSlot = null, tableToolbarConfig = null, drawingMenuSlot = null, drawingToolbarConfig = null, drawingTools, onStats, fullWidth = false, readOnly = false, spellcheck = true,
   onNoteAction, restore, findSlot = null, onSaveExport, onPublish, toolbarConfig = null, ligatures = true, codeThemeByLanguage, reminderTimes,
   secondary = false,
 }: {
@@ -99,6 +100,12 @@ export function NoteEditor({
   tableMenuSlot?: HTMLElement | null,
   // Settings > Toolbar > Table.
   tableToolbarConfig?: ToolbarConfig | null,
+  // Set: the drawing menu floats under this element (under the toolbar) instead of at the drawing.
+  drawingMenuSlot?: HTMLElement | null,
+  // Settings > Toolbar > Drawing menu.
+  drawingToolbarConfig?: ToolbarConfig | null,
+  // Where this device keeps the pen kind, colours and widths (drawing.ts serializeDrawingTools).
+  drawingTools?: { load: () => string | null; save: (text: string) => void },
   // Word/character/paragraph/space counts, after every change.
   onStats?: (stats: TextStats) => void,
   // Encrypted image storage of the platform. Without it images are read only.
@@ -602,6 +609,14 @@ export function NoteEditor({
   useEffect(() => {
     if (editor) setLigatures(editor, ligatures);
   }, [editor, ligatures]);
+  // The pen kind, colours and widths of this device: read once, kept on every change.
+  const drawingToolsRef = useRef(drawingTools);
+  drawingToolsRef.current = drawingTools;
+  useEffect(() => {
+    if (!editor) return;
+    restoreDrawingTools(editor, drawingToolsRef.current?.load() ?? null);
+    return onDrawingChange(editor, () => drawingToolsRef.current?.save(serializeDrawingTools(editor.storage.drawing.current)));
+  }, [editor]);
   useEffect(() => {
     if (editor) setCodeThemeByLanguage(editor, codeThemeByLanguage ?? {});
   }, [editor, JSON.stringify(codeThemeByLanguage ?? {})]);
@@ -679,6 +694,7 @@ export function NoteEditor({
       )}
       {exportOpen && <ExportDialog onPick={runExport} onClose={() => setExportOpen(false)} />}
       {editor && floating(<TableMenu editor={editor} anchor={tableMenuSlot} config={tableToolbarConfig} />)}
+      {editor && floating(<DrawingMenu editor={editor} anchor={drawingMenuSlot} config={drawingToolbarConfig} />)}
       {editor && floating(<CalloutMenu editor={editor} />)}
       {editor && floating(<ImageMenu editor={editor} />)}
       {editor && imageUrlPos !== null && floating(<ImageUrlPrompt editor={editor} pos={imageUrlPos} onClose={closeImageUrl} />)}

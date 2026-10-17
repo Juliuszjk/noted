@@ -16,7 +16,7 @@ import { readDownloadFolder, writeDownloadFolder, chooseDownloadFolder, saveFile
 import { readBackupSettings, writeBackupSettings, chooseBackupFolder, writeBackup, listBackupFiles } from './backups';
 import type { MobileBackupSettings } from './backups';
 import type { EditorPrefs } from '@noted/editor/editor-prefs-lite';
-import { getEditorPrefs, setEditorPrefs, getToolbarConfig, setToolbarConfig, getTableToolbarConfig, setTableToolbarConfig } from './prefs';
+import { getEditorPrefs, setEditorPrefs, getToolbarConfig, setToolbarConfig, getTableToolbarConfig, setTableToolbarConfig, getDrawingToolbarConfig, setDrawingToolbarConfig } from './prefs';
 import { MIN_PASSPHRASE_LENGTH, API_URL } from '@noted/config';
 import { bytesToBase64, formatRecoveryKey, generateSalt } from '@noted/crypto';
 import {
@@ -339,19 +339,22 @@ function EditorPage({ onSharedPrefs }: { onSharedPrefs: (patch: SharedEditorPref
   );
 }
 
-// Two toolbars: the normal one, and the extra buttons while the cursor is in a table.
+// The toolbars: the normal one, the extra buttons while the cursor is in a table, the drawing bar.
 function ToolbarPage({ onDragging }: { onDragging: (dragging: boolean) => void }) {
-  const [tab, setTab] = useState<'normal' | 'table'>('normal');
+  const [tab, setTab] = useState<'normal' | 'table' | 'drawing'>('normal');
   const [config, setConfig] = useState(getToolbarConfig);
   const [tableConfig, setTableConfig] = useState(getTableToolbarConfig);
+  const [drawingConfig, setDrawingConfig] = useState(getDrawingToolbarConfig);
   return (
     <>
       <View style={{ marginBottom: 14 }}>
-        <Segmented value={tab} options={[['normal', 'Normal'], ['table', 'Table']]} onChange={setTab} />
+        <Segmented value={tab} options={[['normal', 'Normal'], ['table', 'Table'], ['drawing', 'Drawing']]} onChange={setTab} />
       </View>
       {tab === 'normal'
         ? <ToolbarEditor key="normal" config={config} onDragging={onDragging} onChange={(next) => { setConfig(next); setToolbarConfig(next); }} />
-        : <ToolbarEditor key="table" platform="mobileTable" config={tableConfig} onDragging={onDragging} onChange={(next) => { setTableConfig(next); setTableToolbarConfig(next); }} />}
+        : tab === 'table'
+          ? <ToolbarEditor key="table" platform="mobileTable" config={tableConfig} onDragging={onDragging} onChange={(next) => { setTableConfig(next); setTableToolbarConfig(next); }} />
+          : <ToolbarEditor key="drawing" platform="mobileDrawing" config={drawingConfig} onDragging={onDragging} onChange={(next) => { setDrawingConfig(next); setDrawingToolbarConfig(next); }} />}
     </>
   );
 }

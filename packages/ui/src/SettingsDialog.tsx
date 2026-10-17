@@ -101,6 +101,9 @@ export interface SettingsHost {
   // The table menu's buttons (platform desktopTable).
   tableToolbarConfig?: ToolbarConfig | null;
   onTableToolbarConfig?: (config: ToolbarConfig | null) => void;
+  // The drawing menu's buttons (platform desktopDrawing).
+  drawingToolbarConfig?: ToolbarConfig | null;
+  onDrawingToolbarConfig?: (config: ToolbarConfig | null) => void;
   // Vault of locked notes
   vault?: {
     exists: boolean;
@@ -1011,19 +1014,24 @@ function BackupSection({ host }: { host: SettingsHost }) {
   );
 }
 
-// Two toolbars: the normal one, and the table menu (when the host has one).
-function ToolbarSection({ host, initialTab }: { host: SettingsHost; initialTab: 'normal' | 'table' }) {
-  const [tab, setTab] = useState<'normal' | 'table'>(host.onTableToolbarConfig ? initialTab : 'normal');
+// The toolbars: the normal one, and the table and drawing menus (when the host has them).
+function ToolbarSection({ host, initialTab }: { host: SettingsHost; initialTab: 'normal' | 'table' | 'drawing' }) {
+  const [tab, setTab] = useState<'normal' | 'table' | 'drawing'>(host.onTableToolbarConfig ? initialTab : 'normal');
+  const options: ['normal' | 'table' | 'drawing', string][] = [['normal', 'Normal']];
+  if (host.onTableToolbarConfig) options.push(['table', 'Table menu']);
+  if (host.onDrawingToolbarConfig) options.push(['drawing', 'Drawing menu']);
   return (
     <>
-      {host.onTableToolbarConfig && (
+      {options.length > 1 && (
         <div style={{ marginBottom: 6 }}>
-          <Segmented value={tab} options={[['normal', 'Normal'], ['table', 'Table menu']]} onChange={setTab} />
+          <Segmented value={tab} options={options} onChange={setTab} />
         </div>
       )}
       {tab === 'normal'
         ? <ToolbarSettings key="normal" platform={host.toolbarPlatform} config={host.toolbarConfig} onChange={host.onToolbarConfig} />
-        : <ToolbarSettings key="table" platform="desktopTable" config={host.tableToolbarConfig ?? null} onChange={(c) => host.onTableToolbarConfig?.(c)} />}
+        : tab === 'table'
+          ? <ToolbarSettings key="table" platform="desktopTable" config={host.tableToolbarConfig ?? null} onChange={(c) => host.onTableToolbarConfig?.(c)} />
+          : <ToolbarSettings key="drawing" platform="desktopDrawing" config={host.drawingToolbarConfig ?? null} onChange={(c) => host.onDrawingToolbarConfig?.(c)} />}
     </>
   );
 }
@@ -1031,7 +1039,7 @@ function ToolbarSection({ host, initialTab }: { host: SettingsHost; initialTab: 
 export function SettingsDialog({ host, initial = 'account', initialToolbarTab = 'normal', onClose }: {
   host: SettingsHost;
   initial?: SectionId;
-  initialToolbarTab?: 'normal' | 'table';
+  initialToolbarTab?: 'normal' | 'table' | 'drawing';
   onClose: () => void;
 }) {
   const [section, setSection] = useState<SectionId>(initial);

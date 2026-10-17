@@ -9,6 +9,8 @@ import type { ToolbarConfig } from '@noted/editor/toolbar-items';
 const EDITOR_KEY = 'noted_editor_prefs';
 const TOOLBAR_KEY = 'noted_toolbar_mobile';
 const TABLE_TOOLBAR_KEY = 'noted_toolbar_mobile_table';
+const DRAWING_TOOLBAR_KEY = 'noted_toolbar_mobile_drawing';
+const DRAWING_TOOLS_KEY = 'noted_drawing_tools';
 
 const read = (key: string) => {
   try {
@@ -22,6 +24,8 @@ let editorPrefs: EditorPrefs = parseEditorPrefs(read(EDITOR_KEY));
 let toolbarConfig: ToolbarConfig | null = parseToolbarConfig(read(TOOLBAR_KEY));
 // The extra buttons while the cursor is in a table (Settings > Toolbar > Table).
 let tableToolbarConfig: ToolbarConfig | null = parseToolbarConfig(read(TABLE_TOOLBAR_KEY));
+// The drawing bar's buttons (Settings > Toolbar > Drawing).
+let drawingToolbarConfig: ToolbarConfig | null = parseToolbarConfig(read(DRAWING_TOOLBAR_KEY));
 const listeners = new Set<() => void>();
 
 // The default title and the reminder times are shared by all devices (kept in the synced
@@ -37,6 +41,18 @@ export const setSharedPrefsCache = (value: SharedEditorPrefs) => {
 };
 export const getToolbarConfig = () => toolbarConfig;
 export const getTableToolbarConfig = () => tableToolbarConfig;
+export const getDrawingToolbarConfig = () => drawingToolbarConfig;
+
+// The pen kind, colours and widths (drawing.ts serializeDrawingTools), kept by the editor page.
+// Not a prefs change: open pages already have them.
+export const getDrawingTools = () => read(DRAWING_TOOLS_KEY);
+export const setDrawingTools = (text: string) => {
+  try {
+    SecureStore.setItem(DRAWING_TOOLS_KEY, text);
+  } catch {
+    // Kept for this session only.
+  }
+};
 
 export const setEditorPrefs = (prefs: EditorPrefs) => {
   editorPrefs = prefs;
@@ -53,6 +69,12 @@ export const setToolbarConfig = (config: ToolbarConfig | null) => {
 export const setTableToolbarConfig = (config: ToolbarConfig | null) => {
   tableToolbarConfig = config;
   SecureStore.setItem(TABLE_TOOLBAR_KEY, JSON.stringify(config));
+  listeners.forEach((l) => l());
+};
+
+export const setDrawingToolbarConfig = (config: ToolbarConfig | null) => {
+  drawingToolbarConfig = config;
+  SecureStore.setItem(DRAWING_TOOLBAR_KEY, JSON.stringify(config));
   listeners.forEach((l) => l());
 };
 

@@ -207,6 +207,8 @@ export const exportAll = async (masterKey: Uint8Array, store: LocalNoteStore, fo
 const EDITOR_KEY = 'noted_editor_prefs';
 const TOOLBAR_KEY = 'noted_toolbar_desktop';
 const TABLE_TOOLBAR_KEY = 'noted_toolbar_desktop_table';
+const DRAWING_TOOLBAR_KEY = 'noted_toolbar_desktop_drawing';
+const DRAWING_TOOLS_KEY = 'noted_drawing_tools';
 const DESKTOP_KEY = 'noted_desktop_integration';
 
 export const readEditorPrefs = (): EditorPrefs => parseEditorPrefs(read(EDITOR_KEY));
@@ -214,6 +216,10 @@ export const readToolbarConfig = (): ToolbarConfig | null => parseToolbarConfig(
 export const writeToolbarConfig = (config: ToolbarConfig | null) => write(TOOLBAR_KEY, JSON.stringify(config));
 export const readTableToolbarConfig = (): ToolbarConfig | null => parseToolbarConfig(read(TABLE_TOOLBAR_KEY));
 export const writeTableToolbarConfig = (config: ToolbarConfig | null) => write(TABLE_TOOLBAR_KEY, JSON.stringify(config));
+export const readDrawingToolbarConfig = (): ToolbarConfig | null => parseToolbarConfig(read(DRAWING_TOOLBAR_KEY));
+export const writeDrawingToolbarConfig = (config: ToolbarConfig | null) => write(DRAWING_TOOLBAR_KEY, JSON.stringify(config));
+// The pen kind, colours and widths of this device (NoteEditor drawingTools).
+export const drawingToolsStore = { load: () => read(DRAWING_TOOLS_KEY), save: (text: string) => write(DRAWING_TOOLS_KEY, text) };
 
 // Applies the editor settings to the whole window (CSS variables, the spell checker).
 export const applyEditorPrefs = (prefs: EditorPrefs) => {

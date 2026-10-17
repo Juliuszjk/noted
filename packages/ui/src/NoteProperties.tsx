@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   mdiPin, mdiStarOutline, mdiLockOutline, mdiPencilOffOutline, mdiArchiveOutline, mdiSpellcheck, mdiBookOutline, mdiPound,
-  mdiClose, mdiPlus, mdiTrashCanOutline, mdiHistory, mdiRestore, mdiDeleteForeverOutline, mdiVectorLink, mdiFormatFont, mdiDockTop, mdiTableCog, mdiExportVariant, mdiWeb,
+  mdiClose, mdiPlus, mdiTrashCanOutline, mdiHistory, mdiRestore, mdiDeleteForeverOutline, mdiVectorLink, mdiFormatFont, mdiDockTop, mdiTableCog, mdiDraw, mdiExportVariant, mdiWeb,
   mdiChevronDown, mdiChevronRight, mdiPaperclip, mdiImageOutline, mdiOpenInNew, mdiDownload, mdiCrosshairsGps,
 } from '@mdi/js';
 import { Icon } from './Icon';
@@ -61,6 +61,8 @@ interface Props {
   onToolbar: (mode: 'top' | 'floating') => void;
   tableMenu?: 'floating' | 'toolbar';
   onTableMenu?: (mode: 'floating' | 'toolbar') => void;
+  drawingMenu?: 'floating' | 'toolbar';
+  onDrawingMenu?: (mode: 'floating' | 'toolbar') => void;
   trashed: boolean;
   // Opens the export dialog (Markdown, plain text, PDF).
   onExport: () => void;
@@ -288,6 +290,13 @@ export function NoteProperties(p: Props) {
           <Icon path={mdiTableCog} size={16} style={{ color: 'var(--text-muted)' }} />
           <span style={{ flex: 1 }}>Table menu at the top</span>
           <Switch on={p.tableMenu === 'toolbar'} onChange={(on) => p.onTableMenu?.(on ? 'toolbar' : 'floating')} />
+        </div>
+      )}
+      {p.onDrawingMenu && (
+        <div style={rowBase}>
+          <Icon path={mdiDraw} size={16} style={{ color: 'var(--text-muted)' }} />
+          <span style={{ flex: 1 }}>Drawing menu at the top</span>
+          <Switch on={p.drawingMenu === 'toolbar'} onChange={(on) => p.onDrawingMenu?.(on ? 'toolbar' : 'floating')} />
         </div>
       )}
       {p.trashed ? (

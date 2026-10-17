@@ -29,6 +29,7 @@ import { setReminderTimes } from '@noted/editor/reminder';
 import type { ReminderEditRequest } from '@noted/editor/reminder';
 import { createToolbar } from './toolbar';
 import { createDrawingBar } from './drawing-bar';
+import { restoreDrawingTools } from '@noted/editor/drawing';
 import { createFindBar } from './find';
 import { showHistoryView } from './history-view';
 import { exportNote, exportFileName } from '@noted/editor/export';
@@ -176,6 +177,10 @@ let editorPrefs: EditorPrefs = parseEditorPrefs(null);
 // Kept for when the toolbar exists (the settings may arrive before the note).
 let toolbarConfig: ReturnType<typeof parseToolbarConfig> = null;
 let tableToolbarConfig: ReturnType<typeof parseToolbarConfig> = null;
+let drawingToolbarConfig: ReturnType<typeof parseToolbarConfig> = null;
+// The pen kind, colours and widths React Native keeps; read once (later changes start here).
+let drawingToolsText: string | null = null;
+let drawingBar: ReturnType<typeof createDrawingBar> | null = null;
 
 // Notebook and tag names, sent by React Native (it owns the catalog and creates entries).
 type Entry = { id: string; name: string };
@@ -522,7 +527,9 @@ const startEditor = () => {
     expectKeyboard: () => post({ type: 'expectKeyboard' }),
   });
   toolbarApi = toolbar;
-  createDrawingBar(editor, { pickColor: toolbar.pickColor });
+  drawingBar = createDrawingBar(editor, { pickColor: toolbar.pickColor, saveTools: (text) => post({ type: 'drawingTools', text }) });
+  drawingBar.setConfig(drawingToolbarConfig);
+  if (drawingToolsText) restoreDrawingTools(editor, drawingToolsText);
   toolbar.setToolbarConfig(toolbarConfig, tableToolbarConfig);
   openMathEditor = toolbar.openMathEditor;
   openReminderPicker = toolbar.openReminderPicker;
@@ -693,6 +700,12 @@ const receive = (raw: string) => {
     toolbarConfig = parseToolbarConfig(JSON.stringify(msg.toolbar ?? null));
     tableToolbarConfig = parseToolbarConfig(JSON.stringify(msg.tableToolbar ?? null));
     toolbarApi?.setToolbarConfig(toolbarConfig, tableToolbarConfig);
+    drawingToolbarConfig = parseToolbarConfig(JSON.stringify(msg.drawingToolbar ?? null));
+    drawingBar?.setConfig(drawingToolbarConfig);
+    if (typeof msg.drawingTools === 'string' && drawingToolsText === null) {
+      drawingToolsText = msg.drawingTools;
+      if (editor) restoreDrawingTools(editor, drawingToolsText);
+    }
   } else if (msg.type === 'theme' && msg.colors && typeof msg.colors.background === 'string') {
     applyColors({ ...DEFAULT_THEME, ...msg.colors });
   } else if (msg.type === 'refocus') {

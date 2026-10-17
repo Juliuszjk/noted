@@ -7,7 +7,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
 import { listHistory, readHistoryState, recordHistory } from './history';
-import { getEditorPrefs, getToolbarConfig, getTableToolbarConfig, onPrefsChange } from './prefs';
+import { getEditorPrefs, getToolbarConfig, getTableToolbarConfig, getDrawingToolbarConfig, getDrawingTools, setDrawingTools, onPrefsChange } from './prefs';
 import { getVaultKey, setVaultKey, onVaultKeyChange } from './vault-session';
 import { VaultPrompt } from './VaultPrompt';
 import { deriveKeyInWebView } from './kdf';
@@ -268,7 +268,7 @@ export function EditorScreen({
       if (msg.type === 'ready') {
         readyRef.current = true;
         sendToEditor({ type: 'theme', colors: T });
-        sendToEditor({ type: 'editorPrefs', prefs: getEditorPrefs(), toolbar: getToolbarConfig(), tableToolbar: getTableToolbarConfig() });
+        sendToEditor({ type: 'editorPrefs', prefs: getEditorPrefs(), toolbar: getToolbarConfig(), tableToolbar: getTableToolbarConfig(), drawingToolbar: getDrawingToolbarConfig(), drawingTools: getDrawingTools() });
         sendToEditor({ type: 'titles', titles: titlesRef.current, places: placesRef.current, archived: archivedRef.current, currentId: note.id });
         sendToEditor({ type: 'catalog', ...catalogRef.current });
         pushState('init');
@@ -338,6 +338,8 @@ export function EditorScreen({
         // Links come from synced notes: only http(s), mailto and tel leave the app.
         const href = normalizeLinkUrl(msg.href);
         if (href) Linking.openURL(href).catch((e) => console.warn('Cannot open link:', e));
+      } else if (msg.type === 'drawingTools' && typeof msg.text === 'string') {
+        setDrawingTools(msg.text);
       } else if (msg.type === 'copy' && typeof msg.text === 'string') {
         Clipboard.setStringAsync(msg.text);
       } else if (msg.type === 'createEntry' && (msg.kind === 'notebooks' || msg.kind === 'tags') && typeof msg.name === 'string') {
@@ -437,7 +439,7 @@ export function EditorScreen({
 
   // Settings > Editor / Toolbar changed while the note is open.
   useEffect(() => onPrefsChange(() => {
-    if (readyRef.current) sendToEditor({ type: 'editorPrefs', prefs: getEditorPrefs(), toolbar: getToolbarConfig(), tableToolbar: getTableToolbarConfig() });
+    if (readyRef.current) sendToEditor({ type: 'editorPrefs', prefs: getEditorPrefs(), toolbar: getToolbarConfig(), tableToolbar: getTableToolbarConfig(), drawingToolbar: getDrawingToolbarConfig() });
   }), []);
 
   const catalogRef = useRef(catalog);

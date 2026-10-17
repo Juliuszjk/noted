@@ -6,6 +6,7 @@ export * from './TabBar';
 export * from './StatusBar';
 export * from './Icon';
 export * from './menu-parts';
+export * from './DrawingMenu';
 export * from './TopToolbar';
 export * from './NavPanel';
 export * from './NoteProperties';

@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 import { createSchemaExtensions } from './extensions';
 import { decodePoints, encodePoints } from './drawing-codec';
 import { exportNote } from './export';
-import { setDrawingTool } from './drawing';
+import { restoreDrawingTools, serializeDrawingTools, setDrawingTool, setPenSettings } from './drawing';
 
 const makeEditor = (ydoc = new Y.Doc()) => new Editor({ extensions: createSchemaExtensions({ ydoc, placeholder: '' }) });
 
@@ -150,6 +150,39 @@ describe('drawing block', () => {
       expect(strokes(editor)).toHaveLength(1);
       drag(svg, [[150, 0], [150, 100]], { pointerType: 'pen', buttons: 32, button: 5 });
       expect(strokes(editor)).toHaveLength(0);
+    });
+
+    it('erases with the right mouse button', () => {
+      const { editor, svg } = setup();
+      drag(svg, [[10, 50], [300, 50]]);
+      drag(svg, [[150, 0], [150, 100]], { button: 2, buttons: 2 });
+      expect(strokes(editor)).toHaveLength(0);
+    });
+
+    it('draws with the chosen pen kind, colour and width', () => {
+      const { editor, svg } = setup();
+      setDrawingTool(editor, { tool: 'highlighter' });
+      drag(svg, [[10, 50], [300, 50]]);
+      setDrawingTool(editor, { tool: 'fountain' });
+      setPenSettings(editor, { color: '#123456', size: 12 });
+      drag(svg, [[10, 150], [300, 150]]);
+      expect(strokes(editor).map((s) => [s.tool, s.color, s.size])).toEqual([['highlighter', 'var(--c-yellow)', 24], ['fountain', '#123456', 12]]);
+      expect(editor.storage.drawing.activeDom?.getAttribute('data-type')).toBe('drawing');
+    });
+
+    it('keeps the tool choices as text and reads them back safely', () => {
+      const { editor } = setup();
+      setDrawingTool(editor, { tool: 'pencil', eraser: 'part' });
+      setPenSettings(editor, { color: 'var(--c-red)', size: 7 });
+      const text = serializeDrawingTools(editor.storage.drawing.current);
+      const other = makeEditor();
+      restoreDrawingTools(other, text);
+      expect(other.storage.drawing.current).toMatchObject({ tool: 'pencil', eraser: 'part', mode: 'pen' });
+      expect(other.storage.drawing.current.pens.pencil).toEqual({ color: 'var(--c-red)', size: 7 });
+      restoreDrawingTools(other, '{"v":1,"tool":"laser","pens":{"pen":{"size":999,"color":5}}}');
+      expect(other.storage.drawing.current.tool).toBe('pencil');
+      expect(other.storage.drawing.current.pens.pen).toEqual({ color: null, size: 30 });
+      restoreDrawingTools(other, 'garbage');
     });
 
     it('ignores fingers', () => {

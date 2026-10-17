@@ -63,8 +63,9 @@ const zoneSlot = (zone: string): Omit<ToolbarSlot, 'index'> | null => {
 };
 
 export function ToolbarEditor({ platform = 'mobile', config, onChange, onDragging }: {
-  // 'mobileTable': the extra buttons while the cursor is in a table.
-  platform?: Extract<ToolbarPlatform, 'mobile' | 'mobileTable'>;
+  // 'mobileTable': the extra buttons while the cursor is in a table; 'mobileDrawing': the
+  // drawing bar.
+  platform?: Extract<ToolbarPlatform, 'mobile' | 'mobileTable' | 'mobileDrawing'>;
   config: ToolbarConfig | null;
   onChange: (config: ToolbarConfig | null) => void;
   // The settings scroll view must not scroll while a button is dragged.
@@ -100,7 +101,9 @@ export function ToolbarEditor({ platform = 'mobile', config, onChange, onDraggin
   return (
     <>
       <Text style={{ color: T.on_surface_variant, fontSize: 13, lineHeight: 19 }}>
-        {table
+        {platform === 'mobileDrawing'
+          ? 'The drawing bar, shown while you draw. Hold a button, then drag it: to another place, into a row a ⋮ button opens, or down to "Not in the toolbar".'
+          : table
           ? 'Buttons shown first while the cursor is in a table. Hold a button, then drag it: to another place, into a row its Table / Cell button opens, or down to "Not in the toolbar".'
           : 'Hold a button, then drag it: to another place, into a row a ⋮ button opens, or down to "Not in the toolbar". Lines separate the groups.'}
       </Text>

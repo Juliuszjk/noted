@@ -6,7 +6,8 @@ import {
   mdiTableColumnPlusBefore, mdiTableColumnPlusAfter, mdiTableRowPlusBefore, mdiTableRowPlusAfter, mdiTableColumnRemove,
   mdiTableRowRemove, mdiTableColumn, mdiTableRow, mdiTableRemove, mdiTableArrowLeft, mdiTableArrowRight, mdiTableArrowUp,
   mdiTableArrowDown, mdiTableColumnWidth, mdiTableRowHeight, mdiTableRefresh, mdiTableHeadersEye, mdiSelect, mdiSelectAll,
-  mdiTableMergeCells, mdiTableSplitCell, mdiFormatColorFill,
+  mdiTableMergeCells, mdiTableSplitCell, mdiFormatColorFill, mdiDraw, mdiPen, mdiFountainPenTip, mdiLeadPencil, mdiBrushVariant,
+  mdiFormatColorHighlight, mdiEraser, mdiEraserVariant, mdiPaletteOutline, mdiFormatLineWeight, mdiUndo, mdiRedo,
 } from '@mdi/js';
 
 // Settings > Toolbar, like Notesnook's: the toolbar is a list of groups (a separator between
@@ -23,8 +24,8 @@ export interface ToolbarItemDef {
 export type ToolbarGroup = (string | string[])[];
 export type ToolbarPreset = 'default' | 'minimal' | 'custom';
 // mobileTable: the phone's extra buttons while the cursor is in a table; desktopTable: the
-// desktop table menu (same buttons).
-export type ToolbarPlatform = 'desktop' | 'mobile' | 'mobileTable' | 'desktopTable';
+// desktop table menu (same buttons); desktopDrawing / mobileDrawing: the drawing tools.
+export type ToolbarPlatform = 'desktop' | 'mobile' | 'mobileTable' | 'desktopTable' | 'desktopDrawing' | 'mobileDrawing';
 
 export interface ToolbarConfig {
   preset: ToolbarPreset;
@@ -79,12 +80,28 @@ const ITEMS: Record<string, ToolbarItemDef> = Object.fromEntries(([
   ['mergeCells', 'Merge cells', mdiTableMergeCells],
   ['splitCell', 'Split cell', mdiTableSplitCell],
   ['cellColor', 'Cell background', mdiFormatColorFill],
+  // Drawing tools (drawing.ts): the pen kind picker, each kind directly, erasers, colour, width.
+  ['drawTool', 'Pen kind', mdiDraw],
+  ['drawBallpoint', 'Ballpoint pen', mdiPen],
+  ['drawFountain', 'Fountain pen', mdiFountainPenTip],
+  ['drawPencil', 'Pencil', mdiLeadPencil],
+  ['drawMarker', 'Marker', mdiBrushVariant],
+  ['drawHighlighter', 'Highlighter', mdiFormatColorHighlight],
+  ['eraseStroke', 'Eraser: whole strokes', mdiEraser],
+  ['erasePart', 'Eraser: touched part', mdiEraserVariant],
+  ['drawColor', 'Colour', mdiPaletteOutline],
+  ['drawWidth', 'Width', mdiFormatLineWeight],
+  ['drawUndo', 'Undo', mdiUndo],
+  ['drawRedo', 'Redo', mdiRedo],
 ] as const).map(([id, label, icon]) => [id, { id, label, icon }]));
 
 const items = (ids: string[]) => ids.map((id) => ITEMS[id]);
 const TABLE_ITEMS = items(['colLeft', 'colRight', 'rowAbove', 'rowBelow', 'deleteColumn', 'deleteRow', 'columnProps', 'rowProps',
   'deleteTable', 'moveColumnLeft', 'moveColumnRight', 'moveRowUp', 'moveRowDown', 'equalWidths', 'equalHeights',
   'naturalHeights', 'headerRow', 'selectColumn', 'selectRow', 'selectTable', 'mergeCells', 'splitCell', 'cellColor']);
+
+const DRAWING_ITEMS = items(['drawTool', 'drawBallpoint', 'drawFountain', 'drawPencil', 'drawMarker', 'drawHighlighter',
+  'eraseStroke', 'erasePart', 'drawColor', 'drawWidth', 'drawUndo', 'drawRedo']);
 
 // Every button each toolbar can show.
 export const TOOLBAR_ITEMS: Record<ToolbarPlatform, ToolbarItemDef[]> = {
@@ -94,6 +111,8 @@ export const TOOLBAR_ITEMS: Record<ToolbarPlatform, ToolbarItemDef[]> = {
     'highlight', 'textColor', 'math', 'fontSize', 'headings', 'font', 'tasks', 'numbers', 'bullets', 'noteLink', 'link', 'align']),
   mobileTable: TABLE_ITEMS,
   desktopTable: TABLE_ITEMS,
+  desktopDrawing: DRAWING_ITEMS,
+  mobileDrawing: DRAWING_ITEMS,
 };
 
 // Table subgroups whose buttons all work on cells get the "Cell" icon, others the "Table" one.
@@ -135,6 +154,15 @@ export const TOOLBAR_PRESETS: Record<ToolbarPlatform, Record<'default' | 'minima
       ['headerRow', 'selectTable', 'deleteTable'],
     ],
     minimal: [['rowProps', 'columnProps', ['mergeCells', 'splitCell', 'cellColor']], ['deleteTable']],
+  },
+  desktopDrawing: {
+    default: [['drawTool', 'eraseStroke', 'erasePart'], ['drawColor', 'drawWidth'], ['drawUndo', 'drawRedo']],
+    minimal: [['drawTool', 'eraseStroke'], ['drawColor', 'drawWidth']],
+  },
+  // The phone has undo / redo in its header.
+  mobileDrawing: {
+    default: [['drawTool', 'eraseStroke', 'erasePart'], ['drawColor', 'drawWidth']],
+    minimal: [['drawTool', 'eraseStroke'], ['drawColor']],
   },
 };
 

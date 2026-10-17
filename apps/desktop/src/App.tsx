@@ -47,7 +47,7 @@ import type { Prefs } from './prefs';
 import {
   readEpoch, writeEpoch, readAppZoom, applyAppZoom, saveFileDialog, openTextFileDialog, readAutoBackup, writeAutoBackup,
   backupFolderPath, runAutoBackupIfDue, exportAll, chooseBackupFolder, openBackupFolder,
-  readEditorPrefs, applyEditorPrefs, readToolbarConfig, writeToolbarConfig, readTableToolbarConfig, writeTableToolbarConfig, spellLanguagesAvailable, getCustomWords, setCustomWords,
+  readEditorPrefs, applyEditorPrefs, readToolbarConfig, writeToolbarConfig, readTableToolbarConfig, writeTableToolbarConfig, readDrawingToolbarConfig, writeDrawingToolbarConfig, drawingToolsStore, spellLanguagesAvailable, getCustomWords, setCustomWords,
   readDesktopIntegration, applyDesktopIntegration, pickImportFiles, importFilesFromPaths, onFileDrop, listBackups, readAppLock, writeAppLock, cacheVaultInfo, readCachedVaultInfo,
 } from './settings-host';
 import type { DesktopIntegration } from './settings-host';
@@ -126,6 +126,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   editorPrefsRef.current = editorPrefs;
   const [toolbarConfig, setToolbarConfig] = useState(readToolbarConfig);
   const [tableToolbarConfig, setTableToolbarConfig] = useState(readTableToolbarConfig);
+  const [drawingToolbarConfig, setDrawingToolbarConfig] = useState(readDrawingToolbarConfig);
   const [spellLanguages, setSpellLanguages] = useState<string[]>([]);
   const [desktopIntegration, setDesktopIntegration] = useState<DesktopIntegration>({ autostart: false, closeToTray: false, minimizeToTray: false });
   useEffect(() => {
@@ -171,6 +172,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   const [tabs, setTabs] = useState<string[]>([]);
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   const [tableMenuSlot, setTableMenuSlot] = useState<HTMLDivElement | null>(null);
+  const [drawingMenuSlot, setDrawingMenuSlot] = useState<HTMLDivElement | null>(null);
   const [findSlot, setFindSlot] = useState<HTMLDivElement | null>(null);
   const [blobHandlers, setBlobHandlers] = useState<BlobHandlers | undefined>(undefined);
   const [picker, setPicker] = useState<Picker | null>(null);
@@ -1317,6 +1319,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                 codeThemeByLanguage={editorPrefs.codeThemeByLanguage}
                 reminderTimes={reminderTimes}
                 tableToolbarConfig={tableToolbarConfig}
+                drawingToolbarConfig={drawingToolbarConfig}
+                drawingTools={drawingToolsStore}
                 fullWidth={prefs.fullWidth}
                 readOnly={getNoteFlag(split.ydoc, 'readOnly')}
                 spellcheck={!getNoteFlag(split.ydoc, 'noSpellcheck')}
@@ -1548,6 +1552,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
           {prefs.toolbar === 'top' && activeNote && <div ref={setToolbarSlot} />}
           {/* Zero height: the table menu floats over the note under this point (TableMenu anchor). */}
           {prefs.tableMenu === 'toolbar' && activeNote && <div ref={setTableMenuSlot} style={{ height: 0 }} />}
+          {/* Zero height too: the drawing menu's place when it sits at the top (DrawingMenu anchor). */}
+          {prefs.drawingMenu === 'toolbar' && activeNote && <div ref={setDrawingMenuSlot} style={{ height: 0 }} />}
           {/* The find bar (Ctrl+F) hangs from here, at the top right of the note area. */}
           <div ref={setFindSlot} style={{ position: 'relative', height: 0, zIndex: 30 }} />
           {/* The note area: the open note, and in split view the second one beside it (or in a
@@ -1587,6 +1593,9 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                   toolbarSlot={toolbarSlot}
                   tableMenuSlot={prefs.tableMenu === 'toolbar' ? tableMenuSlot : null}
                   tableToolbarConfig={tableToolbarConfig}
+                  drawingMenuSlot={prefs.drawingMenu === 'toolbar' ? drawingMenuSlot : null}
+                  drawingToolbarConfig={drawingToolbarConfig}
+                  drawingTools={drawingToolsStore}
                   onStats={setStats}
                   fullWidth={prefs.fullWidth}
                   readOnly={activeFlags.readOnly}
@@ -1653,6 +1662,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
             onToolbar={(mode) => setPref('toolbar', mode)}
             tableMenu={prefs.tableMenu}
             onTableMenu={(mode) => setPref('tableMenu', mode)}
+            drawingMenu={prefs.drawingMenu}
+            onDrawingMenu={(mode) => setPref('drawingMenu', mode)}
             trashed={!!activeMeta.meta.trashedAt}
             onExport={() => window.dispatchEvent(new Event('noted:export'))}
             published={!!getNotePublish(activeNote.ydoc)}
@@ -1918,6 +1929,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
             onToolbarConfig: (config) => { setToolbarConfig(config); writeToolbarConfig(config); },
             tableToolbarConfig,
             onTableToolbarConfig: (config) => { setTableToolbarConfig(config); writeTableToolbarConfig(config); },
+            drawingToolbarConfig,
+            onDrawingToolbarConfig: (config) => { setDrawingToolbarConfig(config); writeDrawingToolbarConfig(config); },
             desktop: {
               ...desktopIntegration,
               onChange: (next) => {

@@ -224,7 +224,16 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   TOOL_TYPE_ERASER, button bits cleared, BUTTON_PRESS swallowed), floating bar
   `editor/drawing-bar.ts` (pen kinds, erasers, palette + custom colour via toolbar `pickColor`,
   width slider with a sample stroke); drawings are in the page's `NATIVE_TAP` (a tap never opens
-  the keyboard). Tool choices live in memory only (lost on app restart).
+  the keyboard).
+  Step 3: toolbar platforms `desktopDrawing` / `mobileDrawing` (toolbar-items.ts: drawTool, one
+  item per kind `DRAWING_TOOL_ITEMS`, eraseStroke / erasePart, drawColor, drawWidth, drawUndo /
+  drawRedo), Settings > Toolbar "Drawing menu" (desktop) / "Drawing" (phone). Desktop
+  `ui/src/DrawingMenu.tsx` floats above / below `storage.drawing.activeDom` like TableMenu, or
+  under the zero-height slot of note properties "Drawing menu at the top" (prefs `drawingMenu`);
+  right mouse button erases. Tool choices per device: `serializeDrawingTools` /
+  `restoreDrawingTools` (desktop localStorage `noted_drawing_tools` via NoteEditor
+  `drawingTools`; phone page posts `{type:'drawingTools'}`, RN SecureStore, sent back in
+  `editorPrefs`).
 - `/goto` and `/linkto` (`appendNoteLink` in sync/json-to-y.ts, never twice, not into locked notes).
 - HEIC: desktop `src/heic.ts` (libheif-js), phone RN `{type:'convertHeic'}`.
 - Files pasted from a file manager on desktop: WebKitGTK gives no data, so Rust
@@ -309,9 +318,10 @@ addresses (`packages/config/server.ts`, `infra/docker/.env`), `CLAUDE.local.md`,
 after a fresh clone run `build:editor` and `build:viewer` first. Before going public: grep the
 tracked files for addresses / names again.
 
-**Drawing steps 1-2 done (2026-10-17)**: block + rendering everywhere, phone drawing (480 Hz,
-side button eraser, pen kinds, erasers, colours incl. custom, width slider), confirmed. Next:
-step 3 desktop drawing tools, then the "whole note" idea (TODO).
+**Drawing steps 1-3 done (2026-10-17)**: block + rendering everywhere, phone drawing (480 Hz,
+side button eraser, pen kinds, erasers, colours incl. custom, width slider), desktop drawing
+menu (floating / at the top), configurable drawing bars, remembered tool choices; confirmed.
+Next: the "whole note" idea (TODO, ask first).
 
 ## TODO / ideas (not decided yet, ask before doing)
 

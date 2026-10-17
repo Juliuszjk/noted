@@ -67,8 +67,9 @@ interface DrawingStorage {
   // The tool new strokes use (platform toolbars change it).
   current: DrawingToolState;
   // The user is working in a drawing (drew in it or tapped it); cleared when the text gets
-  // the focus. Platforms show the drawing tools meanwhile.
+  // the focus. Platforms show the drawing tools meanwhile, next to `activeDom`.
   active: boolean;
+  activeDom: HTMLElement | null;
   listeners: Set<() => void>;
 }
 
@@ -102,10 +103,45 @@ export const setPenSettings = (editor: Editor, patch: Partial<PenSettings>): voi
   notify(editor);
 };
 
-export const setDrawingActive = (editor: Editor, on: boolean): void => {
-  if (editor.storage.drawing.active === on) return;
-  editor.storage.drawing.active = on;
+export const setDrawingActive = (editor: Editor, on: boolean, dom: HTMLElement | null = null): void => {
+  const storage = editor.storage.drawing;
+  const nextDom = on ? dom ?? storage.activeDom : null;
+  if (storage.active === on && storage.activeDom === nextDom) return;
+  storage.active = on;
+  storage.activeDom = nextDom;
   notify(editor);
+};
+
+// Toolbar item (toolbar-items.ts) of each pen kind.
+export const DRAWING_TOOL_ITEMS: Record<DrawingTool, string> = {
+  pen: 'drawBallpoint', fountain: 'drawFountain', pencil: 'drawPencil', marker: 'drawMarker', highlighter: 'drawHighlighter',
+};
+
+// The tool choices as text, for the platform to keep (per device) and give back next time.
+export const serializeDrawingTools = (state: DrawingToolState): string =>
+  JSON.stringify({ v: 1, eraser: state.eraser, tool: state.tool, pens: state.pens });
+
+export const restoreDrawingTools = (editor: Editor, text: string | null): void => {
+  try {
+    const data = JSON.parse(text ?? 'null');
+    if (data?.v !== 1) return;
+    const state = editor.storage.drawing.current;
+    if (data.eraser === 'stroke' || data.eraser === 'part') state.eraser = data.eraser;
+    if (isDrawingTool(data.tool)) state.tool = data.tool;
+    for (const tool of DRAWING_TOOLS) {
+      const pen = data.pens?.[tool];
+      if (!pen) continue;
+      const [min, max] = DRAWING_SIZE_RANGE[tool];
+      const size = Number(pen.size);
+      state.pens[tool] = {
+        color: typeof pen.color === 'string' && pen.color ? pen.color : null,
+        size: Number.isFinite(size) ? Math.min(max, Math.max(min, size)) : state.pens[tool].size,
+      };
+    }
+    notify(editor);
+  } catch {
+    // Unreadable choices: the defaults stay.
+  }
 };
 
 // Called when the tool or the active state changes; returns the unsubscribe function.
@@ -182,6 +218,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
     return {
       current: { mode: 'pen', eraser: 'stroke', tool: 'pen', pens: defaultPens() },
       active: false,
+      activeDom: null,
       listeners: new Set(),
     };
   },
@@ -385,7 +422,8 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
       const onPointerDown = (e: PointerEvent) => {
         if (!editor.isEditable || active || erasing) return;
         if (e.pointerType === 'touch') return;
-        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        // Mouse: the left button draws, the right one erases (like the pen's side button).
+        if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return;
         const pen = e.pointerType === 'pen';
         penTouch = pen;
         e.preventDefault();
@@ -393,7 +431,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         // Drawing takes the focus off the text: the phone keyboard goes away, and a focused
         // WebKit editor would scroll its selection into view when the stroke is saved.
         if (editor.view.hasFocus()) (editor.view.dom as HTMLElement).blur();
-        setDrawingActive(editor, true);
+        setDrawingActive(editor, true, dom);
         try {
           svg.setPointerCapture(e.pointerId);
         } catch {
@@ -401,7 +439,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         }
         const state = editor.storage.drawing.current;
         // The pen's eraser end (the S Pen side button on the phone) erases whatever the tool.
-        const penEraser = pen && ((e.buttons & 32) !== 0 || e.button === 5);
+        const penEraser = (pen && ((e.buttons & 32) !== 0 || e.button === 5)) || (e.pointerType === 'mouse' && e.button === 2);
         if (state.mode === 'eraser' || penEraser) {
           const { x, y } = toPoint(e, pen);
           erasing = { pointerId: e.pointerId, pen, mode: state.eraser, last: { x, y }, removed: new Set(), pieces: new Map() };
@@ -509,11 +547,15 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         if (!tap || !e.cancelable || !editor.isEditable) return;
         e.preventDefault();
         if (editor.view.hasFocus()) (editor.view.dom as HTMLElement).blur();
-        setDrawingActive(editor, true);
+        setDrawingActive(editor, true, dom);
       };
       // The mouse: no native selection / focus (WebKit would scroll the drawing's start into view).
       const onMouseDown = (e: MouseEvent) => {
-        if (editor.isEditable && e.button === 0) e.preventDefault();
+        if (editor.isEditable && (e.button === 0 || e.button === 2)) e.preventDefault();
+      };
+      // The right button erases: no context menu over a drawing.
+      const onContextMenu = (e: MouseEvent) => {
+        if (editor.isEditable) e.preventDefault();
       };
 
       svg.addEventListener('pointerdown', onPointerDown);
@@ -523,6 +565,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
       svg.addEventListener('touchstart', onTouchStart, { passive: false });
       svg.addEventListener('touchend', onTouchEnd, { passive: false });
       svg.addEventListener('mousedown', onMouseDown);
+      svg.addEventListener('contextmenu', onContextMenu);
 
       return {
         dom,
@@ -537,6 +580,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         ignoreMutation: () => true,
         destroy: () => {
           clearLive();
+          if (editor.storage.drawing.activeDom === dom) setDrawingActive(editor, false);
           if (piecesFrame) cancelAnimationFrame(piecesFrame);
           svg.removeEventListener('touchstart', onTouchStart);
           svg.removeEventListener('touchend', onTouchEnd);
