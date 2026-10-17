@@ -2,7 +2,7 @@ import type { Editor } from '@tiptap/core';
 import { mdiClose, mdiDotsVertical, mdiPaletteOutline } from '@mdi/js';
 import { EDITOR_COLORS } from '@noted/editor/palette';
 import {
-  currentPen, DRAWING_SIZE_RANGE, DRAWING_TOOL_ITEMS, onDrawingChange, serializeDrawingTools, setDrawingActive, setDrawingTool,
+  currentPen, DRAWING_GRID_RANGE, DRAWING_SIZE_RANGE, DRAWING_TOOL_ITEMS, onDrawingChange, serializeDrawingTools, setDrawingActive, setDrawingTool,
   setPenSettings,
 } from '@noted/editor/drawing';
 import { DRAWING_TOOLS, strokeOutline, strokeStyle } from '@noted/editor/drawing-render';
@@ -158,6 +158,25 @@ export const createDrawingBar = (editor: Editor, ctx: DrawingBarContext) => {
     return [preview, slider, label];
   };
 
+  // Grid paper: on / off and the cell size (the grid shows at once in the drawing).
+  const paperRow = () => {
+    const toggle = button(toolbarItem('drawPaper')!.icon, 'Grid paper on / off', () => {
+      setDrawingTool(editor, { paper: state().paper === 'grid' ? 'none' : 'grid' });
+    }, () => state().paper === 'grid');
+    const slider = h('input', 'db-slider') as HTMLInputElement;
+    slider.type = 'range';
+    slider.min = String(DRAWING_GRID_RANGE[0]);
+    slider.max = String(DRAWING_GRID_RANGE[1]);
+    slider.step = '5';
+    const label = h('span', 'db-width-label');
+    slider.addEventListener('input', () => setDrawingTool(editor, { paper: 'grid', gridSize: Number(slider.value) }));
+    refreshers.push(() => {
+      if (document.activeElement !== slider) slider.value = String(state().gridSize);
+      label.textContent = String(state().gridSize);
+    });
+    return [toggle, slider, label];
+  };
+
   // ---- the bar's buttons ----
   const colorButton = () => {
     const b = h('button', 'tb-btn') as HTMLButtonElement;
@@ -222,6 +241,10 @@ export const createDrawingBar = (editor: Editor, ctx: DrawingBarContext) => {
     if (id === 'erasePart') return button(def.icon, def.label, () => erase('part'), () => state().mode === 'eraser' && state().eraser === 'part');
     if (id === 'drawUndo') return button(def.icon, def.label, () => editor.commands.undo());
     if (id === 'drawRedo') return button(def.icon, def.label, () => editor.commands.redo());
+    if (id === 'drawPaper') {
+      const b = button(def.icon, def.label, () => toggleRow('drawPaper'), () => state().paper === 'grid' || openRow === 'drawPaper');
+      return b;
+    }
     return null;
   };
 
@@ -258,6 +281,7 @@ export const createDrawingBar = (editor: Editor, ctx: DrawingBarContext) => {
     const content = openRow === 'drawTool' ? kindsRow()
       : openRow === 'drawColor' ? colorsRow()
       : openRow === 'drawWidth' ? widthRow()
+      : openRow === 'drawPaper' ? paperRow()
       : sub ? sub.map(itemButton).filter((b): b is El => !!b)
       : [];
     row.classList.toggle('db-colors', openRow === 'drawColor');

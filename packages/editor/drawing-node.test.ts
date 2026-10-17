@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Editor } from '@tiptap/core';
 import * as Y from 'yjs';
 import { createSchemaExtensions } from './extensions';
@@ -185,17 +185,73 @@ describe('drawing block', () => {
 
     it('keeps the tool choices as text and reads them back safely', () => {
       const { editor } = setup();
-      setDrawingTool(editor, { tool: 'pencil', eraser: 'part' });
+      setDrawingTool(editor, { tool: 'pencil', eraser: 'part', paper: 'grid', gridSize: 85 });
       setPenSettings(editor, { color: 'var(--c-red)', size: 7 });
       const text = serializeDrawingTools(editor.storage.drawing.current);
       const other = makeEditor();
       restoreDrawingTools(other, text);
-      expect(other.storage.drawing.current).toMatchObject({ tool: 'pencil', eraser: 'part', mode: 'pen' });
+      expect(other.storage.drawing.current).toMatchObject({ tool: 'pencil', eraser: 'part', mode: 'pen', paper: 'grid' });
       expect(other.storage.drawing.current.pens.pencil).toEqual({ color: 'var(--c-red)', size: 7 });
+      expect(other.storage.drawing.current.gridSize).toBe(85);
+      restoreDrawingTools(other, '{"v":1,"gridSize":5000}');
+      expect(other.storage.drawing.current.gridSize).toBe(160);
       restoreDrawingTools(other, '{"v":1,"tool":"laser","pens":{"pen":{"size":999,"color":5}}}');
       expect(other.storage.drawing.current.tool).toBe('pencil');
       expect(other.storage.drawing.current.pens.pen).toEqual({ color: null, size: 30 });
       restoreDrawingTools(other, 'garbage');
+    });
+
+    describe('holding the pen at the end of a stroke', () => {
+      const hold = (svg: Element, points: [number, number][]) => {
+        vi.useFakeTimers();
+        try {
+          fire(svg, 'pointerdown', ...points[0], { pointerType: 'pen' });
+          for (const p of points.slice(1)) fire(svg, 'pointermove', ...p, { pointerType: 'pen' });
+          vi.advanceTimersByTime(700);
+          fire(svg, 'pointerup', ...points[points.length - 1], { pointerType: 'pen', buttons: 0 });
+        } finally {
+          vi.useRealTimers();
+        }
+      };
+
+      it('straightens a wobbly stroke into a level line', () => {
+        const { editor, svg } = setup();
+        hold(svg, [[10, 50], [60, 58], [110, 44], [160, 55], [210, 52]]);
+        const pts = decodePoints(strokes(editor)[0].points);
+        expect(pts.length).toBeGreaterThan(10);
+        expect(new Set(pts.map((p) => Math.round(p.y))).size).toBe(1);
+      });
+
+      it('keeps a stroke as drawn without the hold', () => {
+        const { editor, svg } = setup();
+        drag(svg, [[10, 50], [60, 58], [110, 44]], { pointerType: 'pen' });
+        expect(decodePoints(strokes(editor)[0].points).map((p) => p.y)).toEqual([50, 58, 44]);
+      });
+
+      it('cuts the drawing in two along a stroke from side to side', () => {
+        const { editor, svg } = setup();
+        // The visible part of the drawing on screen (happy-dom has no layout).
+        (svg.parentElement as HTMLElement).getBoundingClientRect = () => ({ left: 0, right: 1000, width: 1000, top: 0, bottom: 600, height: 600, x: 0, y: 0, toJSON: () => ({}) });
+        drag(svg, [[100, 50], [300, 60]]);
+        drag(svg, [[100, 400], [300, 420]]);
+        hold(svg, [[5, 200], [300, 240], [600, 180], [995, 210]]);
+        const drawings = editor.getJSON().content!.filter((n) => n.type === 'drawing');
+        expect(drawings).toHaveLength(2);
+        expect(drawings.map((d) => d.content?.length)).toEqual([1, 1]);
+        // The lower part starts near its own top.
+        expect(decodePoints(drawings[1].content![0].attrs!.points)[0].y).toBeLessThan(60);
+        // ... and at the left edge.
+        expect(decodePoints(drawings[1].content![0].attrs!.points)[0].x).toBeLessThan(60);
+      });
+    });
+
+    it('a tap only wakes a drawing; once it is active a tap leaves a dot', () => {
+      const { editor, svg } = setup();
+      drag(svg, [[40, 40], [41, 40]], { pointerType: 'pen' });
+      expect(strokes(editor)).toHaveLength(0);
+      expect(editor.storage.drawing.active).toBe(true);
+      drag(svg, [[40, 40], [41, 40]], { pointerType: 'pen' });
+      expect(strokes(editor)).toHaveLength(1);
     });
 
     it('ignores fingers', () => {

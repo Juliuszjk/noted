@@ -7,7 +7,7 @@ import {
   mdiTableRowRemove, mdiTableColumn, mdiTableRow, mdiTableRemove, mdiTableArrowLeft, mdiTableArrowRight, mdiTableArrowUp,
   mdiTableArrowDown, mdiTableColumnWidth, mdiTableRowHeight, mdiTableRefresh, mdiTableHeadersEye, mdiSelect, mdiSelectAll,
   mdiTableMergeCells, mdiTableSplitCell, mdiFormatColorFill, mdiDraw, mdiPen, mdiFountainPenTip, mdiLeadPencil, mdiBrushVariant,
-  mdiFormatColorHighlight, mdiEraser, mdiEraserVariant, mdiPaletteOutline, mdiFormatLineWeight, mdiUndo, mdiRedo, mdiGesture,
+  mdiFormatColorHighlight, mdiEraser, mdiEraserVariant, mdiPaletteOutline, mdiFormatLineWeight, mdiUndo, mdiRedo, mdiGesture, mdiGrid,
 } from '@mdi/js';
 
 // Settings > Toolbar, like Notesnook's: the toolbar is a list of groups (a separator between
@@ -92,6 +92,7 @@ const ITEMS: Record<string, ToolbarItemDef> = Object.fromEntries(([
   ['erasePart', 'Eraser: touched part', mdiEraserVariant],
   ['drawColor', 'Colour', mdiPaletteOutline],
   ['drawWidth', 'Width', mdiFormatLineWeight],
+  ['drawPaper', 'Grid paper while drawing', mdiGrid],
   ['drawUndo', 'Undo', mdiUndo],
   ['drawRedo', 'Redo', mdiRedo],
 ] as const).map(([id, label, icon]) => [id, { id, label, icon }]));
@@ -102,7 +103,7 @@ const TABLE_ITEMS = items(['colLeft', 'colRight', 'rowAbove', 'rowBelow', 'delet
   'naturalHeights', 'headerRow', 'selectColumn', 'selectRow', 'selectTable', 'mergeCells', 'splitCell', 'cellColor']);
 
 const DRAWING_ITEMS = items(['drawTool', 'drawBallpoint', 'drawFountain', 'drawPencil', 'drawMarker', 'drawHighlighter',
-  'eraseStroke', 'erasePart', 'drawColor', 'drawWidth', 'drawUndo', 'drawRedo']);
+  'eraseStroke', 'erasePart', 'drawColor', 'drawWidth', 'drawPaper', 'drawUndo', 'drawRedo']);
 
 // Every button each toolbar can show.
 export const TOOLBAR_ITEMS: Record<ToolbarPlatform, ToolbarItemDef[]> = {
@@ -158,12 +159,12 @@ export const TOOLBAR_PRESETS: Record<ToolbarPlatform, Record<'default' | 'minima
     minimal: [['rowProps', 'columnProps', ['mergeCells', 'splitCell', 'cellColor']], ['deleteTable']],
   },
   desktopDrawing: {
-    default: [['drawTool', 'eraseStroke', 'erasePart'], ['drawColor', 'drawWidth'], ['drawUndo', 'drawRedo']],
+    default: [['drawTool', 'eraseStroke', 'erasePart'], ['drawColor', 'drawWidth', 'drawPaper'], ['drawUndo', 'drawRedo']],
     minimal: [['drawTool', 'eraseStroke'], ['drawColor', 'drawWidth']],
   },
   // The phone has undo / redo in its header.
   mobileDrawing: {
-    default: [['drawTool', 'eraseStroke', 'erasePart'], ['drawColor', 'drawWidth']],
+    default: [['drawTool', 'eraseStroke', 'erasePart'], ['drawColor', 'drawWidth', 'drawPaper']],
     minimal: [['drawTool', 'eraseStroke'], ['drawColor']],
   },
 };

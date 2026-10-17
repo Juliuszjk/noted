@@ -64,7 +64,7 @@ export const buildPublishedNote = async (editorDom: HTMLElement): Promise<{ html
   clone.removeAttribute('contenteditable');
   clone.querySelectorAll('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'));
   // Editing helpers that make no sense on a read-only page.
-  clone.querySelectorAll('.image-node button, .ProseMirror-separator, .search-match').forEach((el) => {
+  clone.querySelectorAll('.image-node button, .ProseMirror-separator, .search-match, .drawing-paper, .drawing-cut, .drawing-eraser').forEach((el) => {
     if (el.classList.contains('search-match')) el.replaceWith(...Array.from(el.childNodes));
     else el.remove();
   });

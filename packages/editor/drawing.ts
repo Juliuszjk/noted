@@ -10,6 +10,8 @@ import {
 } from './drawing-render';
 import type { DrawingStrokeData, DrawingTool } from './drawing-render';
 import { boxNear, eraserPath, eraseStrokePart, pointsBox, strokeHit } from './drawing-erase';
+import { belowCut, lineShape, recognizeShape, spansSides } from './drawing-shapes';
+import type { ShapeKind } from './drawing-shapes';
 import type { Box, EraserMode } from './drawing-erase';
 
 // Hand drawing block. The strokes are child nodes (drawingStroke) of the block, so they live in
@@ -43,6 +45,18 @@ const PEN_PRESSURE_MAX = 0.5;
 const MOUSE_PRESSURE = 0.5;
 // Eraser radius in drawing units.
 const ERASER_RADIUS = 16;
+// The pen held still this long at the end of a stroke: the stroke becomes a shape, or a cut
+// when it runs from side to side. Still = within HOLD_PX screen pixels.
+const HOLD_MS = 550;
+const HOLD_PX = 6;
+// Grid paper cell sizes (drawing units): the width slider's range and the default.
+export const DRAWING_GRID_RANGE: [number, number] = [20, 160];
+const DEFAULT_GRID = 50;
+// A press that ends within this many screen pixels is a tap.
+const TAP_PX = 4;
+// Space above the strokes of the lower part after a cut.
+const CUT_MARGIN = 24;
+let gridIds = 0;
 
 // Width range of the width slider (drawing units).
 export const DRAWING_SIZE_RANGE: Record<DrawingTool, [number, number]> = {
@@ -57,6 +71,9 @@ export interface PenSettings {
 
 export interface DrawingToolState {
   mode: 'pen' | 'eraser';
+  // Grid paper under the active drawing while writing (never part of the note).
+  paper: 'none' | 'grid';
+  gridSize: number;
   // What the eraser (also the pen's eraser) removes: whole strokes or the touched part.
   eraser: EraserMode;
   // The pen kind; each keeps its own colour and width.
@@ -133,7 +150,7 @@ export const DRAWING_TOOL_ITEMS: Record<DrawingTool, string> = {
 
 // The tool choices as text, for the platform to keep (per device) and give back next time.
 export const serializeDrawingTools = (state: DrawingToolState): string =>
-  JSON.stringify({ v: 1, eraser: state.eraser, tool: state.tool, pens: state.pens });
+  JSON.stringify({ v: 1, eraser: state.eraser, tool: state.tool, pens: state.pens, paper: state.paper, gridSize: state.gridSize });
 
 export const restoreDrawingTools = (editor: Editor, text: string | null): void => {
   try {
@@ -141,6 +158,9 @@ export const restoreDrawingTools = (editor: Editor, text: string | null): void =
     if (data?.v !== 1) return;
     const state = editor.storage.drawing.current;
     if (data.eraser === 'stroke' || data.eraser === 'part') state.eraser = data.eraser;
+    if (data.paper === 'none' || data.paper === 'grid') state.paper = data.paper;
+    const grid = Number(data.gridSize);
+    if (Number.isFinite(grid)) state.gridSize = Math.min(DRAWING_GRID_RANGE[1], Math.max(DRAWING_GRID_RANGE[0], grid));
     if (isDrawingTool(data.tool)) state.tool = data.tool;
     for (const tool of DRAWING_TOOLS) {
       const pen = data.pens?.[tool];
@@ -235,7 +255,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
 
   addStorage() {
     return {
-      current: { mode: 'pen', eraser: 'stroke', tool: 'pen', pens: defaultPens() },
+      current: { mode: 'pen', paper: 'none', gridSize: DEFAULT_GRID, eraser: 'stroke', tool: 'pen', pens: defaultPens() },
       active: false,
       activeDom: null,
       listeners: new Set(),
@@ -294,7 +314,34 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
       const eraserRing = document.createElementNS(SVG_NS, 'circle');
       eraserRing.setAttribute('class', 'drawing-eraser');
       eraserRing.setAttribute('r', String(ERASER_RADIUS));
-      svg.append(strokesGroup, piecesGroup, live, eraserRing);
+      // Grid paper (drawing units, so it scales with the drawing), only while writing here.
+      const gridId = `drawing-grid-${++gridIds}`;
+      const defs = document.createElementNS(SVG_NS, 'defs');
+      defs.innerHTML = `<pattern id="${gridId}" patternUnits="userSpaceOnUse"><path fill="none" vector-effect="non-scaling-stroke"/></pattern>`;
+      const pattern = defs.firstElementChild!;
+      const gridPath = pattern.firstElementChild!;
+      let gridShown = 0;
+      const paper = document.createElementNS(SVG_NS, 'rect');
+      paper.setAttribute('class', 'drawing-paper');
+      paper.setAttribute('fill', `url(#${gridId})`);
+      // The cut line being held (dashed, not a stroke).
+      const cutLine = document.createElementNS(SVG_NS, 'polyline');
+      cutLine.setAttribute('class', 'drawing-cut');
+      svg.append(defs, paper, strokesGroup, piecesGroup, live, cutLine, eraserRing);
+      const showPaper = () => {
+        const storage = editor.storage.drawing;
+        const on = storage.active && storage.activeDom === dom && storage.current.paper === 'grid' && editor.isEditable;
+        paper.style.display = on ? 'block' : '';
+        const cell = storage.current.gridSize;
+        if (on && cell !== gridShown) {
+          gridShown = cell;
+          pattern.setAttribute('width', String(cell));
+          pattern.setAttribute('height', String(cell));
+          gridPath.setAttribute('d', `M ${cell} 0 L 0 0 0 ${cell}`);
+        }
+      };
+      const offPaper = onDrawingChange(editor, showPaper);
+      showPaper();
       scroller.append(svg);
       dom.append(scroller);
 
@@ -324,11 +371,21 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
       let shown = { width: DRAWING_WIDTH, height: DEFAULT_DRAWING_HEIGHT };
       const setSize = (width: number, height: number) => {
         shown = { width, height };
+        paper.setAttribute('width', String(width));
+        paper.setAttribute('height', String(height));
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
         svg.style.width = `${(width / DRAWING_WIDTH) * 100}%`;
       };
       // The stroke being drawn.
-      let active: { pointerId: number; points: StrokePoint[]; tool: { tool: DrawingTool } & PenSettings; pen: boolean } | null = null;
+      let active: {
+        pointerId: number; points: StrokePoint[]; tool: { tool: DrawingTool } & PenSettings; pen: boolean;
+        // Holding still: where the pen rests and the timer; what the hold made of the stroke.
+        rest: StrokePoint; timer: ReturnType<typeof setTimeout> | null; held: null | 'cut' | ShapeKind;
+        // Screen x of the first and the latest point (a cut runs from one side to the other).
+        firstX: number; lastX: number;
+        // Pressed while the drawing was not active yet: a tap only wakes it (no dot).
+        waking: boolean;
+      } | null = null;
       // The eraser at work: strokes removed whole, or cut into pieces (by stroke key).
       let erasing: {
         pointerId: number; pen: boolean; mode: EraserMode; last: { x: number; y: number } | null;
@@ -363,7 +420,79 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         live.setAttribute('d', strokeOutline(active.points, active.tool.size, active.tool.tool, false));
         live.setAttribute('style', strokeStyle(active.tool));
       };
+      // The pen held still at the end of a stroke.
+      const restartHold = () => {
+        if (!active || active.held) return;
+        if (active.timer) clearTimeout(active.timer);
+        active.timer = setTimeout(onHold, HOLD_MS);
+      };
+      const onHold = () => {
+        if (!active || active.held) return;
+        active.timer = null;
+        const { points } = active;
+        const visible = scroller.getBoundingClientRect();
+        if (visible.width && spansSides(active.firstX, active.lastX, visible.left, visible.right)) {
+          active.held = 'cut';
+          live.removeAttribute('d');
+          cutLine.setAttribute('points', points.map((pt) => `${pt.x},${pt.y}`).join(' '));
+          cutLine.style.display = 'block';
+        } else {
+          const shape = recognizeShape(points);
+          if (!shape) return;
+          active.held = shape.kind;
+          active.points = shape.points;
+          drawLive();
+        }
+        try {
+          navigator.vibrate?.(12);
+        } catch {
+          // No vibration here.
+        }
+      };
+      // Moving on after the hold: a line's end follows the pen; other shapes and a cut stay.
+      const moveHeld = (point: StrokePoint) => {
+        if (!active || active.held !== 'line') return;
+        active.points = lineShape(active.points[0], point, active.points[0].p).points;
+        if (!frame) frame = requestAnimationFrame(drawLive);
+      };
+      // Cut along the held line: the strokes below it become a drawing of their own under this one.
+      const cutAt = (cut: StrokePoint[]) => {
+        const pos = typeof getPos === 'function' ? getPos() : undefined;
+        const current = typeof pos === 'number' ? editor.state.doc.nodeAt(pos) : null;
+        if (typeof pos !== 'number' || current?.type.name !== 'drawing') return;
+        const above: PmNode[] = [];
+        const below: { node: PmNode; points: StrokePoint[] }[] = [];
+        current.forEach((child) => {
+          const points = decodePoints(child.attrs.points);
+          if (points.length && belowCut(cut, points)) below.push({ node: child, points });
+          else above.push(child);
+        });
+        if (!above.length || !below.length) return;
+        // The lower part moves up and to the left edge (words that were on the right come into view).
+        let top = Infinity;
+        let left = Infinity;
+        for (const { node: child, points } of below) {
+          const half = Number(child.attrs.size || 0) / 2;
+          for (const pt of points) {
+            top = Math.min(top, pt.y - half);
+            left = Math.min(left, pt.x - half);
+          }
+        }
+        const dy = Math.max(0, top - CUT_MARGIN);
+        const dx = Math.max(0, left - CUT_MARGIN);
+        const moved = below.map(({ node: child, points }) => child.type.create({ ...child.attrs, points: encodePoints(points.map((pt) => ({ ...pt, x: pt.x - dx, y: pt.y - dy }))) }));
+        const type = editor.schema.nodes.drawing;
+        keepScroll(() => editor.view.dispatch(editor.state.tr.replaceWith(pos, pos + current.nodeSize, [
+          type.create(current.attrs, above),
+          type.create(null, moved),
+        ])));
+        // The tools stay, now with the upper part.
+        const upper = editor.view.nodeDOM(pos) as HTMLElement | null;
+        if (upper) setDrawingActive(editor, true, upper);
+      };
+
       const clearLive = () => {
+        cutLine.style.display = '';
         if (frame) cancelAnimationFrame(frame);
         frame = 0;
         live.removeAttribute('d');
@@ -466,7 +595,12 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         const pen = e.pointerType === 'pen';
         penTouch = pen;
         const state = editor.storage.drawing.current;
-        active = { pointerId: e.pointerId, points: [...earlier, e].map((p) => toPoint(p, pen)), tool: { tool: state.tool, ...state.pens[state.tool] }, pen };
+        const points = [...earlier, e].map((p) => toPoint(p, pen));
+        active = {
+          pointerId: e.pointerId, points, tool: { tool: state.tool, ...state.pens[state.tool] }, pen, rest: points[points.length - 1], timer: null, held: null,
+          firstX: earlier[0]?.clientX ?? e.clientX, lastX: e.clientX, waking: false,
+        };
+        restartHold();
         drawLive();
       };
       editor.storage.drawing.views.set(dom, { begin });
@@ -483,6 +617,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         // Drawing takes the focus off the text: the phone keyboard goes away, and a focused
         // WebKit editor would scroll its selection into view when the stroke is saved.
         if (editor.view.hasFocus()) (editor.view.dom as HTMLElement).blur();
+        const waking = !(editor.storage.drawing.active && editor.storage.drawing.activeDom === dom);
         setDrawingActive(editor, true, dom);
         try {
           svg.setPointerCapture(e.pointerId);
@@ -500,7 +635,12 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
           showErasing();
           return;
         }
-        active = { pointerId: e.pointerId, points: [toPoint(e, pen)], tool: { tool: state.tool, ...state.pens[state.tool] }, pen };
+        const first = toPoint(e, pen);
+        active = {
+          pointerId: e.pointerId, points: [first], tool: { tool: state.tool, ...state.pens[state.tool] }, pen, rest: first, timer: null, held: null,
+          firstX: e.clientX, lastX: e.clientX, waking,
+        };
+        restartHold();
         drawLive();
       };
       const onPointerMove = (e: PointerEvent) => {
@@ -518,6 +658,11 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         }
         if (!active || e.pointerId !== active.pointerId) return;
         e.preventDefault();
+        if (active.held) {
+          moveHeld(toPoint(e, active.pen));
+          return;
+        }
+        active.lastX = e.clientX;
         const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
         for (const ev of events.length ? events : [e]) {
           const point = toPoint(ev, active.pen);
@@ -527,6 +672,12 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
             continue;
           }
           active.points.push(point);
+        }
+        // Moved away from where it rested: the hold starts again.
+        const last = active.points[active.points.length - 1];
+        if (Math.hypot(last.x - active.rest.x, last.y - active.rest.y) > HOLD_PX * unitsPerPx()) {
+          active.rest = last;
+          restartHold();
         }
         if (!frame) frame = requestAnimationFrame(drawLive);
       };
@@ -543,9 +694,18 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
           return;
         }
         if (!active || e.pointerId !== active.pointerId) return;
-        const { points, tool } = active;
+        const { points, tool, held, waking } = active;
+        if (active.timer) clearTimeout(active.timer);
+        // A tap on a drawing that was not active only shows its tools (and grid), no dot.
+        const reach = TAP_PX * unitsPerPx();
+        if (waking && !held && points.every((pt) => Math.hypot(pt.x - points[0].x, pt.y - points[0].y) <= reach)) keep = false;
         active = null;
         penTouch = false;
+        if (held === 'cut') {
+          if (keep) cutAt(points);
+          clearLive();
+          return;
+        }
         const pos = typeof getPos === 'function' ? getPos() : undefined;
         if (keep && points.length && typeof pos === 'number') {
           const current = editor.state.doc.nodeAt(pos);
@@ -632,6 +792,8 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         ignoreMutation: () => true,
         destroy: () => {
           clearLive();
+          offPaper();
+          if (active?.timer) clearTimeout(active.timer);
           editor.storage.drawing.views.delete(dom);
           if (editor.storage.drawing.activeDom === dom) setDrawingActive(editor, false);
           if (piecesFrame) cancelAnimationFrame(piecesFrame);

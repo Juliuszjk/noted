@@ -243,6 +243,17 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   transaction). Desktop NoteEditor: while nothing has the focus, undo / redo go to the note
   worked in last (`lastUsedEditor`; portalled menus carry `data-editor-menu`). Yjs undo in
   happy-dom tests also reverts older changes: check undo in the app.
+  Stage A (2026-10-18): the pen / mouse held still `HOLD_MS` at a stroke's end -> a cut when the
+  stroke runs from one visible side to the other (`spansSides`, screen px of its first / last
+  point, any shape: `belowCut` = outside the polygon cut + drawing top; the lower part becomes a
+  drawing below, moved up and to the left), else `recognizeShape` (drawing-shapes.ts: line with
+  45° snapping and a movable end, arrow, triangle, rectangle / square, ellipse / circle;
+  polygon only when it fits clearly better than the ellipse). Grid paper = device tool state
+  (`paper`, `gridSize` 20-160) shown only in the active drawing (SVG pattern, stripped from
+  published copies); toolbar item `drawPaper` opens on / off + size. A tap on a drawing that is
+  not active only wakes it (no dot). Phone plugin also takes the edges at the pen's height out
+  of the system back gesture while the S Pen is near (`systemGestureExclusionRects`, 200 dp);
+  re-running prebuild replaces its MainActivity block.
 - `/goto` and `/linkto` (`appendNoteLink` in sync/json-to-y.ts, never twice, not into locked notes).
 - HEIC: desktop `src/heic.ts` (libheif-js), phone RN `{type:'convertHeic'}`.
 - Files pasted from a file manager on desktop: WebKitGTK gives no data, so Rust
@@ -361,6 +372,12 @@ the strokes, NOT a separate Y.Map: locked notes, undo, copy / paste), see the TO
   WebView (like Chrome). An https `baseUrl` makes the page a secure context (coalesced events,
   `crypto.randomUUID`) but was not needed for the rate. Native code needs an Expo config plugin
   (android/ is generated). The editor under an overlay grabbed focus (keyboard): drawing mode must blur it.
+- **Drawing: annotations on text** (2026-10-18, user: later): circles / underlines / arrows at
+  words, anchored to characters and stored IN the body (invisible inline anchor node holding
+  the strokes; never a separate Y.Map: locked notes, undo, copy / paste). Multi-word circles that
+  rewrap differently and arrows between words can never fit every width.
+- **Drawing: handwriting recognition** (2026-10-18, user: later): ML Kit Digital Ink on the
+  phone, offline (weak for math). Exporting a drawing as an image: the user does not need it.
 - Attachments > 30 MB: chunked sealed blobs + encrypted manifest, server storing files.
 - Claude integration (postponed): local MCP server as one more device; a public key-holding
   server was advised against.

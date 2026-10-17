@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import type { Editor } from '@tiptap/core';
 import { mdiChevronDown, mdiClose, mdiDotsVertical } from '@mdi/js';
 import {
-  EDITOR_COLORS, DRAWING_TOOLS, DRAWING_TOOL_ITEMS, DRAWING_SIZE_RANGE, currentPen, onDrawingChange, setDrawingActive,
+  EDITOR_COLORS, DRAWING_TOOLS, DRAWING_TOOL_ITEMS, DRAWING_SIZE_RANGE, DRAWING_GRID_RANGE, currentPen, onDrawingChange, setDrawingActive,
   setDrawingTool, setPenSettings, strokeOutline, strokeStyle, toolbarGroups, toolbarItem,
 } from '@noted/editor';
 import type { DrawingTool, ToolbarConfig } from '@noted/editor';
@@ -152,6 +152,26 @@ export function DrawingMenu({ editor, anchor = null, config = null }: { editor: 
     </div>
   );
 
+  // Grid paper: on / off and the cell size (shown at once in the drawing).
+  const paperPanel = () => (
+    <div key="paper" style={{ display: 'flex', alignItems: 'center', gap: 10, width: 250, padding: '4px 6px' }}>
+      <Btn title="Grid paper on / off" active={state.paper === 'grid'} onClick={() => setDrawingTool(editor, { paper: state.paper === 'grid' ? 'none' : 'grid' })}>
+        <Icon path={toolbarItem('drawPaper')!.icon} size={18} />
+      </Btn>
+      <input
+        type="range"
+        min={DRAWING_GRID_RANGE[0]}
+        max={DRAWING_GRID_RANGE[1]}
+        step={5}
+        value={state.gridSize}
+        title="Grid size"
+        onChange={(e) => setDrawingTool(editor, { paper: 'grid', gridSize: Number(e.target.value) })}
+        style={{ flex: 1, accentColor: 'var(--primary)' }}
+      />
+      <span style={{ minWidth: 26, textAlign: 'right', fontSize: 12, color: 'var(--text-muted)' }}>{state.gridSize}</span>
+    </div>
+  );
+
   const widthFace = (
     <svg width={18} height={18} viewBox="0 0 24 24" aria-hidden>
       <line x1={3} y1={12} x2={21} y2={12} strokeLinecap="round" stroke={colorCss(pen.color)} strokeWidth={1.5 + ((pen.size - min) / Math.max(1, max - min)) * 9} />
@@ -170,6 +190,7 @@ export function DrawingMenu({ editor, anchor = null, config = null }: { editor: 
       return dropdown(id, 'Colour', <span style={{ display: 'block', width: 16, height: 16, borderRadius: 8, border: '1px solid var(--border)', backgroundColor: colorCss(pen.color) }} />, colours);
     }
     if (id === 'drawWidth') return dropdown(id, 'Width', widthFace, width);
+    if (id === 'drawPaper') return dropdown(id, def.label, <Icon path={def.icon} size={18} />, paperPanel, state.paper === 'grid');
     const kind = KIND_OF_ITEM[id];
     const run = kind ? () => pickKind(kind)
       : id === 'eraseStroke' ? () => setDrawingTool(editor, { mode: 'eraser', eraser: 'stroke' })
@@ -193,7 +214,7 @@ export function DrawingMenu({ editor, anchor = null, config = null }: { editor: 
   const subEntry = (id: string): ReactNode => {
     const def = toolbarItem(id);
     if (!def) return null;
-    if (id === 'drawTool' || id === 'drawColor' || id === 'drawWidth') return listItem(def.icon, def.label, () => setOpen(id), false);
+    if (id === 'drawTool' || id === 'drawColor' || id === 'drawWidth' || id === 'drawPaper') return listItem(def.icon, def.label, () => setOpen(id), id === 'drawPaper' && state.paper === 'grid');
     const kind = KIND_OF_ITEM[id];
     if (kind) return listItem(def.icon, def.label, () => pickKind(kind), state.mode === 'pen' && state.tool === kind);
     const run = id === 'eraseStroke' ? () => setDrawingTool(editor, { mode: 'eraser', eraser: 'stroke' })
@@ -218,7 +239,7 @@ export function DrawingMenu({ editor, anchor = null, config = null }: { editor: 
             // The pen kind / colour / width picked from this subgroup: its dropdown under the ⋮.
             const inner = subOpen(part) ? open : null;
             if (inner) {
-              return dropdown(key, toolbarItem(inner)?.label ?? 'More', <Icon path={mdiDotsVertical} size={18} />, inner === 'drawTool' ? kinds : inner === 'drawColor' ? colours : width, true, true);
+              return dropdown(key, toolbarItem(inner)?.label ?? 'More', <Icon path={mdiDotsVertical} size={18} />, inner === 'drawTool' ? kinds : inner === 'drawColor' ? colours : inner === 'drawPaper' ? paperPanel : width, true, true);
             }
             return dropdown(key, 'More drawing tools', <Icon path={mdiDotsVertical} size={18} />, () => part.map(subEntry));
           })}
