@@ -5,9 +5,49 @@ import { NoteRecord } from '@noted/types';
 import { initHistory } from './history';
 import { Directory, File, Paths } from 'expo-file-system';
 
+const DB_NAME = 'noted.db';
+
+// The native side can drop the shared database handle while this JavaScript keeps it: the app
+// swiped away from the recent apps while its process stays (background sync, the widget) and
+// opened again re-runs the app in the same runtime, and every call then failed with a
+// NullPointerException (2026-10-17: edits were not saved). This handle opens the database
+// again (a connection of its own) and repeats the call once when that happens.
+const isLostHandle = (e: unknown) =>
+  /NullPointerException|database is closed|not open|ContextDestroyed/i.test(e instanceof Error ? `${e.message} ${String((e as { cause?: unknown }).cause ?? '')}` : String(e));
+
+const openHealingDatabase = async (): Promise<SQLite.SQLiteDatabase> => {
+  let current = await SQLite.openDatabaseAsync(DB_NAME);
+  let reopening: Promise<void> | null = null;
+  const reopen = (lost: SQLite.SQLiteDatabase) => {
+    if (current !== lost) return reopening ?? Promise.resolve();
+    reopening ??= (async () => {
+      console.warn('Database handle lost, opening it again');
+      current = await SQLite.openDatabaseAsync(DB_NAME, { useNewConnection: true });
+    })().finally(() => { reopening = null; });
+    return reopening;
+  };
+  return new Proxy({} as SQLite.SQLiteDatabase, {
+    get(_target, prop) {
+      const value = (current as unknown as Record<PropertyKey, unknown>)[prop];
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        const used = current;
+        const call = () => (current as unknown as Record<PropertyKey, (...a: unknown[]) => unknown>)[prop](...args);
+        const result = (used as unknown as Record<PropertyKey, (...a: unknown[]) => unknown>)[prop](...args);
+        if (!(result instanceof Promise)) return result;
+        return result.catch(async (e: unknown) => {
+          if (!isLostHandle(e)) throw e;
+          await reopen(used);
+          return call();
+        });
+      };
+    },
+  });
+};
+
 // Adapter for Expo SQLite implementing our generic LocalNoteStore interface
 export const createExpoStore = async (): Promise<{ db: SQLite.SQLiteDatabase; store: LocalNoteStore; blobStore: LocalBlobStore }> => {
-  const db = await SQLite.openDatabaseAsync('noted.db');
+  const db = await openHealingDatabase();
   
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS notes (

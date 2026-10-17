@@ -30,6 +30,7 @@ import type { NoteAttachmentItem } from './NoteMenu';
 import type { NoteFlags } from './NoteMenu';
 import type { SplitSide } from './SplitIcon';
 import WebView from 'react-native-webview';
+import * as Y from 'yjs';
 import { LocalNoteStore, LocalBlobStore, applyEditorUpdate, buildNoteMeta, encodeNoteMeta, fetchSealedBlob, nextPublishInfo, putPublished, deletePublished, publishedExists, publishedUrl } from '@noted/sync';
 import type { NotePublish } from '@noted/sync';
 import { seal, unseal, bytesToBase64, base64ToBytes } from '@noted/crypto';
@@ -197,12 +198,24 @@ export function EditorScreen({
     }
   };
 
+  // Page updates not stored yet. A failed save keeps its update here and the next save (or the
+  // retry) stores it together with the newer ones, so a failing database never loses edits.
+  const unsavedRef = useRef<Uint8Array[]>([]);
+  const saveFailuresRef = useRef(0);
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveFromEditor = (data: { update: string }) => {
+    unsavedRef.current.push(base64ToBytes(data.update));
+    storeUnsaved();
+  };
+  const storeUnsaved = () => {
     pendingSavesRef.current++;
     queueRef.current = queueRef.current.then(async () => {
+      const updates = unsavedRef.current;
+      unsavedRef.current = [];
+      if (!updates.length) return;
       try {
         const sealed = await loadSealedState();
-        const result = applyEditorUpdate(masterKey, sealed, base64ToBytes(data.update));
+        const result = applyEditorUpdate(masterKey, sealed, updates.length === 1 ? updates[0] : Y.mergeUpdates(updates));
         if (!result.changed || !result.sealed) return;
         // The `content` column holds the note's metadata (title, excerpt, links), sealed.
         const content = seal(masterKey, new TextEncoder().encode(encodeNoteMeta(buildNoteMeta(result.doc))));
@@ -213,15 +226,21 @@ export function EditorScreen({
         // take the stored state for the page's own and the text stayed missing on screen.
         if (sealed !== lastSentRef.current) queueMicrotask(() => { pushState('remote'); });
         else lastSentRef.current = result.sealed;
+        saveFailuresRef.current = 0;
         sessionRef.current = await recordHistory(note.id, result.sealed, now, sessionRef.current).catch(() => sessionRef.current);
         triggerSync();
       } catch (e) {
         console.error('Save error:', e);
+        unsavedRef.current = [...updates, ...unsavedRef.current];
+        saveFailuresRef.current++;
+        if (saveFailuresRef.current === 3) appAlert('Not saved yet', `The note could not be saved (${e instanceof Error ? e.message : String(e)}). Noted keeps trying; keep the note open.`);
+        if (!retryRef.current) retryRef.current = setTimeout(() => { retryRef.current = null; storeUnsaved(); }, 2000);
       } finally {
         pendingSavesRef.current--;
       }
     });
   };
+  useEffect(() => () => { if (retryRef.current) clearTimeout(retryRef.current); }, []);
 
   // A backup comparison asked for while (or before) the page was ready: shown once.
   const backupShownRef = useRef(0);
