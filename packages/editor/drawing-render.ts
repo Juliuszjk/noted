@@ -5,7 +5,34 @@ import type { StrokePoint } from './drawing-codec';
 // Shapes of drawing strokes: perfect-freehand turns the points (with pressure) into an outline
 // that is filled. Pure, so the editor node view, Markdown export and tests share it.
 
-export type DrawingTool = 'pen' | 'highlighter';
+// Pen kinds. Unknown kinds (from a newer app) draw as 'pen'.
+export const DRAWING_TOOLS = ['pen', 'fountain', 'pencil', 'marker', 'highlighter'] as const;
+export type DrawingTool = (typeof DRAWING_TOOLS)[number];
+
+interface ToolLook {
+  // How much pressure changes the width (0 = even width).
+  thinning: number;
+  smoothing: number;
+  streamline: number;
+  // Tapered ends (in stroke widths).
+  taper: number;
+  opacity: number;
+}
+
+const TOOL_LOOK: Record<DrawingTool, ToolLook> = {
+  // Ballpoint: pressure matters, round ends.
+  pen: { thinning: 0.6, smoothing: 0.5, streamline: 0.4, taper: 0, opacity: 1 },
+  // Fountain pen: strong pressure response and tapered ends.
+  fountain: { thinning: 0.85, smoothing: 0.6, streamline: 0.5, taper: 3, opacity: 1 },
+  // Pencil: thin, little smoothing, a lighter grey.
+  pencil: { thinning: 0.35, smoothing: 0.25, streamline: 0.2, taper: 0, opacity: 0.7 },
+  // Felt marker: even width.
+  marker: { thinning: 0, smoothing: 0.5, streamline: 0.5, taper: 0, opacity: 1 },
+  // Highlighter: wide, even, see-through.
+  highlighter: { thinning: 0, smoothing: 0.5, streamline: 0.5, taper: 0, opacity: 0.35 },
+};
+
+export const DEFAULT_TOOL_SIZES: Record<DrawingTool, number> = { pen: 5, fountain: 6, pencil: 3, marker: 8, highlighter: 24 };
 
 export interface DrawingStrokeData {
   points: string;
@@ -19,7 +46,7 @@ export interface DrawingStrokeData {
 export const DEFAULT_DRAWING_HEIGHT = 300;
 export const DEFAULT_PEN_SIZE = 5;
 
-export const isDrawingTool = (value: unknown): value is DrawingTool => value === 'pen' || value === 'highlighter';
+export const isDrawingTool = (value: unknown): value is DrawingTool => DRAWING_TOOLS.includes(value as DrawingTool);
 
 export const strokeData = (attrs: Record<string, unknown>): DrawingStrokeData => ({
   points: typeof attrs.points === 'string' ? attrs.points : '',
@@ -48,14 +75,16 @@ const outlinePath = (outline: number[][]): string => {
 
 export const strokeOutline = (points: StrokePoint[], size: number, tool: DrawingTool, last = true): string => {
   if (!points.length) return '';
+  const look = TOOL_LOOK[tool] ?? TOOL_LOOK.pen;
+  const taper = look.taper ? size * look.taper : false;
   const outline = getStroke(points.map((pt) => [pt.x, pt.y, pt.p]), {
     size,
-    thinning: tool === 'highlighter' ? 0 : 0.6,
-    smoothing: 0.5,
-    streamline: 0.4,
+    thinning: look.thinning,
+    smoothing: look.smoothing,
+    streamline: look.streamline,
     simulatePressure: false,
-    start: { cap: true, taper: false },
-    end: { cap: true, taper: false },
+    start: { cap: true, taper },
+    end: { cap: true, taper },
     last,
   });
   return outlinePath(outline);
@@ -64,8 +93,12 @@ export const strokeOutline = (points: StrokePoint[], size: number, tool: Drawing
 export const strokePath = (stroke: DrawingStrokeData): string => strokeOutline(decodePoints(stroke.points), stroke.size, stroke.tool);
 
 // Fill and opacity of a stroke, as an inline style (SVG attributes cannot hold var()).
-export const strokeStyle = (stroke: Pick<DrawingStrokeData, 'color' | 'tool'>): string =>
-  `fill:${stroke.color ?? 'currentColor'}${stroke.tool === 'highlighter' ? ';opacity:0.35' : ''}`;
+export const toolOpacity = (tool: DrawingTool): number => (TOOL_LOOK[tool] ?? TOOL_LOOK.pen).opacity;
+
+export const strokeStyle = (stroke: Pick<DrawingStrokeData, 'color' | 'tool'>): string => {
+  const opacity = toolOpacity(stroke.tool);
+  return `fill:${stroke.color ?? 'currentColor'}${opacity < 1 ? `;opacity:${opacity}` : ''}`;
+};
 
 // Right and bottom edges of the strokes (0 when empty).
 export const drawingExtent = (strokes: DrawingStrokeData[]): { right: number; bottom: number } => {
@@ -120,7 +153,8 @@ export const drawingSvg = (baseHeight: unknown, strokes: DrawingStrokeData[], re
     .map((stroke) => {
       const d = strokePath(stroke);
       if (!d) return '';
-      const opacity = stroke.tool === 'highlighter' ? ' fill-opacity="0.35"' : '';
+      const alpha = toolOpacity(stroke.tool);
+      const opacity = alpha < 1 ? ` fill-opacity="${alpha}"` : '';
       return `<path d="${d}" fill="${escapeAttr(resolveColor(stroke.color))}"${opacity}/>`;
     })
     .join('');

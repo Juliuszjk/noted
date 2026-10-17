@@ -45,6 +45,7 @@ describe('drawing render', () => {
     expect(strokeData({})).toEqual({ points: '', color: null, size: 5, tool: 'pen' });
     expect(strokeData({ points: 'x', color: 'var(--c-red)', size: 8, tool: 'highlighter' })).toEqual({ points: 'x', color: 'var(--c-red)', size: 8, tool: 'highlighter' });
     expect(strokeData({ tool: 'eraser', size: -1, color: '' }).tool).toBe('pen');
+    for (const tool of ['pen', 'fountain', 'pencil', 'marker', 'highlighter']) expect(strokeData({ tool }).tool).toBe(tool);
   });
 
   it('draws a closed outline, also for a single dot', () => {
@@ -65,6 +66,18 @@ describe('drawing render', () => {
     // Near the right edge while editing: room to keep writing.
     expect(drawingSize(300, [stroke([{ x: 900, y: 50, p: 0.5 }], { size: 10 })], { x: 250, y: 160 }).width).toBe(1155);
     expect(drawingSize(300, [stroke([{ x: 500, y: 50, p: 0.5 }], { size: 10 })], { x: 250, y: 160 }).width).toBe(1000);
+  });
+
+  it('draws every pen kind; the fountain pen tapers, the marker keeps its width', () => {
+    const pts = Array.from({ length: 30 }, (_, i) => ({ x: 10 + i * 5, y: 50, p: i < 15 ? 0.2 : 1 }));
+    const height = (tool: string) => {
+      const ys = (strokePath(stroke(pts, { tool, size: 10 })).match(/-?[\d.]+/g) ?? []).map(Number).filter((_, i) => i % 2 === 1);
+      return Math.max(...ys) - Math.min(...ys);
+    };
+    for (const tool of ['pen', 'fountain', 'pencil', 'marker', 'highlighter']) expect(strokePath(stroke(pts, { tool }))).toMatch(/Z$/);
+    expect(height('marker')).toBeCloseTo(10, 0);
+    expect(height('fountain')).toBeGreaterThan(height('pencil'));
+    expect(strokeStyle({ color: null, tool: 'pencil' })).toBe('fill:currentColor;opacity:0.7');
   });
 
   it('styles and exports colours', () => {

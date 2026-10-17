@@ -46,6 +46,7 @@
         }
       ],
       "./plugins/with-release-signing",
+      "./plugins/with-stylus",
       "expo-background-task",
       [
         "react-native-android-widget",

@@ -3,8 +3,9 @@ import { describe, it, expect } from 'vitest';
 import { Editor } from '@tiptap/core';
 import * as Y from 'yjs';
 import { createSchemaExtensions } from './extensions';
-import { encodePoints } from './drawing-codec';
+import { decodePoints, encodePoints } from './drawing-codec';
 import { exportNote } from './export';
+import { setDrawingTool } from './drawing';
 
 const makeEditor = (ydoc = new Y.Doc()) => new Editor({ extensions: createSchemaExtensions({ ydoc, placeholder: '' }) });
 
@@ -91,5 +92,70 @@ describe('drawing block', () => {
     const md = exportNote('T', json, 'markdown');
     expect(md).toMatch(/<svg xmlns="http:\/\/www.w3.org\/2000\/svg"[^>]*><path d="M[^"]+" fill="#7fd88a"\/><\/svg>/);
     expect(exportNote('T', json, 'text')).toContain('[drawing]');
+  });
+
+  describe('pointer input', () => {
+    const fire = (el: Element, type: string, x: number, y: number, extra: Record<string, unknown> = {}) => {
+      const e = new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1, pressure: 0.5, ...extra });
+      el.dispatchEvent(e);
+    };
+    const drag = (el: Element, points: [number, number][], extra: Record<string, unknown> = {}) => {
+      fire(el, 'pointerdown', ...points[0], extra);
+      for (const p of points.slice(1)) fire(el, 'pointermove', ...p, extra);
+      fire(el, 'pointerup', ...points[points.length - 1], { ...extra, buttons: 0 });
+    };
+    const setup = () => {
+      const editor = makeEditor();
+      editor.commands.setContent('<p>x</p>');
+      editor.commands.insertContentAt(editor.state.doc.content.size, { type: 'drawing' });
+      return { editor, svg: editor.view.dom.querySelector('[data-type="drawing"] svg')! };
+    };
+
+    it('draws a stroke with the mouse and marks the drawing active', () => {
+      const { editor, svg } = setup();
+      drag(svg, [[10, 10], [60, 10], [110, 10]]);
+      expect(strokes(editor)).toHaveLength(1);
+      expect(decodePoints(strokes(editor)[0].points).map((p) => p.x)).toEqual([10, 60, 110]);
+      expect(editor.storage.drawing.active).toBe(true);
+      // Back to the text (happy-dom sends no focus event for commands.focus()).
+      editor.view.dom.dispatchEvent(new FocusEvent('focus'));
+      expect(editor.storage.drawing.active).toBe(false);
+    });
+
+    it('erases whole strokes in one undoable step', () => {
+      const { editor, svg } = setup();
+      drag(svg, [[10, 10], [200, 10]]);
+      drag(svg, [[10, 100], [200, 100]]);
+      drag(svg, [[10, 200], [200, 200]]);
+      setDrawingTool(editor, { mode: 'eraser', eraser: 'stroke' });
+      drag(svg, [[100, 0], [100, 120]]);
+      expect(strokes(editor)).toHaveLength(1);
+      expect(decodePoints(strokes(editor)[0].points)[0].y).toBe(200);
+    });
+
+    it('cuts the touched part out with the part eraser', () => {
+      const { editor, svg } = setup();
+      drag(svg, [[10, 50], [300, 50]]);
+      setDrawingTool(editor, { mode: 'eraser', eraser: 'part' });
+      drag(svg, [[150, 0], [150, 100]]);
+      const left = strokes(editor).map((s) => decodePoints(s.points));
+      expect(left).toHaveLength(2);
+      expect(Math.max(...left[0].map((p) => p.x))).toBeLessThan(140);
+      expect(Math.min(...left[1].map((p) => p.x))).toBeGreaterThan(160);
+    });
+
+    it('erases with the pen eraser while the pen tool is chosen', () => {
+      const { editor, svg } = setup();
+      drag(svg, [[10, 50], [300, 50]], { pointerType: 'pen' });
+      expect(strokes(editor)).toHaveLength(1);
+      drag(svg, [[150, 0], [150, 100]], { pointerType: 'pen', buttons: 32, button: 5 });
+      expect(strokes(editor)).toHaveLength(0);
+    });
+
+    it('ignores fingers', () => {
+      const { editor, svg } = setup();
+      drag(svg, [[10, 50], [300, 50]], { pointerType: 'touch' });
+      expect(strokes(editor)).toHaveLength(0);
+    });
   });
 });

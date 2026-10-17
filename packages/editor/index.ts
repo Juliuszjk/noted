@@ -35,3 +35,4 @@ export * from './reminder-picker';
 export * from './drawing';
 export * from './drawing-codec';
 export * from './drawing-render';
+export * from './drawing-erase';

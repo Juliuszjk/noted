@@ -28,6 +28,7 @@ import type { MathEditRequest } from '@noted/editor/math';
 import { setReminderTimes } from '@noted/editor/reminder';
 import type { ReminderEditRequest } from '@noted/editor/reminder';
 import { createToolbar } from './toolbar';
+import { createDrawingBar } from './drawing-bar';
 import { createFindBar } from './find';
 import { showHistoryView } from './history-view';
 import { exportNote, exportFileName } from '@noted/editor/export';
@@ -521,6 +522,7 @@ const startEditor = () => {
     expectKeyboard: () => post({ type: 'expectKeyboard' }),
   });
   toolbarApi = toolbar;
+  createDrawingBar(editor, { pickColor: toolbar.pickColor });
   toolbar.setToolbarConfig(toolbarConfig, tableToolbarConfig);
   openMathEditor = toolbar.openMathEditor;
   openReminderPicker = toolbar.openReminderPicker;

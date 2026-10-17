@@ -322,6 +322,7 @@ body.table-resizing-row, body.table-resizing-row * { cursor: row-resize !importa
 .ProseMirror [data-type="drawing"] svg { display: block; width: 100%; min-width: 100%; height: auto; }
 .ProseMirror[contenteditable="true"] [data-type="drawing"] { outline: 1px dashed var(--border); cursor: crosshair; }
 .ProseMirror[contenteditable="true"] [data-type="drawing"].ProseMirror-selectednode { outline: 2px solid var(--primary); }
+.ProseMirror [data-type="drawing"] .drawing-eraser { display: none; fill: none; stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
 
 /* Attachments: a card per file. */
 .ProseMirror .attachment-card {

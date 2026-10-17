@@ -214,6 +214,17 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   and follows a stroke ending at the right edge, pointer down blurs the editor and saving keeps
   the scroll (WebKit scrolled to the selection). Slash rows all carry an MDI `icon`
   (`SlashItem.icon`, shared by desktop and phone, test enforces it).
+  Step 2 (phone): pen kinds `DRAWING_TOOLS` pen / fountain / pencil / marker / highlighter
+  (`TOOL_LOOK` in drawing-render.ts; unknown kinds draw as pen); tool state in
+  `editor.storage.drawing` (`mode` pen / eraser, `eraser` 'stroke' | 'part', `tool`, `pens` =
+  colour + width per kind, `active` + `onDrawingChange` for platform tool bars, cleared on
+  editor focus); eraser geometry `drawing-erase.ts` (one transaction per eraser movement); pen
+  eraser = `buttons & 32` / `button 5`. Phone: `apps/mobile/plugins/with-stylus.js` (MainActivity:
+  `requestUnbufferedDispatch` on stylus down = ~480 Hz; side button held at contact start ->
+  TOOL_TYPE_ERASER, button bits cleared, BUTTON_PRESS swallowed), floating bar
+  `editor/drawing-bar.ts` (pen kinds, erasers, palette + custom colour via toolbar `pickColor`,
+  width slider with a sample stroke); drawings are in the page's `NATIVE_TAP` (a tap never opens
+  the keyboard). Tool choices live in memory only (lost on app restart).
 - `/goto` and `/linkto` (`appendNoteLink` in sync/json-to-y.ts, never twice, not into locked notes).
 - HEIC: desktop `src/heic.ts` (libheif-js), phone RN `{type:'convertHeic'}`.
 - Files pasted from a file manager on desktop: WebKitGTK gives no data, so Rust
@@ -298,10 +309,9 @@ addresses (`packages/config/server.ts`, `infra/docker/.env`), `CLAUDE.local.md`,
 after a fresh clone run `build:editor` and `build:viewer` first. Before going public: grep the
 tracked files for addresses / names again.
 
-**Drawing step 1 done (2026-10-17)**: block, rendering everywhere, basic pen / mouse input,
-confirmed. Next (decided): step 2 phone drawing (Expo config plugin: `requestUnbufferedDispatch`
-+ side button -> eraser, toolbar: palette colours, 3 widths, eraser whole stroke / part (default
-whole stroke), undo / redo), step 3 desktop tools, then the "whole note" idea (TODO).
+**Drawing steps 1-2 done (2026-10-17)**: block + rendering everywhere, phone drawing (480 Hz,
+side button eraser, pen kinds, erasers, colours incl. custom, width slider), confirmed. Next:
+step 3 desktop drawing tools, then the "whole note" idea (TODO).
 
 ## TODO / ideas (not decided yet, ask before doing)
 
@@ -349,6 +359,13 @@ whole stroke), undo / redo), step 3 desktop tools, then the "whole note" idea (T
 - All-zero key: a hot reload reset the key and a note was sealed with zeros. Guard: verifier
   check before sync; restart windows after entry-file changes.
 - Lost text on slow connections (sync engine overwriting newer saves) -> `mergingNoteStore`.
+- **Lost phone saves** (2026-10-17): Noted swiped away from the recent apps keeps its process
+  (background sync, widget); opened again, the app re-runs in the same JS runtime and the shared
+  expo-sqlite handle is dead (`prepareAsync` -> NullPointerException) -> every save failed
+  silently. Fix: `openHealingDatabase` in `src/store.ts` (reopens with `useNewConnection` and
+  repeats the call once) + EditorScreen keeps unsaved page updates (`unsavedRef`, merged with
+  `Y.mergeUpdates`, retried every 2 s, alert after 3 failures). Release builds log console
+  output to logcat (`adb logcat -s ReactNativeJS`).
 - Lost edits after opening the already open note again (desktop note list / Reminders list,
   2026-10-17): `selectNote` made a new Y.Doc while the editor (created once) stayed on the old
   one and saves read the new one; edits vanished on restart. `selectNote` now keeps the live doc

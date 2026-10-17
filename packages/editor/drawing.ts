@@ -1,11 +1,15 @@
 import { Node } from '@tiptap/core';
+import type { Editor } from '@tiptap/core';
+import { Fragment } from '@tiptap/pm/model';
 import type { Node as PmNode } from '@tiptap/pm/model';
-import { DRAWING_WIDTH, encodePoints } from './drawing-codec';
+import { decodePoints, DRAWING_WIDTH, encodePoints } from './drawing-codec';
 import type { StrokePoint } from './drawing-codec';
 import {
-  DEFAULT_DRAWING_HEIGHT, DEFAULT_PEN_SIZE, drawingSize, isDrawingTool, strokeData, strokeOutline, strokePath, strokeStyle,
+  DEFAULT_DRAWING_HEIGHT, DEFAULT_PEN_SIZE, DEFAULT_TOOL_SIZES, DRAWING_TOOLS, drawingSize, isDrawingTool, strokeData, strokeOutline, strokePath, strokeStyle,
 } from './drawing-render';
 import type { DrawingStrokeData, DrawingTool } from './drawing-render';
+import { boxNear, eraserPath, eraseStrokePart, pointsBox, strokeHit } from './drawing-erase';
+import type { Box, EraserMode } from './drawing-erase';
 
 // Hand drawing block. The strokes are child nodes (drawingStroke) of the block, so they live in
 // the note body like any other content: two devices drawing at once merge, Yjs undo covers
@@ -16,8 +20,11 @@ import type { DrawingStrokeData, DrawingTool } from './drawing-render';
 //
 // A drawing wider than the note (a long formula) scrolls sideways inside the block.
 //
-// Input: a pen (S Pen, tablet) or the mouse draws, a finger scrolls the note (or the block
-// sideways) and a tap with it puts the keyboard away.
+// Input: a pen (S Pen, tablet) or the mouse draws or erases (the tool in storage, or the pen's
+// eraser: the phone passes the S Pen side button held at the start of a contact as one, see
+// apps/mobile/plugins/with-stylus.js), a finger scrolls the note (or the block sideways) and a
+// tap with it puts the keyboard away. Platforms show their drawing tools while a drawing is
+// active (onDrawingChange).
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 // Space kept beyond the strokes while editing, to write further down / right.
@@ -33,16 +40,36 @@ const MIN_POINT_DISTANCE = 0.4;
 // The S Pen reports about 0.5 at full force; scaled so a firm stroke reaches 1.
 const PEN_PRESSURE_MAX = 0.5;
 const MOUSE_PRESSURE = 0.5;
+// Eraser radius in drawing units.
+const ERASER_RADIUS = 16;
 
-export interface DrawingToolState {
-  tool: DrawingTool;
+// Width range of the width slider (drawing units).
+export const DRAWING_SIZE_RANGE: Record<DrawingTool, [number, number]> = {
+  pen: [1, 30], fountain: [1, 30], pencil: [1, 30], marker: [2, 40], highlighter: [8, 80],
+};
+
+export interface PenSettings {
+  // CSS colour (palette variable, hex) or null = the text colour.
   color: string | null;
   size: number;
+}
+
+export interface DrawingToolState {
+  mode: 'pen' | 'eraser';
+  // What the eraser (also the pen's eraser) removes: whole strokes or the touched part.
+  eraser: EraserMode;
+  // The pen kind; each keeps its own colour and width.
+  tool: DrawingTool;
+  pens: Record<DrawingTool, PenSettings>;
 }
 
 interface DrawingStorage {
   // The tool new strokes use (platform toolbars change it).
   current: DrawingToolState;
+  // The user is working in a drawing (drew in it or tapped it); cleared when the text gets
+  // the focus. Platforms show the drawing tools meanwhile.
+  active: boolean;
+  listeners: Set<() => void>;
 }
 
 declare module '@tiptap/core' {
@@ -50,6 +77,42 @@ declare module '@tiptap/core' {
     drawing: DrawingStorage;
   }
 }
+
+const notify = (editor: Editor) => editor.storage.drawing.listeners.forEach((fn) => fn());
+
+const defaultPens = (): Record<DrawingTool, PenSettings> => Object.fromEntries(DRAWING_TOOLS.map((tool) => [
+  tool, { color: tool === 'highlighter' ? 'var(--c-yellow)' : null, size: DEFAULT_TOOL_SIZES[tool] },
+])) as Record<DrawingTool, PenSettings>;
+
+export const setDrawingTool = (editor: Editor, patch: Partial<Omit<DrawingToolState, 'pens'>>): void => {
+  Object.assign(editor.storage.drawing.current, patch);
+  notify(editor);
+};
+
+// Colour / width of the current pen kind.
+export const currentPen = (editor: Editor): PenSettings => {
+  const state = editor.storage.drawing.current;
+  return state.pens[state.tool];
+};
+
+export const setPenSettings = (editor: Editor, patch: Partial<PenSettings>): void => {
+  const state = editor.storage.drawing.current;
+  state.pens[state.tool] = { ...state.pens[state.tool], ...patch };
+  state.mode = 'pen';
+  notify(editor);
+};
+
+export const setDrawingActive = (editor: Editor, on: boolean): void => {
+  if (editor.storage.drawing.active === on) return;
+  editor.storage.drawing.active = on;
+  notify(editor);
+};
+
+// Called when the tool or the active state changes; returns the unsubscribe function.
+export const onDrawingChange = (editor: Editor, fn: () => void): (() => void) => {
+  editor.storage.drawing.listeners.add(fn);
+  return () => editor.storage.drawing.listeners.delete(fn);
+};
 
 const strokesOf = (node: PmNode): DrawingStrokeData[] => {
   const out: DrawingStrokeData[] = [];
@@ -116,7 +179,15 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
   isolating: true,
 
   addStorage() {
-    return { current: { tool: 'pen', color: null, size: DEFAULT_PEN_SIZE } };
+    return {
+      current: { mode: 'pen', eraser: 'stroke', tool: 'pen', pens: defaultPens() },
+      active: false,
+      listeners: new Set(),
+    };
+  },
+
+  onFocus() {
+    setDrawingActive(this.editor, false);
   },
 
   addAttributes() {
@@ -159,38 +230,47 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
       const svg = document.createElementNS(SVG_NS, 'svg');
       svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
       const strokesGroup = document.createElementNS(SVG_NS, 'g');
+      // Pieces of strokes being cut by the part eraser.
+      const piecesGroup = document.createElementNS(SVG_NS, 'g');
       const live = document.createElementNS(SVG_NS, 'path');
-      svg.append(strokesGroup, live);
+      const eraserRing = document.createElementNS(SVG_NS, 'circle');
+      eraserRing.setAttribute('class', 'drawing-eraser');
+      eraserRing.setAttribute('r', String(ERASER_RADIUS));
+      svg.append(strokesGroup, piecesGroup, live, eraserRing);
       scroller.append(svg);
       dom.append(scroller);
 
-      // Rendered paths, by the stroke's encoded points (strokes never change, only come and go).
-      let paths = new Map<string, SVGPathElement>();
+      // Rendered strokes in document order. A stroke never changes (it only comes and goes), so
+      // its path, points and box are kept by its attributes.
+      interface Item { key: string; data: DrawingStrokeData; path: SVGPathElement; points: StrokePoint[]; box: Box }
+      let items: Item[] = [];
       const render = () => {
         const strokes = strokesOf(node);
-        const next = new Map<string, SVGPathElement>();
-        const ordered: SVGPathElement[] = [];
-        for (const stroke of strokes) {
-          const key = `${stroke.points}|${stroke.color}|${stroke.size}|${stroke.tool}`;
-          let path = paths.get(key) ?? next.get(key);
-          if (!path || next.has(key)) {
-            path = document.createElementNS(SVG_NS, 'path');
-            path.setAttribute('d', strokePath(stroke));
-            path.setAttribute('style', strokeStyle(stroke));
-          }
-          next.set(key, path);
-          ordered.push(path);
-        }
-        paths = next;
-        strokesGroup.replaceChildren(...ordered);
+        const old = new Map<string, Item[]>();
+        for (const item of items) old.set(item.key, [...(old.get(item.key) ?? []), item]);
+        items = strokes.map((data) => {
+          const key = `${data.points}|${data.color}|${data.size}|${data.tool}`;
+          const reused = old.get(key)?.shift();
+          if (reused) return reused;
+          const path = document.createElementNS(SVG_NS, 'path');
+          path.setAttribute('d', strokePath(data));
+          path.setAttribute('style', strokeStyle(data));
+          const points = decodePoints(data.points);
+          return { key, data, path, points, box: pointsBox(points, data.size / 2) };
+        });
+        strokesGroup.replaceChildren(...items.map((item) => item.path));
+        showErasing();
         const { width, height } = drawingSize(node.attrs.height, strokes, editor.isEditable ? EDIT_ROOM : undefined);
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
         svg.style.width = `${(width / DRAWING_WIDTH) * 100}%`;
       };
-      render();
-
       // The stroke being drawn.
-      let active: { pointerId: number; points: StrokePoint[]; tool: DrawingToolState; pen: boolean } | null = null;
+      let active: { pointerId: number; points: StrokePoint[]; tool: { tool: DrawingTool } & PenSettings; pen: boolean } | null = null;
+      // The eraser at work: strokes removed whole, or cut into pieces (by stroke key).
+      let erasing: {
+        pointerId: number; pen: boolean; mode: EraserMode; last: { x: number; y: number } | null;
+        removed: Set<string>; pieces: Map<string, StrokePoint[][]>;
+      } | null = null;
       let frame = 0;
       // Set by a pen's pointerdown, read by the touchstart that follows it.
       let penTouch = false;
@@ -221,8 +301,89 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         live.removeAttribute('d');
       };
 
+      // Strokes the eraser has taken are hidden; cut ones show their pieces instead.
+      let piecesFrame = 0;
+      const showErasing = () => {
+        for (const item of items) {
+          const gone = !!erasing && (erasing.removed.has(item.key) || erasing.pieces.has(item.key));
+          item.path.style.display = gone ? 'none' : '';
+        }
+        if (piecesFrame) return;
+        piecesFrame = requestAnimationFrame(() => {
+          piecesFrame = 0;
+          const out: SVGPathElement[] = [];
+          for (const [key, pieces] of erasing?.pieces ?? []) {
+            const item = items.find((i) => i.key === key);
+            if (!item) continue;
+            for (const piece of pieces) {
+              const path = document.createElementNS(SVG_NS, 'path');
+              path.setAttribute('d', strokeOutline(piece, item.data.size, item.data.tool));
+              path.setAttribute('style', strokeStyle(item.data));
+              out.push(path);
+            }
+          }
+          piecesGroup.replaceChildren(...out);
+        });
+      };
+      const eraseAt = (x: number, y: number) => {
+        if (!erasing) return;
+        for (const item of items) {
+          if (erasing.removed.has(item.key) || !boxNear(item.box, x, y, ERASER_RADIUS)) continue;
+          if (erasing.mode === 'stroke') {
+            if (strokeHit(item.points, item.data.size, x, y, ERASER_RADIUS)) erasing.removed.add(item.key);
+            continue;
+          }
+          const current = erasing.pieces.get(item.key) ?? [item.points];
+          let changed = false;
+          const next: StrokePoint[][] = [];
+          for (const piece of current) {
+            const cut = eraseStrokePart(piece, item.data.size, x, y, ERASER_RADIUS);
+            if (cut) changed = true;
+            next.push(...(cut ?? [piece]));
+          }
+          if (changed) erasing.pieces.set(item.key, next);
+        }
+      };
+      const moveEraserRing = (x: number, y: number) => {
+        eraserRing.setAttribute('cx', String(x));
+        eraserRing.setAttribute('cy', String(y));
+        eraserRing.style.display = 'block';
+      };
+      // One transaction for the whole eraser movement (one undo step).
+      const commitErasing = () => {
+        const done = erasing;
+        erasing = null;
+        eraserRing.style.display = '';
+        const pos = typeof getPos === 'function' ? getPos() : undefined;
+        const current = typeof pos === 'number' ? editor.state.doc.nodeAt(pos) : null;
+        const type = editor.schema.nodes.drawingStroke;
+        if (done && (done.removed.size || done.pieces.size) && typeof pos === 'number' && current?.type.name === 'drawing' && type) {
+          const changes: { from: number; to: number; nodes: PmNode[] }[] = [];
+          const used = new Set<string>();
+          current.forEach((child, offset) => {
+            const data = strokeData(child.attrs);
+            const key = `${data.points}|${data.color}|${data.size}|${data.tool}`;
+            if (used.has(key)) return;
+            const from = pos + 1 + offset;
+            if (done.removed.has(key)) changes.push({ from, to: from + child.nodeSize, nodes: [] });
+            const pieces = done.pieces.get(key);
+            if (pieces) {
+              changes.push({ from, to: from + child.nodeSize, nodes: pieces.map((piece) => type.create({ ...child.attrs, points: encodePoints(piece) })) });
+            }
+            if (done.removed.has(key) || pieces) used.add(key);
+          });
+          const tr = editor.state.tr;
+          for (const change of changes.reverse()) tr.replaceWith(change.from, change.to, Fragment.from(change.nodes));
+          if (tr.docChanged) keepScroll(() => editor.view.dispatch(tr));
+        }
+        piecesGroup.replaceChildren();
+        showErasing();
+      };
+
+      render();
+
       const onPointerDown = (e: PointerEvent) => {
-        if (!editor.isEditable || active) return;
+        if (!editor.isEditable || active || erasing) return;
         if (e.pointerType === 'touch') return;
         if (e.pointerType === 'mouse' && e.button !== 0) return;
         const pen = e.pointerType === 'pen';
@@ -232,15 +393,39 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         // Drawing takes the focus off the text: the phone keyboard goes away, and a focused
         // WebKit editor would scroll its selection into view when the stroke is saved.
         if (editor.view.hasFocus()) (editor.view.dom as HTMLElement).blur();
+        setDrawingActive(editor, true);
         try {
           svg.setPointerCapture(e.pointerId);
         } catch {
           // Capture is a nicety (strokes leaving the block); drawing works without it.
         }
-        active = { pointerId: e.pointerId, points: [toPoint(e, pen)], tool: { ...editor.storage.drawing.current }, pen };
+        const state = editor.storage.drawing.current;
+        // The pen's eraser end (the S Pen side button on the phone) erases whatever the tool.
+        const penEraser = pen && ((e.buttons & 32) !== 0 || e.button === 5);
+        if (state.mode === 'eraser' || penEraser) {
+          const { x, y } = toPoint(e, pen);
+          erasing = { pointerId: e.pointerId, pen, mode: state.eraser, last: { x, y }, removed: new Set(), pieces: new Map() };
+          eraseAt(x, y);
+          moveEraserRing(x, y);
+          showErasing();
+          return;
+        }
+        active = { pointerId: e.pointerId, points: [toPoint(e, pen)], tool: { tool: state.tool, ...state.pens[state.tool] }, pen };
         drawLive();
       };
       const onPointerMove = (e: PointerEvent) => {
+        if (erasing && e.pointerId === erasing.pointerId) {
+          e.preventDefault();
+          const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+          for (const ev of events.length ? events : [e]) {
+            const point = toPoint(ev, erasing.pen);
+            for (const at of eraserPath(erasing.last, point, ERASER_RADIUS)) eraseAt(at.x, at.y);
+            erasing.last = point;
+          }
+          if (erasing.last) moveEraserRing(erasing.last.x, erasing.last.y);
+          showErasing();
+          return;
+        }
         if (!active || e.pointerId !== active.pointerId) return;
         e.preventDefault();
         const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
@@ -256,6 +441,17 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         if (!frame) frame = requestAnimationFrame(drawLive);
       };
       const finish = (e: PointerEvent, keep: boolean) => {
+        if (erasing && e.pointerId === erasing.pointerId) {
+          penTouch = false;
+          if (keep) commitErasing();
+          else {
+            erasing = null;
+            eraserRing.style.display = '';
+            piecesGroup.replaceChildren();
+            showErasing();
+          }
+          return;
+        }
         if (!active || e.pointerId !== active.pointerId) return;
         const { points, tool } = active;
         active = null;
@@ -298,7 +494,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
       // opens the phone keyboard. It puts the keyboard away instead.
       let finger: { x: number; y: number } | null = null;
       const onTouchStart = (e: TouchEvent) => {
-        if (penTouch || active?.pen) {
+        if (penTouch || active?.pen || erasing?.pen) {
           e.preventDefault();
           finger = null;
           return;
@@ -313,6 +509,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         if (!tap || !e.cancelable || !editor.isEditable) return;
         e.preventDefault();
         if (editor.view.hasFocus()) (editor.view.dom as HTMLElement).blur();
+        setDrawingActive(editor, true);
       };
       // The mouse: no native selection / focus (WebKit would scroll the drawing's start into view).
       const onMouseDown = (e: MouseEvent) => {
@@ -340,6 +537,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         ignoreMutation: () => true,
         destroy: () => {
           clearLive();
+          if (piecesFrame) cancelAnimationFrame(piecesFrame);
           svg.removeEventListener('touchstart', onTouchStart);
           svg.removeEventListener('touchend', onTouchEnd);
         },

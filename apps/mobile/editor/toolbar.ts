@@ -765,7 +765,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     return b;
   };
   // Saturation / brightness square, hue bar and a hex field, like the desktop picker.
-  const colorPickerSheet = (title: string, initial: string | undefined, apply: (hex: string) => void) => {
+  const colorPickerSheet = (title: string, initial: string | undefined, apply: (hex: string) => void, hideBar = false) => {
     showSheet('color', title, (body) => {
       let hsv: Hsv = (initial && hexToHsv(initial)) || { h: 210, s: 0.6, v: 0.9 };
       const square = h('div', 'tb-sv');
@@ -820,7 +820,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       fields.append(preview, input);
       body.append(square, hue, fields, ok);
       paint();
-    }, undefined, { hideKeyboard: true });
+    }, undefined, { hideKeyboard: true, hideBar });
   };
 
   const colorText = button(mdiFormatColorText, 'Text colour', () => chain().setColor(lastText).run(), () => !!editor.getAttributes('textStyle').color);
@@ -1548,7 +1548,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     const last = editor.view.dom.lastElementChild;
     return !!last && y > last.getBoundingClientRect().bottom + 8;
   };
-  const NATIVE_TAP = 'a, input, textarea, label, button, select, img, .image-node, [data-note-link], [data-type="inline-math"], .outline-toggle, '
+  const NATIVE_TAP = 'a, input, textarea, label, button, select, img, .image-node, [data-note-link], [data-type="inline-math"], .outline-toggle, [data-type="drawing"], .db, '
     + '[data-type="block-math"], .tableWrapper, .attachment-card, .tb, .tb-notelink, .find-bar, .history-view, #chips, #title, #wordcount';
   // A tap on an image or a file card selects it without the keyboard (it pushed the image off
   // screen); a tap on the text brings the keyboard back.
@@ -1707,5 +1707,8 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     return false;
   };
 
-  return { openMathEditor, openReminderPicker, openCatalog: catalogSheet, openExport: exportSheet, openNotePicker: (mode: 'goto' | 'linkto') => noteLinkSheet(mode), setKeyboard, refocus, setToolbarConfig, slash: slashRenderer, back };
+  // The drawing tools' "Custom colour" (drawing-bar.ts): the same picker, without the bar row.
+  const pickColor = (title: string, initial: string | undefined, apply: (hex: string) => void) => colorPickerSheet(title, initial, apply, true);
+
+  return { pickColor, openMathEditor, openReminderPicker, openCatalog: catalogSheet, openExport: exportSheet, openNotePicker: (mode: 'goto' | 'linkto') => noteLinkSheet(mode), setKeyboard, refocus, setToolbarConfig, slash: slashRenderer, back };
 }
