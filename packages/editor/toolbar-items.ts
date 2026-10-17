@@ -7,7 +7,7 @@ import {
   mdiTableRowRemove, mdiTableColumn, mdiTableRow, mdiTableRemove, mdiTableArrowLeft, mdiTableArrowRight, mdiTableArrowUp,
   mdiTableArrowDown, mdiTableColumnWidth, mdiTableRowHeight, mdiTableRefresh, mdiTableHeadersEye, mdiSelect, mdiSelectAll,
   mdiTableMergeCells, mdiTableSplitCell, mdiFormatColorFill, mdiDraw, mdiPen, mdiFountainPenTip, mdiLeadPencil, mdiBrushVariant,
-  mdiFormatColorHighlight, mdiEraser, mdiEraserVariant, mdiPaletteOutline, mdiFormatLineWeight, mdiUndo, mdiRedo,
+  mdiFormatColorHighlight, mdiEraser, mdiEraserVariant, mdiPaletteOutline, mdiFormatLineWeight, mdiUndo, mdiRedo, mdiGesture,
 } from '@mdi/js';
 
 // Settings > Toolbar, like Notesnook's: the toolbar is a list of groups (a separator between
@@ -57,6 +57,7 @@ const ITEMS: Record<string, ToolbarItemDef> = Object.fromEntries(([
   ['link', 'Link', mdiLinkPlus],
   ['align', 'Alignment', mdiFormatAlignLeft],
   ['find', 'Find and replace', mdiMagnify],
+  ['drawMode', 'Draw with the mouse', mdiGesture],
   ['colLeft', 'Insert column left', mdiTableColumnPlusBefore],
   ['colRight', 'Insert column right', mdiTableColumnPlusAfter],
   ['rowAbove', 'Insert row above', mdiTableRowPlusBefore],
@@ -106,7 +107,7 @@ const DRAWING_ITEMS = items(['drawTool', 'drawBallpoint', 'drawFountain', 'drawP
 // Every button each toolbar can show.
 export const TOOLBAR_ITEMS: Record<ToolbarPlatform, ToolbarItemDef[]> = {
   desktop: items(['bold', 'italic', 'underline', 'strike', 'code', 'subscript', 'superscript', 'highlight', 'textColor', 'math',
-    'fontSize', 'headings', 'font', 'tasks', 'numbers', 'bullets', 'link', 'noteLink', 'align', 'outdent', 'indent', 'find']),
+    'fontSize', 'headings', 'font', 'tasks', 'numbers', 'bullets', 'link', 'noteLink', 'align', 'outdent', 'indent', 'find', 'drawMode']),
   mobile: items(['insert', 'outdent', 'indent', 'bold', 'italic', 'underline', 'strike', 'code', 'subscript', 'superscript',
     'highlight', 'textColor', 'math', 'fontSize', 'headings', 'font', 'tasks', 'numbers', 'bullets', 'noteLink', 'link', 'align']),
   mobileTable: TABLE_ITEMS,
@@ -126,6 +127,7 @@ export const TOOLBAR_PRESETS: Record<ToolbarPlatform, Record<'default' | 'minima
       ['headings', 'font'],
       ['bullets', 'numbers', 'tasks'],
       ['link', 'noteLink', 'align', 'find'],
+      ['drawMode'],
     ],
     minimal: [['bold', 'italic', 'underline'], ['headings'], ['bullets', 'numbers', 'tasks'], ['link']],
   },

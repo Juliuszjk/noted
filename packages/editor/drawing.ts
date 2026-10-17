@@ -1,4 +1,5 @@
-import { Node } from '@tiptap/core';
+import { Extension, Node } from '@tiptap/core';
+import { Plugin } from '@tiptap/pm/state';
 import type { Editor } from '@tiptap/core';
 import { Fragment } from '@tiptap/pm/model';
 import type { Node as PmNode } from '@tiptap/pm/model';
@@ -71,6 +72,19 @@ interface DrawingStorage {
   active: boolean;
   activeDom: HTMLElement | null;
   listeners: Set<() => void>;
+  // Desktop "Draw with the mouse" (top toolbar): the mouse starts drawings like a pen does
+  // (DrawingStarter); for this session only.
+  mouseDraws: boolean;
+  // Live drawing blocks by their DOM: a pen stroke started outside a block (DrawingStarter)
+  // is handed to the block made for it.
+  views: Map<HTMLElement, { begin: (e: PointerEvent, earlier: PointLike[]) => void }>;
+}
+
+// What a stroke needs from a pointer event (also kept from events that already passed).
+export interface PointLike {
+  clientX: number;
+  clientY: number;
+  pressure: number;
 }
 
 declare module '@tiptap/core' {
@@ -142,6 +156,11 @@ export const restoreDrawingTools = (editor: Editor, text: string | null): void =
   } catch {
     // Unreadable choices: the defaults stay.
   }
+};
+
+export const setMouseDraws = (editor: Editor, on: boolean): void => {
+  editor.storage.drawing.mouseDraws = on;
+  notify(editor);
 };
 
 // Called when the tool or the active state changes; returns the unsubscribe function.
@@ -220,6 +239,8 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
       active: false,
       activeDom: null,
       listeners: new Set(),
+      views: new Map(),
+      mouseDraws: false,
     };
   },
 
@@ -298,6 +319,11 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         strokesGroup.replaceChildren(...items.map((item) => item.path));
         showErasing();
         const { width, height } = drawingSize(node.attrs.height, strokes, editor.isEditable ? EDIT_ROOM : undefined);
+        setSize(width, height);
+      };
+      let shown = { width: DRAWING_WIDTH, height: DEFAULT_DRAWING_HEIGHT };
+      const setSize = (width: number, height: number) => {
+        shown = { width, height };
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
         svg.style.width = `${(width / DRAWING_WIDTH) * 100}%`;
       };
@@ -317,7 +343,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         const w = scroller.getBoundingClientRect().width;
         return w ? DRAWING_WIDTH / w : 1;
       };
-      const toPoint = (e: PointerEvent, pen: boolean): StrokePoint => {
+      const toPoint = (e: PointLike, pen: boolean): StrokePoint => {
         const rect = svg.getBoundingClientRect();
         const scale = unitsPerPx();
         return {
@@ -329,6 +355,11 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
       const drawLive = () => {
         frame = 0;
         if (!active) return;
+        // Writing below the bottom edge (or a stroke started under the block): the block grows
+        // at once, not only when the stroke is saved.
+        let low = 0;
+        for (const point of active.points) low = Math.max(low, point.y);
+        if (low > shown.height - active.tool.size) setSize(shown.width, Math.ceil(low + EDIT_ROOM.y));
         live.setAttribute('d', strokeOutline(active.points, active.tool.size, active.tool.tool, false));
         live.setAttribute('style', strokeStyle(active.tool));
       };
@@ -411,6 +442,9 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
           });
           const tr = editor.state.tr;
           for (const change of changes.reverse()) tr.replaceWith(change.from, change.to, Fragment.from(change.nodes));
+          // Everything erased: the empty block goes too (the same undo step brings both back).
+          const left = tr.doc.nodeAt(pos);
+          if (left?.type.name === 'drawing' && left.childCount === 0) tr.delete(pos, pos + left.nodeSize);
           if (tr.docChanged) keepScroll(() => editor.view.dispatch(tr));
         }
         piecesGroup.replaceChildren();
@@ -418,6 +452,24 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
       };
 
       render();
+
+      // A pen stroke that started outside the block, under it (DrawingStarter): drawn on here.
+      const begin = (e: PointerEvent, earlier: PointLike[]) => {
+        if (!editor.isEditable || active || erasing) return;
+        if (editor.view.hasFocus()) (editor.view.dom as HTMLElement).blur();
+        setDrawingActive(editor, true, dom);
+        try {
+          svg.setPointerCapture(e.pointerId);
+        } catch {
+          // Without capture the rest of the stroke still reaches the block while over it.
+        }
+        const pen = e.pointerType === 'pen';
+        penTouch = pen;
+        const state = editor.storage.drawing.current;
+        active = { pointerId: e.pointerId, points: [...earlier, e].map((p) => toPoint(p, pen)), tool: { tool: state.tool, ...state.pens[state.tool] }, pen };
+        drawLive();
+      };
+      editor.storage.drawing.views.set(dom, { begin });
 
       const onPointerDown = (e: PointerEvent) => {
         if (!editor.isEditable || active || erasing) return;
@@ -580,6 +632,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         ignoreMutation: () => true,
         destroy: () => {
           clearLive();
+          editor.storage.drawing.views.delete(dom);
           if (editor.storage.drawing.activeDom === dom) setDrawingActive(editor, false);
           if (piecesFrame) cancelAnimationFrame(piecesFrame);
           svg.removeEventListener('touchstart', onTouchStart);
@@ -587,5 +640,130 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         },
       };
     };
+  },
+});
+
+const isEmptyLine = (node: PmNode | null | undefined) => !!node && node.type.name === 'paragraph' && node.childCount === 0;
+
+// Pen strokes started outside a drawing (the S Pen on the phone, a tablet pen on the desktop):
+// - on an empty line of the note: the line becomes a drawing;
+// - in the empty page under the note: a drawing at the end;
+// and the stroke goes on in it without lifting the pen. Under a drawing (only empty lines in
+// between) the stroke goes into that drawing instead, which grows. A tap without moving keeps
+// the pen's usual meaning (the cursor). The mouse only while "Draw with the mouse" is on (its
+// press there then never places the cursor or selects).
+export const DrawingStarter = Extension.create({
+  name: 'drawingStarter',
+
+  addProseMirrorPlugins() {
+    const editor = this.editor;
+    return [new Plugin({
+      view: (view) => {
+        const doc = view.dom.ownerDocument;
+        let pending: { pointerId: number; zone: { kind: 'line'; pos: number } | { kind: 'end' }; events: PointLike[]; x: number; y: number } | null = null;
+
+        // Where a pen touch would start a drawing, or null.
+        const zoneAt = (e: PointerEvent): { kind: 'line'; pos: number } | { kind: 'end' } | null => {
+          const target = e.target as Element | null;
+          if (!target?.closest) return null;
+          if (target.closest('[data-type="drawing"], button, input, textarea, select, a, label, .tb, .db, .tb-notelink, .find-bar, .history-view, .niv, .backlinks, #chips, #title, #wordcount')) return null;
+          const root = view.dom as HTMLElement;
+          if (root.contains(target)) {
+            // The top-level block under the pen: only an empty line counts (text, lists, images keep the pen).
+            let block: Element | null = target;
+            while (block && block.parentElement !== root) block = block.parentElement;
+            if (!block || block === root) return null;
+            const pos = view.posAtDOM(block, 0) - 1;
+            return isEmptyLine(editor.state.doc.nodeAt(pos)) && editor.state.doc.resolve(pos).depth === 0 ? { kind: 'line', pos } : null;
+          }
+          // The empty page under the note (the note's scroll area on the desktop).
+          const area = root.closest('[data-note-scroll]') ?? doc.body;
+          if (!area.contains(target)) return null;
+          const rect = root.getBoundingClientRect();
+          if (rect.width && (e.clientX < rect.left || e.clientX > rect.right)) return null;
+          const last = root.lastElementChild;
+          return !last || e.clientY > last.getBoundingClientRect().bottom ? { kind: 'end' } : null;
+        };
+
+        const start = (e: PointerEvent, earlier: PointLike[], zone: { kind: 'line'; pos: number } | { kind: 'end' }) => {
+          const { state } = editor;
+          const { doc: pmDoc, schema } = state;
+          const index = zone.kind === 'line' ? pmDoc.resolve(zone.pos).index(0) : pmDoc.childCount;
+          let above = index - 1;
+          while (above >= 0 && isEmptyLine(pmDoc.child(above))) above--;
+          let drawingPos = -1;
+          if (above >= 0 && pmDoc.child(above).type.name === 'drawing') {
+            drawingPos = 0;
+            for (let i = 0; i < above; i++) drawingPos += pmDoc.child(i).nodeSize;
+          } else {
+            let from = pmDoc.content.size;
+            let to = from;
+            if (zone.kind === 'line') {
+              from = zone.pos;
+              to = zone.pos + pmDoc.nodeAt(zone.pos)!.nodeSize;
+            } else if (isEmptyLine(pmDoc.lastChild)) {
+              from = pmDoc.content.size - pmDoc.lastChild!.nodeSize;
+            }
+            const nodes = [schema.nodes.drawing.create()];
+            // The last block: a line under it to type on.
+            if (to === pmDoc.content.size) nodes.push(schema.nodes.paragraph.create());
+            view.dispatch(state.tr.replaceWith(from, to, nodes));
+            drawingPos = from;
+          }
+          const dom = view.nodeDOM(drawingPos) as HTMLElement | null;
+          const target = dom && editor.storage.drawing.views.get(dom);
+          target?.begin(e, earlier);
+        };
+
+        const onDown = (e: PointerEvent) => {
+          pending = null;
+          const mouse = e.pointerType === 'mouse' && e.button === 0 && editor.storage.drawing.mouseDraws;
+          if ((e.pointerType !== 'pen' && !mouse) || !editor.isEditable) return;
+          // The eraser has nothing to erase there.
+          if ((e.buttons & 32) !== 0 || e.button === 5 || editor.storage.drawing.current.mode === 'eraser') return;
+          const zone = zoneAt(e);
+          if (!zone) return;
+          pending = { pointerId: e.pointerId, zone, events: [{ clientX: e.clientX, clientY: e.clientY, pressure: e.pressure }], x: e.clientX, y: e.clientY };
+          // The mouse would start a text selection (and move the cursor) meanwhile.
+          if (mouse) e.preventDefault();
+        };
+        const onMove = (e: PointerEvent) => {
+          if (!pending || e.pointerId !== pending.pointerId) return;
+          const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+          const all = events.length ? events : [e];
+          if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) < 4) {
+            for (const ev of all) pending.events.push({ clientX: ev.clientX, clientY: ev.clientY, pressure: ev.pressure });
+            return;
+          }
+          const { zone, events: earlier } = pending;
+          pending = null;
+          e.preventDefault();
+          for (const ev of all.slice(0, -1)) earlier.push({ clientX: ev.clientX, clientY: ev.clientY, pressure: ev.pressure });
+          start(e, earlier, zone);
+        };
+        const onEnd = (e: PointerEvent) => {
+          if (pending && e.pointerId === pending.pointerId) pending = null;
+        };
+        // A pen that may start a drawing must not scroll the page meanwhile.
+        const onTouchStart = (e: TouchEvent) => {
+          if (pending) e.preventDefault();
+        };
+
+        doc.addEventListener('pointerdown', onDown, true);
+        doc.addEventListener('pointermove', onMove, true);
+        doc.addEventListener('pointerup', onEnd, true);
+        doc.addEventListener('pointercancel', onEnd, true);
+        doc.addEventListener('touchstart', onTouchStart, { capture: true, passive: false });
+        return {
+          destroy: () => {
+            doc.removeEventListener('pointerdown', onDown, true);
+            doc.removeEventListener('pointermove', onMove, true);
+            doc.removeEventListener('pointerup', onEnd, true);
+            doc.removeEventListener('pointercancel', onEnd, true);
+            doc.removeEventListener('touchstart', onTouchStart, true);
+          },
+        };
+      },
+    })];
   },
 });

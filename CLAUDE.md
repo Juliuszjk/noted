@@ -234,6 +234,15 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   `restoreDrawingTools` (desktop localStorage `noted_drawing_tools` via NoteEditor
   `drawingTools`; phone page posts `{type:'drawingTools'}`, RN SecureStore, sent back in
   `editorPrefs`).
+  Option C (2026-10-18): `DrawingStarter` (drawing.ts, no schema) - a pen stroke on an empty
+  top-level line turns it into a drawing, under the note starts one at the end (+ an empty line
+  below), under a drawing (only empty lines between) writes on in it; the stroke is handed over
+  without lifting the pen (`storage.drawing.views` -> node view `begin`, pointer capture); taps,
+  text and the mouse are left alone unless desktop "Draw with the mouse" (top toolbar item
+  `drawMode`, `setMouseDraws`, session only). Erasing the last stroke removes the block (same
+  transaction). Desktop NoteEditor: while nothing has the focus, undo / redo go to the note
+  worked in last (`lastUsedEditor`; portalled menus carry `data-editor-menu`). Yjs undo in
+  happy-dom tests also reverts older changes: check undo in the app.
 - `/goto` and `/linkto` (`appendNoteLink` in sync/json-to-y.ts, never twice, not into locked notes).
 - HEIC: desktop `src/heic.ts` (libheif-js), phone RN `{type:'convertHeic'}`.
 - Files pasted from a file manager on desktop: WebKitGTK gives no data, so Rust
@@ -320,8 +329,10 @@ tracked files for addresses / names again.
 
 **Drawing steps 1-3 done (2026-10-17)**: block + rendering everywhere, phone drawing (480 Hz,
 side button eraser, pen kinds, erasers, colours incl. custom, width slider), desktop drawing
-menu (floating / at the top), configurable drawing bars, remembered tool choices; confirmed.
-Next: the "whole note" idea (TODO, ask first).
+menu (floating / at the top), configurable drawing bars, remembered tool choices; option C
+(pen on empty lines / under the note starts drawings), mouse draw mode; confirmed. Next idea
+(ask first): annotations on text anchored IN the body (an invisible inline anchor node holding
+the strokes, NOT a separate Y.Map: locked notes, undo, copy / paste), see the TODO.
 
 ## TODO / ideas (not decided yet, ask before doing)
 
@@ -335,7 +346,7 @@ Next: the "whole note" idea (TODO, ask first).
   events); later lasso, highlighter, paper, SVG export, ML Kit Digital Ink. **The user's wish
   (2026-10-17)**: the whole note text + drawing (draw anywhere over / between text, like Samsung
   Notes; "stage B" overlay anchored to blocks); fallback if that proves hard: pulling the S Pen
-  out inserts a drawing block under the cursor. Ask again after the drawing toolbar (step 2). **Phase 0 done
+  out inserts a drawing block under the cursor. Option C done; annotations on text = next stage. **Phase 0 done
   (2026-10-17)**, probe in Vivaldi and injected over CDP into the editor WebView: pen =
   `pointerType 'pen'`, palm / finger = `touch` (ignore it; pen strokes never cancelled by the
   palm); pressure fine-grained but tops out ~0.47-0.59 (needs scaling); tiltX/Y + altitude /

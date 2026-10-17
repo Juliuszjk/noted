@@ -8,7 +8,7 @@ export function Backlinks({ noteId, notes, onOpenNote }: { noteId: string; notes
   if (sources.length === 0) return null;
 
   return (
-    <div style={{ marginTop: 48, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+    <div className="backlinks" style={{ marginTop: 48, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
         Linked from {sources.length}
       </div>

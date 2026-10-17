@@ -8,9 +8,9 @@ import {
   mdiFormatSubscript, mdiFormatSuperscript, mdiMarker, mdiFormatColorText, mdiMinus, mdiPlus, mdiChevronDown,
   mdiFormatListBulleted, mdiFormatListNumbered, mdiFormatListCheckbox, mdiLinkPlus, mdiVectorLink,
   mdiFormatAlignLeft, mdiFormatAlignCenter, mdiFormatAlignRight, mdiFormatAlignJustify, mdiInvertColorsOff,
-  mdiPaletteOutline, mdiMagnify, mdiFunctionVariant, mdiFormatIndentDecrease, mdiFormatIndentIncrease,
+  mdiPaletteOutline, mdiMagnify, mdiGesture, mdiFunctionVariant, mdiFormatIndentDecrease, mdiFormatIndentIncrease,
 } from '@mdi/js';
-import { EDITOR_COLORS, EDITOR_FONT_SIZES, toolbarGroups, requestMathEdit } from '@noted/editor';
+import { EDITOR_COLORS, EDITOR_FONT_SIZES, toolbarGroups, requestMathEdit, onDrawingChange, setMouseDraws } from '@noted/editor';
 import type { ToolbarConfig } from '@noted/editor';
 import { IconBtn, Sep, popoverStyle } from './menu-parts';
 import { InsertLinkDialog, LinkBubble } from './LinkEditors';
@@ -152,6 +152,8 @@ export function TopToolbar({ editor, linkEditRequest = 0, align = 'center', note
   const [customFor, setCustomFor] = useState<'text' | 'highlight' | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
+  // "Draw with the mouse" shows whether it is on.
+  useEffect(() => onDrawingChange(editor, rerender), [editor]);
   useEffect(() => {
     editor.on('transaction', rerender);
     // Ctrl+K: link field right above the word (with the cursor inside a link, that link).
@@ -433,6 +435,15 @@ export function TopToolbar({ editor, linkEditRequest = 0, align = 'center', note
       </>
     ),
     find: onFind ? <IconBtn icon={mdiMagnify} title="Find and replace (Ctrl+F)" onClick={onFind} /> : null,
+    // Like the S Pen: dragging on an empty line or under the note starts a drawing there.
+    drawMode: (
+      <IconBtn
+        icon={mdiGesture}
+        title={editor.storage.drawing.mouseDraws ? 'Drawing with the mouse: drag on an empty line or under the note (click to stop)' : 'Draw with the mouse'}
+        active={editor.storage.drawing.mouseDraws}
+        onClick={() => setMouseDraws(editor, !editor.storage.drawing.mouseDraws)}
+      />
+    ),
   };
 
   return (

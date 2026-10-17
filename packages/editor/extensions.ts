@@ -32,7 +32,7 @@ import { SymbolLigatures } from './editor-prefs';
 import { createMathExtensions } from './math';
 import type { MathEditHandler } from './math';
 import { Reminder } from './reminder';
-import { Drawing, DrawingStroke } from './drawing';
+import { Drawing, DrawingStroke, DrawingStarter } from './drawing';
 import type { ReminderEditHandler } from './reminder';
 
 export interface SchemaExtensionOptions {
@@ -89,6 +89,8 @@ export const createSchemaExtensions = ({ ydoc, placeholder, onEditMath, onEditRe
   // Hand drawing block; its strokes are child nodes (drawing.ts).
   Drawing,
   DrawingStroke,
+  // A pen stroke on an empty line or under the note starts a drawing there (no schema).
+  DrawingStarter,
   ...createMathExtensions(onEditMath),
   // Dragging the lines between columns and rows (mouse and touch; no schema).
   TableResize,

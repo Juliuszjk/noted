@@ -9,6 +9,7 @@ import {
   SlashCommands, NoteLinkSuggestion, createSchemaExtensions, normalizeLinkUrl, setNoteTitles,
   configureBlobs, insertFiles, pastedFilePaths, importImages, NoteActions, setCodeThemeByLanguage, setReminderTimes, requestReminderAtSelection,
 } from '@noted/editor';
+import type { Editor } from '@tiptap/core';
 import type { NoteActionRequest } from '@noted/editor';
 import type { BlobHandlers } from '@noted/editor';
 import '@noted/editor/content.css';
@@ -59,6 +60,10 @@ export interface NoteSummary {
   // Left out of the "[[" menu.
   archived?: boolean;
 }
+
+// The editor the user worked in last (the split view has two), for undo / redo while nothing
+// has the focus.
+let lastUsedEditor: Editor | null = null;
 
 export function NoteEditor({
   noteId, ydoc, onUpdate, onOpenLink, notes = [], onOpenNote, onCreateNote, blobs,
@@ -215,6 +220,19 @@ export function NoteEditor({
       if (ed && !ed.isDestroyed && ed.view.dom.contains(e.target as Node) && handleEditorShortcut(ed, e)) {
         e.preventDefault();
         e.stopPropagation();
+        return;
+      }
+      // Nothing has the focus (after drawing, dragging an image or table handle, closing a
+      // viewer): undo / redo still reach the note worked in last instead of going nowhere.
+      const nothingFocused = !document.activeElement || document.activeElement === document.body;
+      if (ed && !ed.isDestroyed && ed.isEditable && nothingFocused && lastUsedEditor === ed) {
+        const undo = matchesShortcut(e, 'undo');
+        if (undo || matchesShortcut(e, 'redo')) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (undo) ed.commands.undo();
+          else ed.commands.redo();
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown, true);
@@ -617,6 +635,29 @@ export function NoteEditor({
     restoreDrawingTools(editor, drawingToolsRef.current?.load() ?? null);
     return onDrawingChange(editor, () => drawingToolsRef.current?.save(serializeDrawingTools(editor.storage.drawing.current)));
   }, [editor]);
+  // This note is the one worked in last once it is touched or gets the focus (split view: the
+  // other editor's undo / redo stay its own).
+  useEffect(() => {
+    const ed = editor;
+    const root = rootRef.current;
+    if (!ed || !root) return;
+    const mark = () => { lastUsedEditor = ed; };
+    // Elsewhere (the note list, the panels) undo / redo are not the note's any more.
+    const leave = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      if (lastUsedEditor === ed && !root.contains(target) && !target?.closest?.('[data-editor-menu]')) lastUsedEditor = null;
+    };
+    root.addEventListener('pointerdown', mark, true);
+    document.addEventListener('pointerdown', leave, true);
+    ed.on('focus', mark);
+    if (!secondary && !lastUsedEditor) lastUsedEditor = ed;
+    return () => {
+      root.removeEventListener('pointerdown', mark, true);
+      document.removeEventListener('pointerdown', leave, true);
+      ed.off('focus', mark);
+      if (lastUsedEditor === ed) lastUsedEditor = null;
+    };
+  }, [editor]);
   useEffect(() => {
     if (editor) setCodeThemeByLanguage(editor, codeThemeByLanguage ?? {});
   }, [editor, JSON.stringify(codeThemeByLanguage ?? {})]);
@@ -724,4 +765,5 @@ export function NoteEditor({
 // Floating menus (fixed position, viewport coordinates) live in <body>: inside the note's
 // zoomed box (status bar zoom = CSS zoom) WebKit scaled their position too, so at 120 % the
 // table menu sat lower, next to the next table.
-const floating = (node: ReactNode) => createPortal(node, document.body);
+// `data-editor-menu`: clicks in these menus still count as working in the note (undo / redo).
+const floating = (node: ReactNode) => createPortal(<div data-editor-menu="" style={{ display: 'contents' }}>{node}</div>, document.body);

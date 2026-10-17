@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 import { createSchemaExtensions } from './extensions';
 import { decodePoints, encodePoints } from './drawing-codec';
 import { exportNote } from './export';
-import { restoreDrawingTools, serializeDrawingTools, setDrawingTool, setPenSettings } from './drawing';
+import { restoreDrawingTools, serializeDrawingTools, setDrawingTool, setMouseDraws, setPenSettings } from './drawing';
 
 const makeEditor = (ydoc = new Y.Doc()) => new Editor({ extensions: createSchemaExtensions({ ydoc, placeholder: '' }) });
 
@@ -122,6 +122,19 @@ describe('drawing block', () => {
       expect(editor.storage.drawing.active).toBe(false);
     });
 
+    // (Undo is not checked here: Yjs undo in happy-dom also reverts older changes.)
+    it('removes the drawing when its last stroke is erased', () => {
+      const { editor, svg } = setup();
+      drag(svg, [[10, 50], [300, 50]]);
+      drag(svg, [[10, 150], [300, 150]]);
+      setDrawingTool(editor, { mode: 'eraser', eraser: 'part' });
+      drag(svg, [[150, 0], [150, 100]]);
+      expect(editor.getJSON().content!.map((n) => n.type)).toContain('drawing');
+      setDrawingTool(editor, { mode: 'eraser', eraser: 'stroke' });
+      drag(svg, [[20, 0], [20, 200], [290, 200], [290, 0]]);
+      expect(editor.getJSON().content!.map((n) => n.type)).not.toContain('drawing');
+    });
+
     it('erases whole strokes in one undoable step', () => {
       const { editor, svg } = setup();
       drag(svg, [[10, 10], [200, 10]]);
@@ -189,6 +202,90 @@ describe('drawing block', () => {
       const { editor, svg } = setup();
       drag(svg, [[10, 50], [300, 50]], { pointerType: 'touch' });
       expect(strokes(editor)).toHaveLength(0);
+    });
+  });
+
+  describe('pen strokes outside a drawing', () => {
+    const pen = (el: Element, type: string, x: number, y: number) => el.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 7, pointerType: 'pen', button: type === 'pointermove' ? -1 : 0,
+      buttons: type === 'pointerup' ? 0 : 1, pressure: 0.25,
+    }));
+    // Starts on `el`, goes on in the drawing it made (pointer capture), ends there.
+    const stroke = (editor: Editor, el: Element, x = 20, y = 300) => {
+      pen(el, 'pointerdown', x, y);
+      pen(el, 'pointermove', x + 2, y);
+      pen(el, 'pointermove', x + 30, y + 5);
+      const svg = editor.storage.drawing.activeDom?.querySelector('svg');
+      if (svg) {
+        pen(svg, 'pointermove', x + 60, y + 10);
+        pen(svg, 'pointerup', x + 60, y + 10);
+      } else {
+        pen(el, 'pointerup', x + 30, y + 5);
+      }
+    };
+    const mounted = (html: string) => {
+      const element = document.body.appendChild(document.createElement('div'));
+      const editor = new Editor({ element, extensions: createSchemaExtensions({ ydoc: new Y.Doc(), placeholder: '' }) });
+      editor.commands.setContent(html);
+      return editor;
+    };
+    const types = (editor: Editor) => editor.getJSON().content!.map((n) => n.type);
+
+    it('turns an empty line into a drawing and keeps the stroke', () => {
+      const editor = mounted('<p>Lecture</p><p></p><p>More text</p>');
+      stroke(editor, editor.view.dom.children[1]);
+      expect(types(editor)).toEqual(['paragraph', 'drawing', 'paragraph']);
+      expect(strokes(editor)).toHaveLength(1);
+      expect(decodePoints(strokes(editor)[0].points).length).toBeGreaterThanOrEqual(3);
+      expect(editor.storage.drawing.active).toBe(true);
+      editor.destroy();
+    });
+
+    it('starts a drawing under the note with a line to type on below it', () => {
+      const editor = mounted('<p>Lecture</p>');
+      stroke(editor, document.body);
+      expect(types(editor)).toEqual(['paragraph', 'drawing', 'paragraph']);
+      expect(strokes(editor)).toHaveLength(1);
+      editor.destroy();
+    });
+
+    it('writes on in the drawing above instead of making another one', () => {
+      const editor = mounted('<p>Lecture</p>');
+      stroke(editor, document.body);
+      // The empty line under the drawing, then the page under the note.
+      stroke(editor, editor.view.dom.children[2]);
+      stroke(editor, document.body);
+      expect(types(editor)).toEqual(['paragraph', 'drawing', 'paragraph']);
+      expect(strokes(editor)).toHaveLength(3);
+      editor.destroy();
+    });
+
+    it('lets the mouse start drawings while "Draw with the mouse" is on', () => {
+      const editor = mounted('<p>Lecture</p>');
+      setMouseDraws(editor, true);
+      const mouse = (el: Element, type: string, x: number, y: number) => el.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1, pressure: 0.5,
+      }));
+      mouse(document.body, 'pointerdown', 20, 300);
+      mouse(document.body, 'pointermove', 60, 310);
+      const svg = editor.storage.drawing.activeDom!.querySelector('svg')!;
+      mouse(svg, 'pointermove', 90, 320);
+      mouse(svg, 'pointerup', 90, 320);
+      expect(types(editor)).toEqual(['paragraph', 'drawing', 'paragraph']);
+      expect(strokes(editor)).toHaveLength(1);
+      editor.destroy();
+    });
+
+    it('leaves taps, text lines and the mouse alone', () => {
+      const editor = mounted('<p>Lecture</p><p></p>');
+      const empty = editor.view.dom.children[1];
+      pen(empty, 'pointerdown', 20, 300);
+      pen(empty, 'pointerup', 20, 300);
+      stroke(editor, editor.view.dom.children[0]);
+      empty.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 20, clientY: 300, pointerId: 3, pointerType: 'mouse', buttons: 1 }));
+      empty.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 80, clientY: 300, pointerId: 3, pointerType: 'mouse', buttons: 1 }));
+      expect(types(editor)).toEqual(['paragraph', 'paragraph']);
+      editor.destroy();
     });
   });
 });
