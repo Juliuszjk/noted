@@ -12,6 +12,7 @@ import {
 } from '@mdi/js';
 import { ToolbarEditor } from './ToolbarEditor';
 import { CODE_THEMES, CODE_LANGUAGES, codeLanguageLabel } from '@noted/editor/code-themes';
+import { parseClock } from '@noted/editor/reminder-time';
 import { NoteMenuEditor } from './NoteMenuEditor';
 import { readDownloadFolder, writeDownloadFolder, chooseDownloadFolder, saveFileBytes } from './files';
 import { readBackupSettings, writeBackupSettings, chooseBackupFolder, writeBackup, listBackupFiles } from './backups';
@@ -24,7 +25,7 @@ import {
   fetchVault, openWithPassphraseKey, changePassphrase, getRecoveryKey, logoutOtherDevices, fetchAccountStats,
   createBackup, restoreBackup, backupFileName, exportAllNotes, openBackup, compareBackup, restoreBackupNote,
 } from '@noted/sync';
-import type { AccountStats, LocalNoteStore, LocalBlobStore, VaultInfo, BackupDiff, BackupDiffStatus, RestoreMode } from '@noted/sync';
+import type { AccountStats, LocalNoteStore, LocalBlobStore, VaultInfo, BackupDiff, BackupDiffStatus, RestoreMode, SharedEditorPrefs } from '@noted/sync';
 import type { ThemeMode } from '@noted/theme';
 import { THEME_PRESETS } from '@noted/theme';
 import { formatDateTime } from '@noted/ui/src/format-date';
@@ -52,7 +53,8 @@ interface Props {
   // "Clean up storage" (like the desktop's): find, then remove.
   cleanup: { find: (includeRecent: boolean) => Promise<CleanupPlan>; run: (plan: CleanupPlan) => Promise<string> };
   // The default title is shared by all devices (written into the synced catalog).
-  onSharedTitle: (template: string) => void;
+  // Saves editor settings shared by all devices (catalog).
+  onSharedPrefs: (patch: SharedEditorPrefs) => void;
   // Opens a note with its version from a backup shown next to it.
   onCompareNote: (id: string, backupState: Uint8Array, createdAt: number) => void;
   onRestored: () => void;
@@ -241,7 +243,23 @@ function DownloadFolderRow() {
   );
 }
 
-function EditorPage({ onSharedTitle }: { onSharedTitle: (template: string) => void }) {
+// "HH:MM" field saved when typing ends; anything that is not a time goes back.
+function ClockInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [text, setText] = useState(value);
+  const commit = () => {
+    const clock = parseClock(text);
+    if (!clock) return setText(value);
+    const next = `${String(clock.hours).padStart(2, '0')}:${String(clock.minutes).padStart(2, '0')}`;
+    setText(next);
+    if (next !== value) onChange(next);
+  };
+  return (
+    <TextInput value={text} onChangeText={setText} onEndEditing={commit} keyboardType="numbers-and-punctuation" maxLength={5}
+      style={[styles.input, { width: 80, textAlign: 'center', marginBottom: 0 }]} />
+  );
+}
+
+function EditorPage({ onSharedPrefs }: { onSharedPrefs: (patch: SharedEditorPrefs) => void }) {
   const [prefs, setPrefsState] = useState(getEditorPrefs);
   const [template, setTemplate] = useState(prefs.titleTemplate);
   const set = (patch: Partial<EditorPrefs>) => {
@@ -254,8 +272,13 @@ function EditorPage({ onSharedTitle }: { onSharedTitle: (template: string) => vo
       <Heading>New notes</Heading>
       <Text style={styles.rowTitle}>Default title</Text>
       <Text style={styles.rowText}>For notes left without a title once they have text. $date$ and $time$ become the creation date and time. Empty = off.</Text>
-      <TextInput value={template} onChangeText={setTemplate} onEndEditing={() => { if (template.trim() !== prefs.titleTemplate) { set({ titleTemplate: template.trim() }); onSharedTitle(template.trim()); } }} placeholder="e.g. Note $date$ $time$"
+      <TextInput value={template} onChangeText={setTemplate} onEndEditing={() => { if (template.trim() !== prefs.titleTemplate) { set({ titleTemplate: template.trim() }); onSharedPrefs({ titleTemplate: template.trim() }); } }} placeholder="e.g. Note $date$ $time$"
         placeholderTextColor={T.on_surface_variant} style={[styles.input, { marginTop: 8 }]} />
+      <Heading>Reminders</Heading>
+      <Row title="Morning" description="Time of “Tomorrow morning” and “Next Monday” in the reminder picker."
+        right={<ClockInput value={prefs.reminderMorning} onChange={(reminderMorning) => { set({ reminderMorning }); onSharedPrefs({ reminderMorning }); }} />} />
+      <Row title="Evening" description="Time of “This evening”."
+        right={<ClockInput value={prefs.reminderEvening} onChange={(reminderEvening) => { set({ reminderEvening }); onSharedPrefs({ reminderEvening }); }} />} />
       <Heading>Text</Heading>
       <Text style={[styles.rowTitle, { marginBottom: 2 }]}>Default font</Text>
       <Text style={[styles.rowText, { marginBottom: 10 }]}>For notes without a font of their own.</Text>
@@ -426,7 +449,7 @@ export function SettingsScreen(p: Props) {
                 ['account', 'Account', 'Recovery key, passphrase, sessions', mdiAccountOutline],
                 ['sync', 'Sync', 'Server and syncing', mdiSync],
                 ['appearance', 'Appearance', 'Light, dark, auto or a ready-made theme', mdiPaletteOutline],
-                ['editor', 'Editor', 'Default title, font, size, ligatures', mdiFormatText],
+                ['editor', 'Editor', 'Default title, reminders, font, size, ligatures', mdiFormatText],
                 ['toolbar', 'Toolbar', 'Buttons above the keyboard', mdiDockBottom],
                 ['noteMenu', 'Note menu', 'Switches and actions of the ⋮ menu in a note', mdiDotsVertical],
                 ['backup', 'Backup & export', 'Backups, restore, export all notes', mdiBackupRestore],
@@ -608,7 +631,7 @@ export function SettingsScreen(p: Props) {
           })()}
           {page === 'lock' && <LockPage onLockNow={p.onLockNow} />}
           {page === 'vault' && <VaultPage vault={p.vault} />}
-          {page === 'editor' && <EditorPage onSharedTitle={p.onSharedTitle} />}
+          {page === 'editor' && <EditorPage onSharedPrefs={p.onSharedPrefs} />}
           {page === 'toolbar' && <ToolbarPage onDragging={setScrollLocked} />}
           {page === 'noteMenu' && <NoteMenuEditor onDragging={setScrollLocked} />}
 

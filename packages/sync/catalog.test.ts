@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import * as Y from 'yjs';
-import { ensureCatalogEntry, listCatalog, renameCatalogEntry, removeCatalogEntry } from './catalog';
+import {
+  ensureCatalogEntry, listCatalog, renameCatalogEntry, removeCatalogEntry, getSharedEditorPrefs, setSharedEditorPrefs, getSharedTitleTemplate,
+  setSharedTitleTemplate, sharedPrefsChange,
+} from './catalog';
 
 let n = 0;
 const newId = () => `id-${++n}`;
@@ -28,5 +31,19 @@ describe('catalog', () => {
     expect(listCatalog(a, 'notebooks').map((e) => e.name)).toEqual(['Xx', 'Y']);
     removeCatalogEntry(a, 'notebooks', x.id);
     expect(listCatalog(a, 'notebooks').map((e) => e.name)).toEqual(['Y']);
+  });
+});
+
+describe('shared editor settings', () => {
+  it('keeps the default title and reminder times, and finds what changed', () => {
+    const doc = new Y.Doc();
+    expect(getSharedEditorPrefs(doc)).toEqual({});
+    setSharedEditorPrefs(doc, { reminderMorning: '06:30' });
+    setSharedTitleTemplate(doc, 'Note $date$');
+    expect(getSharedEditorPrefs(doc)).toEqual({ reminderMorning: '06:30', titleTemplate: 'Note $date$' });
+    expect(getSharedTitleTemplate(doc)).toBe('Note $date$');
+    const before = { titleTemplate: '', reminderMorning: '07:00', reminderEvening: '18:00' };
+    expect(sharedPrefsChange(before, { ...before })).toBeNull();
+    expect(sharedPrefsChange(before, { ...before, reminderEvening: '19:00' })).toEqual({ reminderEvening: '19:00' });
   });
 });

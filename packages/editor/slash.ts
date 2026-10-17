@@ -10,7 +10,8 @@ export interface SlashCommandParams {
 export type SlashPreview =
   | { kind: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6 }
   | { kind: 'markers'; markers: string[] }
-  | { kind: 'icon'; icon: string };
+  // `path`: an MDI icon drawn instead of the `icon` character.
+  | { kind: 'icon'; icon: string; path?: string };
 
 // What opens when a row is activated.
 export type SlashSubmenu =

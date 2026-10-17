@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { mdiClose, mdiPlus, mdiRestore } from '@mdi/js';
 import { Icon } from './Icon';
 import {
-  SHORTCUT_ACTIONS, FIXED_SHORTCUTS, shortcutKeys, comboOf, shortcutConflict, formatCombo,
+  SHORTCUT_ACTIONS, FIXED_SHORTCUTS, shortcutKeys, comboOf, shortcutConflict, formatCombo, shortcutMatches,
 } from './shortcuts';
 import type { ShortcutGroup, ShortcutOverrides } from './shortcuts';
 
@@ -21,6 +21,14 @@ const smallBtn = {
 // one, the arrow restores the defaults. A key used by two actions is marked.
 export function ShortcutSettings({ overrides, onChange }: { overrides: ShortcutOverrides; onChange: (next: ShortcutOverrides) => void }) {
   const [recording, setRecording] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const visible = (texts: string[]) => !query.trim() || shortcutMatches(query, texts);
+  const groups = GROUPS.map(([group, title]) => ({
+    group, title,
+    actions: SHORTCUT_ACTIONS.filter((a) => a.group === group
+      && visible([a.label, title, ...shortcutKeys(a.id, overrides).flatMap((k) => [k, formatCombo(k)])])),
+  })).filter((g) => g.actions.length);
+  const fixed = FIXED_SHORTCUTS.filter((s) => visible([s.label, 'fixed', s.keys]));
 
   const setKeys = (id: string, keys: string[]) => {
     const action = SHORTCUT_ACTIONS.find((a) => a.id === id)!;
@@ -52,10 +60,17 @@ export function ShortcutSettings({ overrides, onChange }: { overrides: ShortcutO
       <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.45, margin: '6px 0 4px' }}>
         Click + and press the new keys (Esc cancels). A key can belong to one action only; a clash is marked in red.
       </div>
-      {GROUPS.map(([group, title]) => (
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search shortcuts (name or keys, e.g. “ctrl+k”)" spellCheck={false}
+        onKeyDown={(e) => { if (e.key === 'Escape' && query) { e.stopPropagation(); setQuery(''); } }}
+        style={{ width: '100%', boxSizing: 'border-box', margin: '10px 0 0', padding: '7px 10px', fontSize: 13, borderRadius: 6, outline: 'none',
+          border: '1px solid var(--border)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-main)' }} />
+      {!groups.length && !fixed.length && (
+        <div style={{ margin: '18px 0', fontSize: 13, color: 'var(--text-muted)' }}>No shortcut matches “{query.trim()}”.</div>
+      )}
+      {groups.map(({ group, title, actions }) => (
         <div key={group}>
           <div style={{ margin: '22px 0 2px', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--primary)' }}>{title}</div>
-          {SHORTCUT_ACTIONS.filter((a) => a.group === group).map((action) => {
+          {actions.map((action) => {
             const keys = shortcutKeys(action.id, overrides);
             const changed = !!overrides[action.id];
             return (
@@ -90,8 +105,8 @@ export function ShortcutSettings({ overrides, onChange }: { overrides: ShortcutO
           })}
         </div>
       ))}
-      <div style={{ margin: '22px 0 2px', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--primary)' }}>Fixed</div>
-      {FIXED_SHORTCUTS.map((s) => (
+      {fixed.length > 0 && <div style={{ margin: '22px 0 2px', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--primary)' }}>Fixed</div>}
+      {fixed.map((s) => (
         <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
           <div style={{ flex: 1, fontSize: 14 }}>{s.label}</div>
           <span style={{ ...keyChip, padding: '3px 8px', color: 'var(--text-muted)' }}>{s.keys}</span>

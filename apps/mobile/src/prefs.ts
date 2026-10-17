@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import { parseEditorPrefs } from '@noted/editor/editor-prefs-lite';
 import { parseToolbarConfig } from '@noted/editor/toolbar-items';
 import type { EditorPrefs } from '@noted/editor/editor-prefs-lite';
+import type { SharedEditorPrefs } from '@noted/sync';
 import type { ToolbarConfig } from '@noted/editor/toolbar-items';
 
 // Settings > Editor and Settings > Toolbar of this phone; open notes get changes at once.
@@ -23,14 +24,15 @@ let toolbarConfig: ToolbarConfig | null = parseToolbarConfig(read(TOOLBAR_KEY));
 let tableToolbarConfig: ToolbarConfig | null = parseToolbarConfig(read(TABLE_TOOLBAR_KEY));
 const listeners = new Set<() => void>();
 
-// The default title is shared by all devices (kept in the synced catalog, set by NotesScreen).
-let sharedTitleTemplate: string | null = null;
+// The default title and the reminder times are shared by all devices (kept in the synced
+// catalog, set by NotesScreen).
+let sharedPrefs: SharedEditorPrefs = {};
 
-export const getEditorPrefs = (): EditorPrefs => ({ ...editorPrefs, titleTemplate: sharedTitleTemplate ?? editorPrefs.titleTemplate });
+export const getEditorPrefs = (): EditorPrefs => parseEditorPrefs(JSON.stringify({ ...editorPrefs, ...sharedPrefs }));
 
-export const setSharedTitleTemplateCache = (value: string | null) => {
-  if (value === sharedTitleTemplate) return;
-  sharedTitleTemplate = value;
+export const setSharedPrefsCache = (value: SharedEditorPrefs) => {
+  if (JSON.stringify(value) === JSON.stringify(sharedPrefs)) return;
+  sharedPrefs = value;
   listeners.forEach((l) => l());
 };
 export const getToolbarConfig = () => toolbarConfig;

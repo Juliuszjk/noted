@@ -12,7 +12,7 @@ describe('note document schema', () => {
     expect(Object.keys(schema.nodes)).toEqual(
       expect.arrayContaining([
         'attachment', 'blockMath', 'blockquote', 'bulletList', 'callout', 'codeBlock', 'heading', 'horizontalRule', 'image',
-        'inlineMath', 'listItem', 'noteLink', 'orderedList', 'paragraph', 'table', 'tableCell', 'tableHeader', 'tableRow',
+        'inlineMath', 'listItem', 'noteLink', 'orderedList', 'paragraph', 'reminder', 'table', 'tableCell', 'tableHeader', 'tableRow',
         'taskItem', 'taskList',
       ]),
     );
@@ -33,6 +33,7 @@ describe('note document schema', () => {
     expect(Object.keys(schema.nodes.noteLink.spec.attrs ?? {})).toEqual(['noteId']);
     expect(Object.keys(schema.nodes.image.spec.attrs ?? {})).toEqual(expect.arrayContaining(['src', 'alt', 'title', 'blob']));
     expect(Object.keys(schema.nodes.attachment.spec.attrs ?? {})).toEqual(['blob', 'name', 'size', 'mime']);
+    expect(Object.keys(schema.nodes.reminder.spec.attrs ?? {})).toEqual(['id', 'at', 'repeat', 'done']);
   });
 
   it('keeps the textStyle attributes', () => {

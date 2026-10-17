@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
+import { isReminderRepeat, reminderPlainText } from './reminder-time';
 
 // Export of a note (the editor's JSON) as Markdown or plain text. Pure functions, tested in
 // export.test.ts. Images are encrypted blobs without an address, so they become a placeholder.
@@ -55,6 +56,12 @@ const inlineNode = (node: JSONContent, ctx: Ctx): string => {
     case 'noteLink': {
       const title = ctx.titles[String(node.attrs?.noteId ?? '')] ?? 'Missing note';
       return md ? `[[${title}]]` : title;
+    }
+    case 'reminder': {
+      const text = reminderPlainText({
+        at: Number(node.attrs?.at) || 0, repeat: isReminderRepeat(node.attrs?.repeat) ? node.attrs.repeat : null, done: node.attrs?.done === true,
+      });
+      return md && node.attrs?.done ? `~~${text}~~` : text;
     }
     case 'image': {
       const alt = escapeMd(String(node.attrs?.alt ?? 'image'));

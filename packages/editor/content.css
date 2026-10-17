@@ -266,6 +266,35 @@ body.table-resizing-row, body.table-resizing-row * { cursor: row-resize !importa
 .ProseMirror .note-link:hover { background-color: var(--bg-surface-high); }
 .ProseMirror .note-link--missing { color: var(--text-muted); text-decoration: line-through; }
 
+/* Reminder chips (reminder.ts): upcoming, today (primary), overdue (red), done (struck out). */
+.reminder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px 0 5px;
+  margin: 0 1px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85em;
+  line-height: 1.6;
+  white-space: nowrap;
+  vertical-align: 0.05em;
+  color: var(--text-main);
+  background-color: var(--bg-surface);
+  cursor: pointer;
+  user-select: none;
+}
+.reminder-chip svg { width: 1.1em; height: 1.1em; flex: none; opacity: 0.85; }
+.reminder-chip:hover { border-color: var(--border-focus); }
+.reminder-chip--today { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 50%, transparent); }
+.reminder-chip--overdue {
+  color: var(--c-red);
+  border-color: color-mix(in srgb, var(--c-red) 50%, transparent);
+  background-color: color-mix(in srgb, var(--c-red) 10%, var(--bg-surface));
+}
+.reminder-chip--done { color: var(--text-muted); text-decoration: line-through; opacity: 0.75; }
+.ProseMirror .reminder-chip.ProseMirror-selectednode { outline: 2px solid var(--primary); outline-offset: 1px; }
+
 /* Blob images while they are decrypted / not uploaded yet by the device that added them. */
 .ProseMirror img[data-blob-state="loading"],
 .ProseMirror img[data-blob-state="missing"],

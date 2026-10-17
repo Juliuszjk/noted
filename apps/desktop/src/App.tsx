@@ -11,12 +11,12 @@ import {
   runSyncEngine, uploadPendingBlobs, LocalNoteStore, mergingNoteStore, configureVerifierCache, buildNoteMeta, encodeNoteMeta,
   decodeNoteMeta, displayTitle, setTitle, markNoteCreated, setNoteFlag, getNoteFlag, setNoteTrashed,
   deleteNoteForever, unpublishQuietly, uploadPublished, deletePublished, publishedExists, publishExpired, getNotePublish, setNotePublish, setNoteNotebook, getNoteNotebooks, setNoteTag, getNoteTags, setNoteFont, getNoteFont, CATALOG_ID, isSystemNote,
-  listCatalog, getSharedTitleTemplate, setSharedTitleTemplate, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, purgeExpiredTrash, getTitleText, getNoteSettings,
+  listCatalog, getSharedEditorPrefs, setSharedEditorPrefs, sharedPrefsChange, SHARED_EDITOR_PREFS, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, purgeExpiredTrash, getTitleText, getNoteSettings,
   currentAuthToken, sessionStillValid, setAuthEpoch, getAuthEpoch, exportAttachments, zipNoteWithFiles, backupVault, restoreServerVault, createBackup, restoreBackup, backupFileName, openBackup, compareBackup, restoreBackupNote, findUnusedBlobs, deleteServerBlobs, deletedNoteIds, purgeDeletedNotes, usedBlobIds, BLOB_GRACE_MS, noteBlobIds, docFromSealed, noteBodyText, applyDefaultTitle, setNoteBodyJson, appendNoteLink,
   fetchVault, passphraseOpens, parseVaultInfo, serializeVaultInfo,
   getVaultSetup, createVault, openVault, changeVaultPassword, isNoteLocked, lockNote, unlockNote, readLockedBody, writeLockedBody, noteBodyJson, noteAttachments,
 } from '@noted/sync';
-import { formatBlobRef, parseBlobRef } from '@noted/editor';
+import { formatBlobRef, parseBlobRef, parseEditorPrefs, DEFAULT_EDITOR_PREFS } from '@noted/editor';
 import { exportNote } from '@noted/editor/export';
 import { PINCH_EVENT } from '@noted/editor/image-viewer';
 import type { CatalogKind } from '@noted/sync';
@@ -657,14 +657,20 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   const catalogDoc = useMemo(() => (catalogRecord ? docOf(catalogRecord) : null), [catalogRecord?.yjs_state]);
   const notebooks = useMemo(() => (catalogDoc ? listCatalog(catalogDoc, 'notebooks') : []), [catalogDoc]);
   const tagEntries = useMemo(() => (catalogDoc ? listCatalog(catalogDoc, 'tags') : []), [catalogDoc]);
-  // The default title is shared by all devices (catalog); the other editor settings are per device.
-  const sharedTitleTemplate = catalogDoc ? getSharedTitleTemplate(catalogDoc) : null;
-  const effectivePrefs = useMemo(() => ({ ...editorPrefs, titleTemplate: sharedTitleTemplate ?? editorPrefs.titleTemplate }), [editorPrefs, sharedTitleTemplate]);
+  // The default title and the reminder times are shared by all devices (catalog); the other
+  // editor settings are per device.
+  const sharedPrefs = useMemo(() => (catalogDoc ? getSharedEditorPrefs(catalogDoc) : {}), [catalogDoc]);
+  const effectivePrefs = useMemo(() => parseEditorPrefs(JSON.stringify({ ...editorPrefs, ...sharedPrefs })), [editorPrefs, sharedPrefs]);
   editorPrefsRef.current = effectivePrefs;
-  // A default title set on this device before it was shared: share it once.
+  const reminderTimes = useMemo(() => ({ morning: effectivePrefs.reminderMorning, evening: effectivePrefs.reminderEvening }), [effectivePrefs.reminderMorning, effectivePrefs.reminderEvening]);
+  // Values set on this device before they were shared: share them once.
   useEffect(() => {
-    if (catalogDoc && sharedTitleTemplate === null && editorPrefs.titleTemplate) changeCatalog((doc) => setSharedTitleTemplate(doc, editorPrefs.titleTemplate));
-  }, [catalogDoc, sharedTitleTemplate]);
+    if (!catalogDoc) return;
+    const missing = Object.fromEntries(SHARED_EDITOR_PREFS
+      .filter((key) => sharedPrefs[key] === undefined && editorPrefs[key] !== DEFAULT_EDITOR_PREFS[key])
+      .map((key) => [key, editorPrefs[key]]));
+    if (Object.keys(missing).length) changeCatalog((doc) => setSharedEditorPrefs(doc, missing));
+  }, [catalogDoc, sharedPrefs]);
 
   const changeCatalog = async <T,>(change: (doc: Y.Doc) => T): Promise<T | undefined> => {
     if (!notesRef.current.some((n) => n.id === CATALOG_ID)) await insertNoteRecord(new Y.Doc(), false, CATALOG_ID);
@@ -1223,6 +1229,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                 toolbarConfig={toolbarConfig}
                 ligatures={editorPrefs.ligatures}
                 codeThemeByLanguage={editorPrefs.codeThemeByLanguage}
+                reminderTimes={reminderTimes}
                 tableToolbarConfig={tableToolbarConfig}
                 fullWidth={prefs.fullWidth}
                 readOnly={getNoteFlag(split.ydoc, 'readOnly')}
@@ -1481,6 +1488,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                   toolbarConfig={toolbarConfig}
                   ligatures={editorPrefs.ligatures}
                   codeThemeByLanguage={editorPrefs.codeThemeByLanguage}
+                reminderTimes={reminderTimes}
                   toolbarSlot={toolbarSlot}
                   tableMenuSlot={prefs.tableMenu === 'toolbar' ? tableMenuSlot : null}
                   tableToolbarConfig={tableToolbarConfig}
@@ -1749,7 +1757,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
             onEditorPrefs: (next) => {
               setEditorPrefs(next);
               applyEditorPrefs(next);
-              if (next.titleTemplate !== effectivePrefs.titleTemplate) changeCatalog((doc) => setSharedTitleTemplate(doc, next.titleTemplate));
+              const shared = sharedPrefsChange(effectivePrefs, next);
+              if (shared) changeCatalog((doc) => setSharedEditorPrefs(doc, shared));
             },
             spellLanguages,
             getCustomWords: () => getCustomWords(editorPrefs.spellLanguages.length ? editorPrefs.spellLanguages : spellLanguages),

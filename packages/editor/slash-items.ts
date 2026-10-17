@@ -5,6 +5,8 @@ import { requestMathEdit } from './math';
 import { pickImagesInto, pickAttachmentsInto, requestImageUrl } from './blob-image';
 import type { MathKind } from './math';
 import { requestNoteAction } from './note-actions';
+import { requestReminderEdit } from './reminder';
+import { mdiBellOutline } from '@mdi/js';
 
 // Slash menu content, shared by every platform that offers a "/" menu. The menu is a tree:
 // rows with a `submenu` open a second (or third) panel, rows with a `command` run it.
@@ -135,6 +137,17 @@ const mathMenu: SlashItem = {
   },
 };
 
+// A reminder chip at the cursor; the date picker is platform UI (reminder-picker.ts).
+const reminderItem: SlashItem = {
+  title: 'Reminder',
+  keywords: ['remind', 'alarm', 'due', 'date', 'deadline', 'notification', 'przypomnienie'],
+  preview: { kind: 'icon', icon: '', path: mdiBellOutline },
+  command: ({ editor, range }) => {
+    editor.chain().focus().deleteRange(range).run();
+    requestReminderEdit(editor, { mode: 'insert', pos: range.from });
+  },
+};
+
 // Types "[[" so the note picker (NoteLinkSuggestion) opens.
 const noteLinkItem: SlashItem = {
   title: 'Link to note',
@@ -257,6 +270,7 @@ export const slashItems: SlashItem[] = [
   fileItem,
   calloutItem,
   mathMenu,
+  reminderItem,
   noteLinkItem,
   linkToItem,
   gotoItem,

@@ -68,7 +68,9 @@ function Row({ item, active, onHover, onPick }: { item: SlashItem; active: boole
       </span>
     ) : preview?.kind === 'icon' ? (
       <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ width: 18, textAlign: 'center', color: 'var(--text-muted)' }}>{preview.icon}</span>
+        <span style={{ width: 18, display: 'flex', justifyContent: 'center', color: 'var(--text-muted)' }}>
+          {preview.path ? <svg width={16} height={16} viewBox="0 0 24 24" aria-hidden><path d={preview.path} fill="currentColor" /></svg> : preview.icon}
+        </span>
         {item.title}
       </span>
     ) : (

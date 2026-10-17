@@ -31,6 +31,8 @@ import { NoteSearch } from './search';
 import { SymbolLigatures } from './editor-prefs';
 import { createMathExtensions } from './math';
 import type { MathEditHandler } from './math';
+import { Reminder } from './reminder';
+import type { ReminderEditHandler } from './reminder';
 
 export interface SchemaExtensionOptions {
   ydoc: Y.Doc;
@@ -38,13 +40,16 @@ export interface SchemaExtensionOptions {
   // Opens the platform's LaTeX editor (clicked formula or new one from the slash menu).
   // Without it math still renders and the $$...$$ shortcuts still work.
   onEditMath?: MathEditHandler;
+  // Opens the platform's reminder picker (clicked chip or "/reminder"). Without it reminder
+  // chips still render.
+  onEditReminder?: ReminderEditHandler;
 }
 
 // The single list of extensions that define the note document schema. Desktop and the
 // mobile WebView bundle both build their editor from this function. An editor that does
 // not know a node type present in a document can drop that node, and the loss then syncs
 // to every device, so never add a node or mark anywhere else.
-export const createSchemaExtensions = ({ ydoc, placeholder, onEditMath }: SchemaExtensionOptions): Extensions => [
+export const createSchemaExtensions = ({ ydoc, placeholder, onEditMath, onEditReminder }: SchemaExtensionOptions): Extensions => [
   // Yjs provides its own undo/redo. StarterKit also brings headings 1-6, quote, lists,
   // code block, horizontal rule, underline and link.
   // The code block is ours (code-block.ts: colours, language, Copy), same node and attributes.
@@ -77,6 +82,8 @@ export const createSchemaExtensions = ({ ydoc, placeholder, onEditMath }: Schema
   ColoredTableCell,
   Callout,
   NoteLink,
+  // Reminder chips in the text (reminder.ts).
+  Reminder.configure({ onEdit: onEditReminder ?? null }),
   Attachment,
   ...createMathExtensions(onEditMath),
   // Dragging the lines between columns and rows (mouse and touch; no schema).

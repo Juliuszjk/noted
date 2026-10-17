@@ -179,7 +179,13 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   (KaTeX); `note-link.ts` (atom `noteLink` {noteId}, `[[` suggestion, ranking `note-search.ts`);
   `list-convert.ts` (skips `y-sync$` transactions); `indent.ts`; `search.ts`; `select-all.ts`;
   `clipboard-text.ts`; `markdown-paste.ts`; `export.ts`; `slash-items.ts` / `slash-nav.ts`;
-  `toolbar-items.ts` (tested); colours `palette.ts` (CSS variable refs, custom = raw hex);
+  `toolbar-items.ts` (tested); reminders: inline atom `reminder` {id, at (ms), repeat
+  (null|daily|weekly|monthly|yearly), done} in `reminder.ts` (pasted copies get new ids),
+  dates in `reminder-time.ts` (pure, local-time repeats, tested), picker `reminder-picker.ts`
+  (plain DOM: desktop `ReminderEditor.tsx` popover, phone sheet with the toolbar row hidden,
+  `hideBar`), shortcut `reminder` (Ctrl+Alt+R, `requestReminderAtSelection`), copied text
+  "» <date>" (no emoji), published copy shows the full date (publish-html.ts), morning / evening = EditorPrefs `reminderMorning` / `reminderEvening`,
+  shared via the catalog (`SHARED_EDITOR_PREFS` with `titleTemplate`); colours `palette.ts` (CSS variable refs, custom = raw hex);
   shared `content.css`.
 - `/goto` and `/linkto` (`appendNoteLink` in sync/json-to-y.ts, never twice, not into locked notes).
 - HEIC: desktop `src/heic.ts` (libheif-js), phone RN `{type:'convertHeic'}`.

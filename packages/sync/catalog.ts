@@ -51,13 +51,38 @@ export const removeCatalogEntry = (doc: Y.Doc, kind: CatalogKind, id: string): v
   entries(doc, kind).delete(id);
 };
 
-// Settings shared by every device (for now the default title of new notes), kept in the
-// catalog so they are encrypted and synced. null = never set (each device's own value).
-export const getSharedTitleTemplate = (doc: Y.Doc): string | null => {
-  const value = doc.getMap('prefs').get('titleTemplate');
-  return typeof value === 'string' ? value : null;
+// Editor settings shared by every device (default title, morning / evening of reminders),
+// kept in the catalog so they are encrypted and synced. A key never set = each device's own
+// value.
+export const SHARED_EDITOR_PREFS = ['titleTemplate', 'reminderMorning', 'reminderEvening'] as const;
+export type SharedEditorPrefKey = (typeof SHARED_EDITOR_PREFS)[number];
+export type SharedEditorPrefs = Partial<Record<SharedEditorPrefKey, string>>;
+
+export const getSharedEditorPrefs = (doc: Y.Doc): SharedEditorPrefs => {
+  const prefs = doc.getMap('prefs');
+  const shared: SharedEditorPrefs = {};
+  for (const key of SHARED_EDITOR_PREFS) {
+    const value = prefs.get(key);
+    if (typeof value === 'string') shared[key] = value;
+  }
+  return shared;
 };
 
-export const setSharedTitleTemplate = (doc: Y.Doc, value: string): void => {
-  if (getSharedTitleTemplate(doc) !== value) doc.getMap('prefs').set('titleTemplate', value);
+export const setSharedEditorPrefs = (doc: Y.Doc, patch: SharedEditorPrefs): void => {
+  const prefs = doc.getMap('prefs');
+  for (const key of SHARED_EDITOR_PREFS) {
+    const value = patch[key];
+    if (typeof value === 'string' && prefs.get(key) !== value) prefs.set(key, value);
+  }
 };
+
+// The changed shared keys between two sets of editor settings.
+export const sharedPrefsChange = (before: Record<SharedEditorPrefKey, string>, after: Record<SharedEditorPrefKey, string>): SharedEditorPrefs | null => {
+  const patch: SharedEditorPrefs = {};
+  for (const key of SHARED_EDITOR_PREFS) if (before[key] !== after[key]) patch[key] = after[key];
+  return Object.keys(patch).length ? patch : null;
+};
+
+export const getSharedTitleTemplate = (doc: Y.Doc): string | null => getSharedEditorPrefs(doc).titleTemplate ?? null;
+
+export const setSharedTitleTemplate = (doc: Y.Doc, value: string): void => setSharedEditorPrefs(doc, { titleTemplate: value });

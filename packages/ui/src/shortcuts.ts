@@ -32,6 +32,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: 'historyForward', label: 'Forward', group: 'Tabs', defaults: ['Alt+ArrowRight'] },
   { id: 'find', label: 'Find and replace in the note', group: 'Note', defaults: ['Ctrl+F'] },
   { id: 'insertLink', label: 'Insert / edit link', group: 'Note', defaults: ['Ctrl+K'] },
+  { id: 'reminder', label: 'Add / edit reminder', group: 'Note', defaults: ['Ctrl+Alt+R'] },
   { id: 'undo', label: 'Undo', group: 'Note', defaults: ['Ctrl+Z'] },
   { id: 'redo', label: 'Redo', group: 'Note', defaults: ['Ctrl+Shift+Z', 'Ctrl+Y'] },
   { id: 'bold', label: 'Bold', group: 'Formatting', defaults: ['Ctrl+B'] },
@@ -109,6 +110,13 @@ export const matchesShortcut = (e: KeyboardEvent | React.KeyboardEvent, id: stri
 // The other action using `combo` (null = free).
 export const shortcutConflict = (combo: string, exceptId: string, map: ShortcutOverrides = overrides): ShortcutAction | null =>
   SHORTCUT_ACTIONS.find((a) => a.id !== exceptId && shortcutKeys(a.id, map).includes(combo)) ?? null;
+
+// Settings search: an action matches by its name, its group or one of its keys.
+export const shortcutMatches = (query: string, texts: string[]): boolean => {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const haystack = texts.join(' ').toLowerCase();
+  return words.every((word) => haystack.includes(word));
+};
 
 // Readable form ("Ctrl+ArrowLeft" -> "Ctrl+←").
 export const formatCombo = (combo: string): string => combo

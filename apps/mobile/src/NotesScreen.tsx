@@ -1,6 +1,6 @@
 import { KeyboardEvents } from 'react-native-keyboard-controller';
 import { runAutoBackupIfDue } from './backups';
-import { setSharedTitleTemplateCache } from './prefs';
+import { setSharedPrefsCache } from './prefs';
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, PanResponder, BackHandler } from 'react-native';
 import { appAlert } from './Dialog';
@@ -25,7 +25,7 @@ import { seal, unseal, decryptBlob, base64ToBytes, bytesToBase64, deriveAuthToke
 import {
   LocalNoteStore, LocalBlobStore, runSyncEngine, uploadPendingBlobs, decodeNoteMeta, displayTitle, markNoteCreated,
   isSystemNote, setNoteFlag, setNoteTrashed, deleteNoteForever, unpublishQuietly, setNoteNotebook, setNoteTag, purgeExpiredTrash,
-  CATALOG_ID, docFromSealed, noteBodyJson, noteBodyText, listCatalog, getSharedTitleTemplate, setSharedTitleTemplate, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, setTitle, buildNoteMeta, encodeNoteMeta, getNoteSettings,
+  CATALOG_ID, docFromSealed, noteBodyJson, noteBodyText, listCatalog, getSharedEditorPrefs, setSharedEditorPrefs, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, setTitle, buildNoteMeta, encodeNoteMeta, getNoteSettings,
   currentAuthToken, sessionStillValid, getVaultSetup, createVault, changeVaultPassword, openVault,
 } from '@noted/sync';
 import { deriveKeyInWebView } from './kdf';
@@ -36,7 +36,7 @@ import {
   deletedNoteIds, findUnusedBlobs, purgeDeletedNotes, deleteServerBlobs, usedBlobIds, BLOB_GRACE_MS, noteBlobIds,
 } from '@noted/sync';
 import { SettingsScreen } from './SettingsScreen';
-import type { NoteMeta, CatalogKind, CatalogEntry } from '@noted/sync';
+import type { NoteMeta, CatalogKind, CatalogEntry, SharedEditorPrefs } from '@noted/sync';
 import { NoteRecord } from '@noted/types';
 import { WS_URL, SYNC_INTERVAL_MS, WS_STALE_MS } from '@noted/config';
 import { EditorScreen } from './EditorScreen';
@@ -276,15 +276,15 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     return null;
   };
   const catalog = useMemo(() => {
-    if (!catalogRecord?.yjs_state) return { notebooks: [] as CatalogEntry[], tags: [] as CatalogEntry[], titleTemplate: null as string | null };
+    if (!catalogRecord?.yjs_state) return { notebooks: [] as CatalogEntry[], tags: [] as CatalogEntry[], shared: {} as SharedEditorPrefs };
     try {
       const doc = docFromSealed(masterKey, catalogRecord.yjs_state);
-      return { notebooks: listCatalog(doc, 'notebooks'), tags: listCatalog(doc, 'tags'), titleTemplate: getSharedTitleTemplate(doc) };
+      return { notebooks: listCatalog(doc, 'notebooks'), tags: listCatalog(doc, 'tags'), shared: getSharedEditorPrefs(doc) };
     } catch {
-      return { notebooks: [], tags: [] };
+      return { notebooks: [], tags: [], shared: {} };
     }
   }, [catalogRecord?.yjs_state, masterKey]);
-  useEffect(() => { setSharedTitleTemplateCache(catalog.titleTemplate ?? null); }, [catalog]);
+  useEffect(() => { setSharedPrefsCache(catalog.shared); }, [catalog]);
   // Where each note is (notebooks, tags, linking note): under titles in the note pickers.
   const places = useMemo(() => notePlaces(
     [...metas.entries()].filter(([, meta]) => !meta.trashedAt).map(([id, meta]) => ({
@@ -294,8 +294,8 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     { notebooks: new Map(catalog.notebooks.map((e) => [e.id, e.name])), tags: new Map(catalog.tags.map((e) => [e.id, e.name])) },
   ), [metas, notes, catalog]);
   const archivedIds = useMemo(() => [...metas.entries()].filter(([, m]) => m.archived && !m.trashedAt).map(([id]) => id).sort(), [metas]);
-  const setSharedTitle = async (value: string) => {
-    await updateNoteRecord(masterKey, dbStore, CATALOG_ID, (doc) => setSharedTitleTemplate(doc, value));
+  const setSharedPrefs = async (patch: SharedEditorPrefs) => {
+    await updateNoteRecord(masterKey, dbStore, CATALOG_ID, (doc) => setSharedEditorPrefs(doc, patch));
     await loadNotes();
     syncWithServer();
   };
@@ -966,7 +966,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
           syncing={syncing}
           notebookNames={new Map(catalog.notebooks.map((n) => [n.id, n.name]))}
           onSyncNow={syncWithServer}
-          onSharedTitle={setSharedTitle}
+          onSharedPrefs={setSharedPrefs}
           onCompareNote={(id, state, createdAt) => {
             setSettingsOpen(false);
             setBackupCompare({ id, token: Date.now(), state, createdAt });

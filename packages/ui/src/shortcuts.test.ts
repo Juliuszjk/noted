@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach } from 'vitest';
-import { comboOf, matchesShortcut, setShortcutOverrides, shortcutConflict, shortcutKeys, SHORTCUT_ACTIONS } from './shortcuts';
+import { comboOf, matchesShortcut, setShortcutOverrides, shortcutConflict, shortcutKeys, shortcutMatches, SHORTCUT_ACTIONS } from './shortcuts';
 
 const key = (code: string, key: string, mods: Partial<Record<'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey', boolean>> = {}) =>
   ({ code, key, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods }) as KeyboardEvent;
@@ -35,5 +35,13 @@ describe('shortcuts', () => {
       expect(seen.get(k), `${k}: ${a.id} and ${seen.get(k)}`).toBeUndefined();
       seen.set(k, a.id);
     }
+  });
+
+  it('finds actions by name, group and keys', () => {
+    expect(shortcutMatches('remind', ['Add / edit reminder', 'Note', 'Ctrl+Alt+R'])).toBe(true);
+    expect(shortcutMatches('ctrl+alt+r', ['Add / edit reminder', 'Note', 'Ctrl+Alt+R'])).toBe(true);
+    expect(shortcutMatches('note link', ['Insert / edit link', 'Note', 'Ctrl+K'])).toBe(true);
+    expect(shortcutMatches('bold', ['Insert / edit link', 'Note', 'Ctrl+K'])).toBe(false);
+    expect(matchesShortcut(key('KeyR', 'r', { ctrlKey: true, altKey: true }), 'reminder')).toBe(true);
   });
 });

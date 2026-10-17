@@ -2,7 +2,9 @@
 // note link titles and decrypted images look the same) and only the CSS rules the note needs.
 // Plain DOM code: used by the desktop app and by the mobile editor page.
 
-const NOTE_RULE = /ProseMirror|katex|note-title|data-note-font|tableWrapper|data-type|search-match/;
+import { isReminderRepeat, reminderDateLabel } from '@noted/editor/reminder-time';
+
+const NOTE_RULE = /ProseMirror|katex|note-title|data-note-font|tableWrapper|data-type|search-match|reminder-chip/;
 
 const toDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
   const reader = new FileReader();
@@ -67,6 +69,16 @@ export const buildPublishedNote = async (editorDom: HTMLElement): Promise<{ html
     else el.remove();
   });
   clone.querySelectorAll('.is-empty').forEach((el) => el.classList.remove('is-empty', 'is-editor-empty'));
+  // Reminder chips: a full date ("Tomorrow" and "overdue" would go stale on the page).
+  clone.querySelectorAll<HTMLElement>('[data-reminder]').forEach((chip) => {
+    const at = Number(chip.getAttribute('data-at')) || 0;
+    const repeat = chip.getAttribute('data-repeat');
+    const done = chip.hasAttribute('data-done');
+    chip.className = `reminder-chip${done ? ' reminder-chip--done' : ''}`;
+    chip.removeAttribute('title');
+    const label = chip.querySelector('span');
+    if (label) label.textContent = reminderDateLabel({ at, repeat: isReminderRepeat(repeat) ? repeat : null, done });
+  });
   // Decrypted images are object URLs of this page: put the bytes into the copy.
   await Promise.all(Array.from(clone.querySelectorAll('img')).map(async (img) => {
     const src = img.getAttribute('src') ?? '';

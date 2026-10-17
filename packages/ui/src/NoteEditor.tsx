@@ -7,7 +7,7 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import {
   SlashCommands, NoteLinkSuggestion, createSchemaExtensions, normalizeLinkUrl, setNoteTitles,
-  configureBlobs, insertFiles, pastedFilePaths, importImages, NoteActions, setCodeThemeByLanguage,
+  configureBlobs, insertFiles, pastedFilePaths, importImages, NoteActions, setCodeThemeByLanguage, setReminderTimes, requestReminderAtSelection,
 } from '@noted/editor';
 import type { NoteActionRequest } from '@noted/editor';
 import type { BlobHandlers } from '@noted/editor';
@@ -19,6 +19,7 @@ import { FormatMenu } from './FormatMenu';
 import { TableMenu } from './TableMenu';
 import { LinkContextMenu } from './LinkContextMenu';
 import { MathEditor } from './MathEditor';
+import { ReminderEditor } from './ReminderEditor';
 import { CalloutMenu } from './CalloutMenu';
 import { ImageMenu } from './ImageMenu';
 import { NoteTitle } from './NoteTitle';
@@ -41,7 +42,7 @@ import type { PublishSettings } from './PublishDialog';
 import { buildPublishedNote } from './publish-html';
 import { computeTextStats } from './StatusBar';
 import type { TextStats } from './StatusBar';
-import type { MathEditRequest } from '@noted/editor';
+import type { MathEditRequest, ReminderEditRequest, ReminderTimes } from '@noted/editor';
 import type { LinkContextMenuState } from './LinkContextMenu';
 import type { SlashMenuHandle, SlashMenuState } from './SlashMenu';
 
@@ -61,7 +62,7 @@ export interface NoteSummary {
 export function NoteEditor({
   noteId, ydoc, onUpdate, onOpenLink, notes = [], onOpenNote, onCreateNote, blobs,
   toolbarMode = 'floating', toolbarSlot = null, tableMenuSlot = null, tableToolbarConfig = null, onStats, fullWidth = false, readOnly = false, spellcheck = true,
-  onNoteAction, restore, findSlot = null, onSaveExport, onPublish, toolbarConfig = null, ligatures = true, codeThemeByLanguage,
+  onNoteAction, restore, findSlot = null, onSaveExport, onPublish, toolbarConfig = null, ligatures = true, codeThemeByLanguage, reminderTimes,
   secondary = false,
 }: {
   // The second editor of the split view: the app-wide events (export / publish from the
@@ -72,6 +73,8 @@ export function NoteEditor({
   ligatures?: boolean,
   // Settings > Editor: code colours for some languages.
   codeThemeByLanguage?: Record<string, string>,
+  // Settings > Editor: morning / evening of the reminder picker's quick choices.
+  reminderTimes?: ReminderTimes,
   // Where the find bar goes (top right under the toolbar).
   findSlot?: HTMLElement | null,
   // Saves an exported Markdown / text file (the app shows a save dialog).
@@ -120,6 +123,7 @@ export function NoteEditor({
   const [linkEditRequest, setLinkEditRequest] = useState(0);
   const closeLinkMenu = useCallback(() => setLinkMenu(null), []);
   const [mathEdit, setMathEdit] = useState<MathEditRequest | null>(null);
+  const [reminderEdit, setReminderEdit] = useState<ReminderEditRequest | null>(null);
   const [imageUrlPos, setImageUrlPos] = useState<number | null>(null);
   // "Export note" dialog ("/export", or the properties panel through a window event).
   const [exportOpen, setExportOpen] = useState(false);
@@ -192,8 +196,15 @@ export function NoteEditor({
         openFind();
         return;
       }
-      // Changed formatting shortcuts (Settings > Keyboard shortcuts), inside this editor.
       const ed = editorRef.current;
+      // Reminder at the cursor, or the selected / touching chip opened for editing.
+      if (ed && !ed.isDestroyed && ed.isEditable && ed.view.dom.contains(e.target as Node) && matchesShortcut(e, 'reminder')) {
+        e.preventDefault();
+        e.stopPropagation();
+        requestReminderAtSelection(ed);
+        return;
+      }
+      // Changed formatting shortcuts (Settings > Keyboard shortcuts), inside this editor.
       if (ed && !ed.isDestroyed && ed.view.dom.contains(e.target as Node) && handleEditorShortcut(ed, e)) {
         e.preventDefault();
         e.stopPropagation();
@@ -205,6 +216,7 @@ export function NoteEditor({
   const noteFont = useNoteFont(ydoc);
   const closeImageUrl = useCallback(() => setImageUrlPos(null), []);
   const closeMathEdit = useCallback(() => setMathEdit(null), []);
+  const closeReminderEdit = useCallback(() => setReminderEdit(null), []);
   // The editor is created once, so the click handler reads the latest callback through a ref.
   const openLinkRef = useRef(onOpenLink);
   openLinkRef.current = onOpenLink;
@@ -382,6 +394,7 @@ export function NoteEditor({
         ydoc,
         placeholder: "Type here... type '/' for commands or drop an image",
         onEditMath: setMathEdit,
+        onEditReminder: setReminderEdit,
       }),
       NoteLinkSuggestion.configure({
         suggestion: {
@@ -592,6 +605,9 @@ export function NoteEditor({
   useEffect(() => {
     if (editor) setCodeThemeByLanguage(editor, codeThemeByLanguage ?? {});
   }, [editor, JSON.stringify(codeThemeByLanguage ?? {})]);
+  useEffect(() => {
+    if (editor && reminderTimes) setReminderTimes(editor, reminderTimes);
+  }, [editor, reminderTimes?.morning, reminderTimes?.evening]);
 
   // Note link labels follow the current titles.
   useEffect(() => {
@@ -667,6 +683,7 @@ export function NoteEditor({
       {editor && floating(<ImageMenu editor={editor} />)}
       {editor && imageUrlPos !== null && floating(<ImageUrlPrompt editor={editor} pos={imageUrlPos} onClose={closeImageUrl} />)}
       {editor && mathEdit && floating(<MathEditor key={`${mathEdit.mode}-${mathEdit.pos}`} editor={editor} request={mathEdit} onClose={closeMathEdit} />)}
+      {editor && reminderEdit && floating(<ReminderEditor key={`${reminderEdit.mode}-${reminderEdit.pos}`} editor={editor} request={reminderEdit} onClose={closeReminderEdit} />)}
       {editor && linkMenu && floating(
         <LinkContextMenu
           state={linkMenu}

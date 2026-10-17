@@ -9,6 +9,7 @@ import { ShortcutSettings } from './ShortcutSettings';
 import type { ShortcutOverrides } from './shortcuts';
 import type { EditorPrefs, ToolbarConfig, ToolbarPlatform } from '@noted/editor';
 import { CODE_THEMES, CODE_LANGUAGES, codeLanguageLabel } from '@noted/editor/code-themes';
+import { parseClock } from '@noted/editor/reminder-time';
 import { ToolbarSettings } from './ToolbarSettings';
 import { IMPORT_SOURCES } from './importers';
 import type { ImportSource, ImportFile } from './importers';
@@ -517,6 +518,23 @@ const LANGUAGE_NAMES: Record<string, string> = {
   pl_PL: 'Polish', en_US: 'English (US)', en_GB: 'English (UK)', de_DE: 'German', fr_FR: 'French', es_ES: 'Spanish', it_IT: 'Italian',
 };
 
+// "HH:MM" field saved on Enter / leaving it; anything that is not a time goes back.
+function ClockField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const commit = () => {
+    const clock = parseClock(text);
+    if (!clock) return setText(value);
+    const next = `${String(clock.hours).padStart(2, '0')}:${String(clock.minutes).padStart(2, '0')}`;
+    setText(next);
+    if (next !== value) onChange(next);
+  };
+  return (
+    <input value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
+      style={{ ...field, width: 70, marginBottom: 0, textAlign: 'center' }} />
+  );
+}
+
 function EditorSection({ host }: { host: SettingsHost }) {
   const p = host.editorPrefs;
   const set = (patch: Partial<EditorPrefs>) => host.onEditorPrefs({ ...p, ...patch });
@@ -533,6 +551,13 @@ function EditorSection({ host }: { host: SettingsHost }) {
         <input value={template} placeholder="e.g. Note $date$ $time$" onChange={(e) => setTemplate(e.target.value)} onBlur={() => set({ titleTemplate: template.trim() })}
           onKeyDown={(e) => { if (e.key === 'Enter') set({ titleTemplate: template.trim() }); }}
           style={{ ...field, width: 230, marginBottom: 0 }} />
+      </Row>
+      <Heading>Reminders</Heading>
+      <Row title="Morning" description="Time of “Tomorrow morning” and “Next Monday” in the reminder picker.">
+        <ClockField value={p.reminderMorning} onChange={(reminderMorning) => set({ reminderMorning })} />
+      </Row>
+      <Row title="Evening" description="Time of “This evening”.">
+        <ClockField value={p.reminderEvening} onChange={(reminderEvening) => set({ reminderEvening })} />
       </Row>
       <Heading>Text</Heading>
       <Row title="Default font" description="For notes without a font of their own.">

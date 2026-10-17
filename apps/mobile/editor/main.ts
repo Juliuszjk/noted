@@ -25,6 +25,8 @@ import type { BlobRef } from '@noted/editor/blob-image';
 import { base64ToBytes, bytesToBase64, unsealBytes, sealBytes, generateKey } from '@noted/crypto';
 import { compressImageBytes } from '@noted/media';
 import type { MathEditRequest } from '@noted/editor/math';
+import { setReminderTimes } from '@noted/editor/reminder';
+import type { ReminderEditRequest } from '@noted/editor/reminder';
 import { createToolbar } from './toolbar';
 import { createFindBar } from './find';
 import { showHistoryView } from './history-view';
@@ -165,6 +167,7 @@ let archivedIds = new Set<string>();
 let currentNoteId: string | null = null;
 // Set once the toolbar exists; math nodes and the insert menu open its LaTeX editor.
 let openMathEditor: ((request: MathEditRequest) => void) | null = null;
+let openReminderPicker: ((request: ReminderEditRequest) => void) | null = null;
 let openCatalog: ((kind: 'notebooks' | 'tags') => void) | null = null;
 let toolbarApi: ReturnType<typeof createToolbar> | null = null;
 let findBar: ReturnType<typeof createFindBar> | null = null;
@@ -427,6 +430,7 @@ const startEditor = () => {
         ydoc: bodyDoc ?? ydoc,
         placeholder: 'Start typing...',
         onEditMath: (request) => openMathEditor?.(request),
+        onEditReminder: (request) => openReminderPicker?.(request),
       }),
       // "/notebook" and "/tag" in the insert menu.
       NoteActions.configure({
@@ -519,6 +523,7 @@ const startEditor = () => {
   toolbarApi = toolbar;
   toolbar.setToolbarConfig(toolbarConfig, tableToolbarConfig);
   openMathEditor = toolbar.openMathEditor;
+  openReminderPicker = toolbar.openReminderPicker;
   openCatalog = toolbar.openCatalog;
   getNoteSettings(ydoc).observe(renderChips);
   getNoteTagMap(ydoc).observe(renderChips);
@@ -543,6 +548,7 @@ const startEditor = () => {
   editor.on('focus', () => post({ type: 'editorFocus' }));
   setLigatures(editor, editorPrefs.ligatures);
   setCodeThemeByLanguage(editor, editorPrefs.codeThemeByLanguage);
+  setReminderTimes(editor, { morning: editorPrefs.reminderMorning, evening: editorPrefs.reminderEvening });
   getTitleText(ydoc).observe(scheduleAutoPublish);
   setNoteTitles(editor, titles);
   configureBlobs(editor, {
@@ -677,7 +683,11 @@ const receive = (raw: string) => {
     // Settings > Editor and Settings > Toolbar of this phone.
     editorPrefs = parseEditorPrefs(JSON.stringify(msg.prefs ?? {}));
     for (const [name, value] of Object.entries(editorPrefsCssVars(editorPrefs))) document.documentElement.style.setProperty(name, value);
-    if (editor) { setLigatures(editor, editorPrefs.ligatures); setCodeThemeByLanguage(editor, editorPrefs.codeThemeByLanguage); }
+    if (editor) {
+      setLigatures(editor, editorPrefs.ligatures);
+      setCodeThemeByLanguage(editor, editorPrefs.codeThemeByLanguage);
+      setReminderTimes(editor, { morning: editorPrefs.reminderMorning, evening: editorPrefs.reminderEvening });
+    }
     toolbarConfig = parseToolbarConfig(JSON.stringify(msg.toolbar ?? null));
     tableToolbarConfig = parseToolbarConfig(JSON.stringify(msg.tableToolbar ?? null));
     toolbarApi?.setToolbarConfig(toolbarConfig, tableToolbarConfig);

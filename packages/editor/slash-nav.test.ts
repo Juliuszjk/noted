@@ -84,7 +84,7 @@ const titlesOf = (level: NavLevel): string[] => (level.kind === 'table' ? [] : l
 
 describe('slash items', () => {
   it('has a compact root menu', () => {
-    expect(slashItems.map((i) => i.title)).toEqual(['Heading', 'Quote', 'List', 'Divider', 'Code block', 'Table', 'Image', 'File', 'Callout', 'Math', 'Link to note', 'Link from another note', 'Go to note', 'Notebook', 'Tag', 'Export', 'Publish']);
+    expect(slashItems.map((i) => i.title)).toEqual(['Heading', 'Quote', 'List', 'Divider', 'Code block', 'Table', 'Image', 'File', 'Callout', 'Math', 'Reminder', 'Link to note', 'Link from another note', 'Go to note', 'Notebook', 'Tag', 'Export', 'Publish']);
   });
 });
 
