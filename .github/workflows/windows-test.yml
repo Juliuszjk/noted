@@ -1,0 +1,33 @@
+# A Windows build to try out, without a release: Actions tab > "Windows test build" > Run.
+# The installers are attached to the run as the artifact "noted-windows".
+name: Windows test build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - run: pnpm install --frozen-lockfile --filter "desktop..."
+      - run: cp packages/config/server.example.ts packages/config/server.ts
+      - run: pnpm tauri build
+        working-directory: apps/desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: noted-windows
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi

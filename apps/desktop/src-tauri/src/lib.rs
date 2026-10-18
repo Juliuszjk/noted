@@ -275,6 +275,13 @@ async fn clipboard_file_paths(app: tauri::AppHandle) -> Result<Vec<String>, Stri
         .map_err(|e| e.to_string())
 }
 
+// Elsewhere the WebView hands pasted files to the page itself.
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+async fn clipboard_file_paths() -> Result<Vec<String>, String> {
+    Ok(Vec::new())
+}
+
 // Touchpad / touchscreen pinch: WebKitGTK magnifies the whole page and the page cannot stop it
 // (no setting, the viewport meta is ignored). WebKit keeps its GtkGestureZoom on the view
 // under "wk-view-zoom-gesture" with handlers whose data is the view; those are disconnected
