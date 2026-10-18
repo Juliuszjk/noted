@@ -34,6 +34,7 @@ apps/desktop   Tauri v2 + React + TS. Package "desktop", Cargo package "noted". 
 apps/mobile    Expo, Android. Release APK on the phone. Editor = WebView page (apps/mobile/editor). SQLite via expo-sqlite.
 apps/api       Hono + better-sqlite3 + ws, Docker on the server "Mercury".
 apps/web       guest page of live published notes (React + NoteEditor, esbuild -> apps/api/src/live.generated.ts)
+apps/mcp       MCP server for Claude Code (Node 22+, node:sqlite; esbuild -> dist/noted-mcp.mjs)
 packages/crypto   XChaCha20-Poly1305 (@noble/ciphers), Argon2id + HKDF (@noble/hashes 1.8)
 packages/sync     Yjs merge, API client, sync engine, editor bridge, backups, import/export helpers
 packages/editor   Tiptap schema (single source of truth), slash menu, toolbar model, content.css
@@ -325,6 +326,29 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   Linking). Redrawn when the list / theme changes, after background sync and actions, every 30 min.
   It shows reminder text on the home screen even with the app lock on.
 
+## Claude Code integration (`apps/mcp`, 2026-10-18)
+
+- One more device of the vault: `noted-mcp setup` (passphrase once -> data key + auth epoch in
+  `~/.config/noted-mcp/key.json`, 0600), own sealed copy `~/.local/share/noted-mcp/notes.db`
+  (node:sqlite, loaded via `createRequire`: vitest does not know it) through `mergingNoteStore`,
+  sync before calls (5 s throttle) and pushed right after every change. `scripts/install.sh` builds,
+  links `~/.local/bin/noted-mcp`, `claude mcp add --scope user noted`. Tests: `pnpm -C apps/mcp exec vitest run`,
+  typecheck `pnpm -C apps/mcp exec tsc --noEmit`.
+- Hidden from Claude (`notes.ts`): catalog, deleted, locked notes and notes in the notebook
+  "Protected" (`NOTED_MCP_PROTECTED`, comma list); checked on the doc itself, writes that would
+  move a note out of reach are refused, links to hidden notes show "protected note". No deletes.
+- Markdown (`markdown.ts`): images / drawings / files = tokens `⟦image 1⟧` on their own line,
+  reminders / note links inline `⟦reminder 1: …⟧` `⟦link 1: Title⟧`; `rewrite_note` keeps the
+  original node for every unchanged block (marked.lexer raw == rendered block) and for tokens,
+  refuses missing tokens unless `remove`; kept blocks stay in place in the Y.Doc (longest
+  increasing run, `edits.ts applyRewrite`). Small edits work in the Y.Doc (`replaceText` keeps
+  the formatting, `insertBlocks` joins a following list, `setTaskDone`). `$…$`, `$$…$$`, `==…==`,
+  `> [!NOTE]` are converted before the editor's HTML parser (happy-dom globals in `dom.ts`).
+- Images: `read_note images: true` decrypts images (blob cache `~/.local/share/noted-mcp/blobs`)
+  and draws drawings as PNG (resvg-wasm). Reminders: list / add (own in the catalog, or a chip in
+  a note line) / update (done = `completeReminder`, snooze). `undo_last_change`: snapshot of
+  title / body / notebooks / tags / flags before each change (table `history`); a created note goes to the trash.
+
 ## Publishing, backups, import, theme (details in `docs/features.md`)
 
 - Publishing: `sync/publish.ts` + `ui/src/publish-html.ts`; server `apps/api/src/publish.ts`
@@ -432,8 +456,9 @@ useful, see the TODO.
 - **Live notes: guests pasting images / files** (parked 2026-10-18, "maybe some day"): public
   `PUT /p/:id/blob/:blobId` with the write token (editable only), per-file / per-note quotas +
   rate limits, guest page compresses + seals, owner accepts blob nodes and lists them. ~1 round.
-- Claude integration (postponed): local MCP server as one more device; a public key-holding
-  server was advised against.
+- Claude from the phone (claude.ai app; the Claude Code MCP server is built, see above): would
+  need a public remote MCP on Mercury; idea: write-only "inbox" sealed to a public key (server
+  never reads notes). Not decided.
 - Low priority: embeds (the user called them a gimmick). Rejected (2026-10-18): attachments
   > 30 MB, download subfolders by notebook / type.
 - **Final stage: distribution to friends** (2026-10-16; no iPhone). Blockers first: the server is

@@ -23,7 +23,8 @@ const textRun = (nodes: Json[]): Y.XmlText => {
   return text;
 };
 
-const toY = (nodes: Json[]): (Y.XmlElement | Y.XmlText)[] => {
+// ProseMirror JSON nodes as new Yjs nodes (not in a doc yet).
+export const jsonToY = (nodes: Json[]): (Y.XmlElement | Y.XmlText)[] => {
   const out: (Y.XmlElement | Y.XmlText)[] = [];
   let run: Json[] = [];
   const flush = () => {
@@ -41,7 +42,7 @@ const toY = (nodes: Json[]): (Y.XmlElement | Y.XmlText)[] => {
     for (const [key, value] of Object.entries(node.attrs ?? {})) {
       if (value !== null && value !== undefined) el.setAttribute(key, value as string);
     }
-    const children = toY(node.content ?? []);
+    const children = jsonToY(node.content ?? []);
     if (children.length) el.insert(0, children);
     out.push(el);
   }
@@ -54,7 +55,7 @@ export const setNoteBodyJson = (doc: Y.Doc, json: Json, origin?: unknown): void 
   doc.transact(() => {
     const body = doc.getXmlFragment('default');
     if (body.length) body.delete(0, body.length);
-    const nodes = toY(json.content ?? []);
+    const nodes = jsonToY(json.content ?? []);
     if (nodes.length) body.insert(0, nodes);
   }, origin);
 };
@@ -63,7 +64,7 @@ export const setNoteBodyJson = (doc: Y.Doc, json: Json, origin?: unknown): void 
 export const appendNoteBlocks = (doc: Y.Doc, blocks: Json[], origin?: unknown): void => {
   doc.transact(() => {
     const body = doc.getXmlFragment('default');
-    const nodes = toY(blocks);
+    const nodes = jsonToY(blocks);
     if (nodes.length) body.insert(body.length, nodes);
   }, origin);
 };

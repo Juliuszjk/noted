@@ -1,0 +1,31 @@
+{
+  "name": "mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@noted/config": "workspace:*",
+    "@noted/crypto": "workspace:*",
+    "@noted/editor": "workspace:*",
+    "@noted/sync": "workspace:*",
+    "@noted/types": "workspace:*",
+    "@noted/ui": "workspace:*",
+    "@resvg/resvg-wasm": "^2.6.2",
+    "@tiptap/core": "^3.31.4",
+    "happy-dom": "^20.14.6",
+    "marked": "^18.1.0",
+    "yjs": "^13.6.33",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "esbuild": "0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "2.1.9"
+  }
+}
