@@ -262,6 +262,9 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   of the window (in place, or under the strokes when taken); desktop keys Ctrl+C / X / V / D,
   Delete, Esc. A pen stroke in an empty place always starts a drawing and switches back to the
   pen. CSS: the canvas rule is `.drawing-scroll > svg` (icons in the figure are svgs too).
+  Stage C (2026-10-18): eraser ring under a hovering S Pen (eraser mode or side button held)
+  and under the mouse in eraser mode; the page gets no hover, so `with-stylus.js` sends it
+  (`window.__notedPenHover(x, y, sideButton)`, CSS px, ~60 Hz) -> `showPenHover` (drawing.ts).
 - `/goto` and `/linkto` (`appendNoteLink` in sync/json-to-y.ts, never twice, not into locked notes).
 - HEIC: desktop `src/heic.ts` (libheif-js), phone RN `{type:'convertHeic'}`.
 - Files pasted from a file manager on desktop: WebKitGTK gives no data, so Rust
