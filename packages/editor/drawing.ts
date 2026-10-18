@@ -95,6 +95,7 @@ interface DrawingStorage {
   listeners: Set<() => void>;
   // Desktop "Draw with the mouse" (top toolbar): the mouse starts drawings like a pen does
   // (DrawingStarter); for this session only.
+  // (A finger too: on touch screens without a pen it then draws instead of scrolling.)
   mouseDraws: boolean;
   // Live drawing blocks by their DOM: a pen stroke started outside a block (DrawingStarter)
   // is handed to the block made for it.
@@ -923,11 +924,14 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
 
       const onPointerDown = (e: PointerEvent) => {
         if (!editor.isEditable || active || erasing) return;
-        if (e.pointerType === 'touch') return;
+        // A finger scrolls, unless "Draw with the mouse or finger" is on (then it draws like
+        // the pen, without pressure).
+        const fingerDraws = e.pointerType === 'touch' && e.isPrimary && editor.storage.drawing.mouseDraws;
+        if (e.pointerType === 'touch' && !fingerDraws) return;
         // Mouse: the left button draws, the right one erases (like the pen's side button).
         if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return;
         const pen = e.pointerType === 'pen';
-        penTouch = pen;
+        penTouch = pen || fingerDraws;
         e.preventDefault();
         e.stopPropagation();
         // Drawing takes the focus off the text: the phone keyboard goes away, and a focused
@@ -1171,7 +1175,9 @@ export const DrawingStarter = Extension.create({
           if (!target?.closest) return null;
           if (target.closest('[data-type="drawing"], button, input, textarea, select, a, label, .tb, .db, .tb-notelink, .find-bar, .history-view, .niv, .backlinks, #chips, #title, #wordcount')) return null;
           const root = view.dom as HTMLElement;
-          if (root.contains(target)) {
+          // (The editor itself under its last block, e.g. its minimum height on the phone, is
+          // the empty page too.)
+          if (target !== root && root.contains(target)) {
             // The top-level block under the pen: only an empty line counts (text, lists, images keep the pen).
             let block: Element | null = target;
             while (block && block.parentElement !== root) block = block.parentElement;
@@ -1220,7 +1226,7 @@ export const DrawingStarter = Extension.create({
 
         const onDown = (e: PointerEvent) => {
           pending = null;
-          const mouse = e.pointerType === 'mouse' && e.button === 0 && editor.storage.drawing.mouseDraws;
+          const mouse = ((e.pointerType === 'mouse' && e.button === 0) || (e.pointerType === 'touch' && e.isPrimary)) && editor.storage.drawing.mouseDraws;
           if ((e.pointerType !== 'pen' && !mouse) || !editor.isEditable) return;
           // The eraser has nothing to erase there.
           if ((e.buttons & 32) !== 0 || e.button === 5) return;

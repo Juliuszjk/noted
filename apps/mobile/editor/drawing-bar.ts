@@ -2,7 +2,7 @@ import type { Editor } from '@tiptap/core';
 import { mdiClose, mdiDotsVertical, mdiPaletteOutline } from '@mdi/js';
 import { EDITOR_COLORS } from '@noted/editor/palette';
 import {
-  currentPen, DRAWING_GRID_RANGE, DRAWING_SIZE_RANGE, DRAWING_TOOL_ITEMS, onDrawingChange, serializeDrawingTools, setDrawingActive, setDrawingTool,
+  currentPen, DRAWING_GRID_RANGE, DRAWING_SIZE_RANGE, DRAWING_TOOL_ITEMS, onDrawingChange, serializeDrawingTools, setDrawingActive, setDrawingTool, setMouseDraws,
   setPenSettings,
 } from '@noted/editor/drawing';
 import { DRAWING_TOOLS, strokeOutline, strokeStyle } from '@noted/editor/drawing-render';
@@ -269,7 +269,11 @@ export const createDrawingBar = (editor: Editor, ctx: DrawingBarContext) => {
         out.push(button(mdiDotsVertical, 'More drawing tools', () => toggleRow(key), () => openRow === key));
       });
     });
-    out.push(h('span', 'tb-sep'), button(mdiClose, 'Close drawing tools', () => setDrawingActive(editor, false)));
+    out.push(h('span', 'tb-sep'), button(mdiClose, 'Close drawing tools', () => {
+      setDrawingActive(editor, false);
+      // Drawing with the finger (toolbar button) ends here too.
+      if (editor.storage.drawing.mouseDraws) setMouseDraws(editor, false);
+    }));
     bar.replaceChildren(...out);
     buildRow();
   };

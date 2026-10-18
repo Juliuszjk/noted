@@ -439,7 +439,7 @@ export function TopToolbar({ editor, linkEditRequest = 0, align = 'center', note
     drawMode: (
       <IconBtn
         icon={mdiGesture}
-        title={editor.storage.drawing.mouseDraws ? 'Drawing with the mouse: drag on an empty line or under the note (click to stop)' : 'Draw with the mouse'}
+        title={editor.storage.drawing.mouseDraws ? 'Drawing with the mouse or finger: drag on an empty line or under the note (click to stop)' : 'Draw with the mouse or finger'}
         active={editor.storage.drawing.mouseDraws}
         onClick={() => setMouseDraws(editor, !editor.storage.drawing.mouseDraws)}
       />

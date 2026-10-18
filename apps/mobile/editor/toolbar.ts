@@ -8,8 +8,10 @@ import {
   mdiFormatIndentIncrease, mdiFormatStrikethrough, mdiCodeTags, mdiFormatSubscript, mdiFormatSuperscript, mdiMarker, mdiFormatColorText,
   mdiFunctionVariant, mdiPin, mdiPinOutline, mdiInvertColorsOff, mdiClose, mdiTable, mdiVectorLink, mdiOpenInNew, mdiLinkVariantOff,
   mdiContentCopy, mdiPencilOutline, mdiBookOutline, mdiPound, mdiCheck, mdiTabPlus, mdiLanguageMarkdownOutline, mdiTextBoxOutline,
-  mdiFilePdfBox, mdiShareVariantOutline, mdiTableCog, mdiTableEdit, mdiPaletteOutline, mdiEyeOutline, mdiDownload, mdiImageSizeSelectLarge
+  mdiFilePdfBox, mdiShareVariantOutline, mdiTableCog, mdiTableEdit, mdiPaletteOutline, mdiEyeOutline, mdiDownload, mdiImageSizeSelectLarge,
+  mdiGesture,
 } from '@mdi/js';
+import { onDrawingChange, setMouseDraws } from '@noted/editor/drawing';
 import {
   moveTableRowBy, moveTableColumnBy, selectTablePart, equalColumnWidths, equalRowHeights, resetRowHeights, TABLE_MOVE_MERGED,
 } from '@noted/editor/table-tools';
@@ -1079,7 +1081,18 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     noteLink: [button(mdiVectorLink, 'Link to note', () => (openSheet === 'notelink' ? closeSheet() : noteLinkSheet()))],
     link: [button(mdiLinkPlus, 'Insert link', () => (openSheet === 'link' ? closeSheet() : linkSheet()), () => editor.isActive('link'))],
     align: [alignButton],
+    // Without a pen: the finger draws (empty lines, under the note, in drawings) until this
+    // button or the drawing bar's ✕ turns it off.
+    drawMode: [button(mdiGesture, 'Draw with the finger', () => {
+      const on = !editor.storage.drawing.mouseDraws;
+      setMouseDraws(editor, on);
+      if (on) {
+        (editor.view.dom as HTMLElement).blur();
+        toast('Draw with your finger on an empty line or under the note. ✕ on the drawing bar ends it.');
+      }
+    }, () => editor.storage.drawing.mouseDraws)],
   };
+  onDrawingChange(editor, () => refresh());
   // A subgroup is a ⋮ button; its buttons sit in the floating card (one card open at a time).
   let floatGroup: string[] = [];
   const openFloat = (items: string[]) => {

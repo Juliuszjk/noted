@@ -357,8 +357,16 @@ describe('drawing block', () => {
 
     it('ignores fingers', () => {
       const { editor, svg } = setup();
-      drag(svg, [[10, 50], [300, 50]], { pointerType: 'touch' });
+      drag(svg, [[10, 50], [300, 50]], { pointerType: 'touch', isPrimary: true });
       expect(strokes(editor)).toHaveLength(0);
+    });
+
+    it('draws with a finger while "Draw with the mouse or finger" is on', () => {
+      const { editor, svg } = setup();
+      setMouseDraws(editor, true);
+      drag(svg, [[10, 50], [150, 60], [300, 50]], { pointerType: 'touch', isPrimary: true });
+      expect(strokes(editor)).toHaveLength(1);
+      setMouseDraws(editor, false);
     });
   });
 
@@ -406,6 +414,14 @@ describe('drawing block', () => {
       editor.destroy();
     });
 
+    it('starts a drawing in the editor\'s own empty space under the last line (its minimum height on the phone)', () => {
+      const editor = mounted('<p>Lecture</p>');
+      stroke(editor, editor.view.dom);
+      expect(types(editor)).toEqual(['paragraph', 'drawing', 'paragraph']);
+      expect(strokes(editor)).toHaveLength(1);
+      editor.destroy();
+    });
+
     it('writes on in the drawing above instead of making another one', () => {
       const editor = mounted('<p>Lecture</p>');
       stroke(editor, document.body);
@@ -428,6 +444,26 @@ describe('drawing block', () => {
       const svg = editor.storage.drawing.activeDom!.querySelector('svg')!;
       mouse(svg, 'pointermove', 90, 320);
       mouse(svg, 'pointerup', 90, 320);
+      expect(types(editor)).toEqual(['paragraph', 'drawing', 'paragraph']);
+      expect(strokes(editor)).toHaveLength(1);
+      editor.destroy();
+    });
+
+    it('lets a finger start drawings while drawing with the finger is on', () => {
+      const editor = mounted('<p>Lecture</p>');
+      const touch = (el: Element, type: string, x: number, y: number) => el.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 3, pointerType: 'touch', isPrimary: true, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1, pressure: 0.5,
+      }));
+      touch(document.body, 'pointerdown', 20, 300);
+      touch(document.body, 'pointermove', 60, 310);
+      expect(types(editor)).toEqual(['paragraph']);
+      touch(document.body, 'pointerup', 60, 310);
+      setMouseDraws(editor, true);
+      touch(document.body, 'pointerdown', 20, 300);
+      touch(document.body, 'pointermove', 60, 310);
+      const svg = editor.storage.drawing.activeDom!.querySelector('svg')!;
+      touch(svg, 'pointermove', 90, 320);
+      touch(svg, 'pointerup', 90, 320);
       expect(types(editor)).toEqual(['paragraph', 'drawing', 'paragraph']);
       expect(strokes(editor)).toHaveLength(1);
       editor.destroy();
