@@ -254,6 +254,14 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   not active only wakes it (no dot). Phone plugin also takes the edges at the pen's height out
   of the system back gesture while the S Pen is near (`systemGestureExclusionRects`, 200 dp);
   re-running prebuild replaces its MainActivity block.
+  Stage B (2026-10-18): lasso (`mode: 'lasso'`, toolbar item `drawLasso`; geometry in
+  drawing-lasso.ts): a loop selects strokes mostly inside; the selection (stroke keys, node view
+  state) shows a dashed box + corner handle (drag inside = move, handle = uniform scale incl.
+  widths, one transaction each) and `.drawing-actions` (copy, cut, duplicate below, colour,
+  delete, paste, clear) inside the figure; module-level `strokeClipboard` pastes into any drawing
+  of the window (in place, or under the strokes when taken); desktop keys Ctrl+C / X / V / D,
+  Delete, Esc. A pen stroke in an empty place always starts a drawing and switches back to the
+  pen. CSS: the canvas rule is `.drawing-scroll > svg` (icons in the figure are svgs too).
 - `/goto` and `/linkto` (`appendNoteLink` in sync/json-to-y.ts, never twice, not into locked notes).
 - HEIC: desktop `src/heic.ts` (libheif-js), phone RN `{type:'convertHeic'}`.
 - Files pasted from a file manager on desktop: WebKitGTK gives no data, so Rust

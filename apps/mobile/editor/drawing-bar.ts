@@ -239,6 +239,9 @@ export const createDrawingBar = (editor: Editor, ctx: DrawingBarContext) => {
     if (kind) return button(def.icon, def.label, () => pickKind(kind), () => state().mode === 'pen' && state().tool === kind);
     if (id === 'eraseStroke') return button(def.icon, def.label, () => erase('stroke'), () => state().mode === 'eraser' && state().eraser === 'stroke');
     if (id === 'erasePart') return button(def.icon, def.label, () => erase('part'), () => state().mode === 'eraser' && state().eraser === 'part');
+    if (id === 'drawLasso') {
+      return button(def.icon, def.label, () => { openRow = null; setDrawingTool(editor, { mode: state().mode === 'lasso' ? 'pen' : 'lasso' }); }, () => state().mode === 'lasso');
+    }
     if (id === 'drawUndo') return button(def.icon, def.label, () => editor.commands.undo());
     if (id === 'drawRedo') return button(def.icon, def.label, () => editor.commands.redo());
     if (id === 'drawPaper') {

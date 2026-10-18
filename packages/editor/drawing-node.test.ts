@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 import { createSchemaExtensions } from './extensions';
 import { decodePoints, encodePoints } from './drawing-codec';
 import { exportNote } from './export';
-import { restoreDrawingTools, serializeDrawingTools, setDrawingTool, setMouseDraws, setPenSettings } from './drawing';
+import { restoreDrawingTools, serializeDrawingTools, setDrawingActive, setDrawingTool, setMouseDraws, setPenSettings } from './drawing';
 
 const makeEditor = (ydoc = new Y.Doc()) => new Editor({ extensions: createSchemaExtensions({ ydoc, placeholder: '' }) });
 
@@ -254,6 +254,82 @@ describe('drawing block', () => {
       expect(strokes(editor)).toHaveLength(1);
     });
 
+    describe('lasso', () => {
+      const key = (k: string, ctrl = false) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, ctrlKey: ctrl, bubbles: true, cancelable: true }));
+      const xs = (editor: Editor) => strokes(editor).map((s) => decodePoints(s.points)[0].x);
+      const lassoSetup = () => {
+        const element = document.body.appendChild(document.createElement('div'));
+        const editor = new Editor({ element, extensions: createSchemaExtensions({ ydoc: new Y.Doc(), placeholder: '' }) });
+        editor.commands.setContent('<p>x</p>');
+        editor.commands.insertContentAt(editor.state.doc.content.size, { type: 'drawing' });
+        const svg = editor.view.dom.querySelector('[data-type="drawing"] svg')!;
+        drag(svg, [[20, 20], [80, 20], [120, 20]]);
+        drag(svg, [[300, 200], [360, 200], [400, 200]]);
+        setDrawingTool(editor, { mode: 'lasso' });
+        // A loop around the first stroke only.
+        drag(svg, [[0, 0], [200, 0], [200, 60], [0, 60], [0, 2]]);
+        return { editor, svg };
+      };
+
+      it('selects strokes inside the loop', () => {
+        const { editor } = lassoSetup();
+        expect(editor.view.dom.querySelectorAll('.drawing-picked')).toHaveLength(1);
+        expect((editor.view.dom.querySelector('.drawing-actions') as HTMLElement).style.display).toBe('flex');
+        editor.destroy();
+      });
+
+      it('moves the selection by dragging it, in one change', () => {
+        const { editor, svg } = lassoSetup();
+        drag(svg, [[60, 20], [110, 30], [160, 40]]);
+        expect(xs(editor)).toEqual([120, 300]);
+        expect(decodePoints(strokes(editor)[0].points)[0].y).toBe(40);
+        // Still selected after the move.
+        expect(editor.view.dom.querySelectorAll('.drawing-picked')).toHaveLength(1);
+        editor.destroy();
+      });
+
+      it('scales the selection with the corner handle, widths too', () => {
+        const { editor, svg } = lassoSetup();
+        const box = editor.view.dom.querySelector('.drawing-handle')!;
+        const hx = Number(box.getAttribute('cx'));
+        const hy = Number(box.getAttribute('cy'));
+        drag(svg, [[hx, hy], [hx + 60, hy], [hx + 130, hy]]);
+        const first = strokes(editor)[0];
+        expect(Number(first.size)).toBeGreaterThan(5);
+        const pts = decodePoints(first.points);
+        expect(pts[pts.length - 1].x - pts[0].x).toBeGreaterThan(150);
+        editor.destroy();
+      });
+
+      it('duplicates, recolours and deletes with keys and buttons', () => {
+        const { editor } = lassoSetup();
+        key('d', true);
+        expect(strokes(editor)).toHaveLength(3);
+        // The copy is selected, under the original.
+        expect(decodePoints(strokes(editor)[2].points)[0].y).toBeGreaterThan(20);
+        (editor.view.dom.querySelector('.drawing-actions button[title="Colour"]') as HTMLElement).click();
+        (editor.view.dom.querySelector('.drawing-swatch[title="Red"]') as HTMLElement).click();
+        expect(strokes(editor)[2].color).toBe('var(--c-red)');
+        key('Delete');
+        expect(strokes(editor)).toHaveLength(2);
+        editor.destroy();
+      });
+
+      it('copies into another drawing, in place or under its strokes', () => {
+        const { editor } = lassoSetup();
+        key('c', true);
+        editor.commands.insertContentAt(editor.state.doc.content.size, { type: 'drawing' });
+        const drawings = editor.view.dom.querySelectorAll('[data-type="drawing"]');
+        const second = drawings[drawings.length - 1] as HTMLElement;
+        setDrawingActive(editor, true, second);
+        key('v', true);
+        const json = editor.getJSON().content!.filter((n) => n.type === 'drawing');
+        expect(json[json.length - 1].content).toHaveLength(1);
+        expect(decodePoints(json[json.length - 1].content![0].attrs!.points)[0]).toMatchObject({ x: 20, y: 20 });
+        editor.destroy();
+      });
+    });
+
     it('ignores fingers', () => {
       const { editor, svg } = setup();
       drag(svg, [[10, 50], [300, 50]], { pointerType: 'touch' });
@@ -329,6 +405,16 @@ describe('drawing block', () => {
       mouse(svg, 'pointerup', 90, 320);
       expect(types(editor)).toEqual(['paragraph', 'drawing', 'paragraph']);
       expect(strokes(editor)).toHaveLength(1);
+      editor.destroy();
+    });
+
+    it('writes under the note with the lasso or eraser out, back to the pen', () => {
+      const editor = mounted('<p>Lecture</p>');
+      setDrawingTool(editor, { mode: 'lasso' });
+      stroke(editor, document.body);
+      expect(types(editor)).toEqual(['paragraph', 'drawing', 'paragraph']);
+      expect(strokes(editor)).toHaveLength(1);
+      expect(editor.storage.drawing.current.mode).toBe('pen');
       editor.destroy();
     });
 

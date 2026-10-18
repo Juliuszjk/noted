@@ -195,6 +195,7 @@ export function DrawingMenu({ editor, anchor = null, config = null }: { editor: 
     const run = kind ? () => pickKind(kind)
       : id === 'eraseStroke' ? () => setDrawingTool(editor, { mode: 'eraser', eraser: 'stroke' })
       : id === 'erasePart' ? () => setDrawingTool(editor, { mode: 'eraser', eraser: 'part' })
+      : id === 'drawLasso' ? () => setDrawingTool(editor, { mode: state.mode === 'lasso' ? 'pen' : 'lasso' })
       : id === 'drawUndo' ? () => editor.commands.undo()
       : id === 'drawRedo' ? () => editor.commands.redo()
       : null;
@@ -202,6 +203,7 @@ export function DrawingMenu({ editor, anchor = null, config = null }: { editor: 
     const active = kind ? state.mode === 'pen' && state.tool === kind
       : id === 'eraseStroke' ? state.mode === 'eraser' && state.eraser === 'stroke'
       : id === 'erasePart' ? state.mode === 'eraser' && state.eraser === 'part'
+      : id === 'drawLasso' ? state.mode === 'lasso'
       : false;
     return (
       <Btn key={id} title={def.label} active={active} onClick={() => { setOpen(null); run(); }}>
@@ -219,6 +221,7 @@ export function DrawingMenu({ editor, anchor = null, config = null }: { editor: 
     if (kind) return listItem(def.icon, def.label, () => pickKind(kind), state.mode === 'pen' && state.tool === kind);
     const run = id === 'eraseStroke' ? () => setDrawingTool(editor, { mode: 'eraser', eraser: 'stroke' })
       : id === 'erasePart' ? () => setDrawingTool(editor, { mode: 'eraser', eraser: 'part' })
+      : id === 'drawLasso' ? () => setDrawingTool(editor, { mode: state.mode === 'lasso' ? 'pen' : 'lasso' })
       : id === 'drawUndo' ? () => editor.commands.undo()
       : () => editor.commands.redo();
     return listItem(def.icon, def.label, () => { setOpen(null); run(); }, false);

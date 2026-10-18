@@ -319,12 +319,30 @@ body.table-resizing-row, body.table-resizing-row * { cursor: row-resize !importa
   -webkit-user-select: none;
 }
 .ProseMirror [data-type="drawing"] .drawing-scroll { overflow-x: auto; overflow-y: hidden; }
-.ProseMirror [data-type="drawing"] svg { display: block; width: 100%; min-width: 100%; height: auto; }
+.ProseMirror [data-type="drawing"] .drawing-scroll > svg { display: block; width: 100%; min-width: 100%; height: auto; }
 .ProseMirror[contenteditable="true"] [data-type="drawing"] { outline: 1px dashed var(--border); cursor: crosshair; }
 .ProseMirror[contenteditable="true"] [data-type="drawing"].ProseMirror-selectednode { outline: 2px solid var(--primary); }
 .ProseMirror [data-type="drawing"] .drawing-paper { display: none; }
 .ProseMirror [data-type="drawing"] pattern path { stroke: var(--border); stroke-width: 1; opacity: 0.7; }
 .ProseMirror [data-type="drawing"] .drawing-cut { display: none; fill: none; stroke: var(--primary); stroke-width: 2; stroke-dasharray: 8 6; vector-effect: non-scaling-stroke; }
+.ProseMirror [data-type="drawing"] { position: relative; }
+.ProseMirror [data-type="drawing"] .drawing-lasso { display: none; fill: var(--primary); fill-opacity: 0.08; stroke: var(--primary); stroke-width: 1.5; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; }
+.ProseMirror [data-type="drawing"] .drawing-selection { display: none; fill: none; stroke: var(--primary); stroke-width: 1.5; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; }
+.ProseMirror [data-type="drawing"] .drawing-handle { display: none; fill: var(--primary); stroke: var(--bg-base, #000); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.ProseMirror [data-type="drawing"] .drawing-actions {
+  display: none; position: absolute; z-index: 5; flex-direction: column; gap: 2px; padding: 3px;
+  border-radius: 10px; border: 1px solid var(--border); background: var(--bg-surface-high);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.ProseMirror [data-type="drawing"] .drawing-actions-row { display: flex; gap: 2px; }
+.ProseMirror [data-type="drawing"] .drawing-actions-colors { flex-wrap: wrap; max-width: 260px; gap: 6px; padding: 4px; }
+.ProseMirror [data-type="drawing"] .drawing-actions button {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; padding: 0;
+  border: none; border-radius: 10px; background: transparent; color: var(--text-main); cursor: pointer;
+}
+.ProseMirror [data-type="drawing"] .drawing-actions button:hover { background: var(--bg-surface); }
+.ProseMirror [data-type="drawing"] .drawing-actions button svg { display: block; width: 18px; height: 18px; }
+.ProseMirror [data-type="drawing"] .drawing-actions .drawing-swatch { min-width: 24px; width: 24px; height: 24px; border-radius: 12px; border: 1px solid var(--border); }
 .ProseMirror [data-type="drawing"] .drawing-eraser { display: none; fill: none; stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
 
 /* Attachments: a card per file. */

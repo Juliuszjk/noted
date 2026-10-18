@@ -11,6 +11,10 @@ import {
 import type { DrawingStrokeData, DrawingTool } from './drawing-render';
 import { boxNear, eraserPath, eraseStrokePart, pointsBox, strokeHit } from './drawing-erase';
 import { belowCut, lineShape, recognizeShape, spansSides } from './drawing-shapes';
+import { cornerScale, duplicateOffset, lassoTakes, moveStroke, NO_MOVE, pasteOffset, strokesBox } from './drawing-lasso';
+import type { StrokeMove } from './drawing-lasso';
+import { mdiContentCopy, mdiContentCut, mdiContentDuplicate, mdiContentPaste, mdiDeleteOutline, mdiPaletteOutline, mdiClose } from '@mdi/js';
+import { EDITOR_COLORS } from './palette';
 import type { ShapeKind } from './drawing-shapes';
 import type { Box, EraserMode } from './drawing-erase';
 
@@ -70,7 +74,7 @@ export interface PenSettings {
 }
 
 export interface DrawingToolState {
-  mode: 'pen' | 'eraser';
+  mode: 'pen' | 'eraser' | 'lasso';
   // Grid paper under the active drawing while writing (never part of the note).
   paper: 'none' | 'grid';
   gridSize: number;
@@ -327,7 +331,17 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
       // The cut line being held (dashed, not a stroke).
       const cutLine = document.createElementNS(SVG_NS, 'polyline');
       cutLine.setAttribute('class', 'drawing-cut');
-      svg.append(defs, paper, strokesGroup, piecesGroup, live, cutLine, eraserRing);
+      // Lasso: the loop being drawn, the box around the selection and its corner handle.
+      const loopLine = document.createElementNS(SVG_NS, 'polyline');
+      loopLine.setAttribute('class', 'drawing-lasso');
+      const selRect = document.createElementNS(SVG_NS, 'rect');
+      selRect.setAttribute('class', 'drawing-selection');
+      const selHandle = document.createElementNS(SVG_NS, 'circle');
+      selHandle.setAttribute('class', 'drawing-handle');
+      svg.append(defs, paper, strokesGroup, piecesGroup, live, cutLine, eraserRing, loopLine, selRect, selHandle);
+      // What can be done with the selection (above it, or below when there is no room).
+      const actions = document.createElement('div');
+      actions.className = 'drawing-actions';
       const showPaper = () => {
         const storage = editor.storage.drawing;
         const on = storage.active && storage.activeDom === dom && storage.current.paper === 'grid' && editor.isEditable;
@@ -343,7 +357,7 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
       const offPaper = onDrawingChange(editor, showPaper);
       showPaper();
       scroller.append(svg);
-      dom.append(scroller);
+      dom.append(scroller, actions);
 
       // Rendered strokes in document order. A stroke never changes (it only comes and goes), so
       // its path, points and box are kept by its attributes.
@@ -365,6 +379,10 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         });
         strokesGroup.replaceChildren(...items.map((item) => item.path));
         showErasing();
+        // Strokes changed elsewhere (sync, undo) drop out of the selection.
+        const keys = new Set(items.map((item) => item.key));
+        for (const key of selection) if (!keys.has(key)) selection.delete(key);
+        if (selection.size || actions.childElementCount) queueMicrotask(() => { if (!editor.isDestroyed) showSelection(); });
         const { width, height } = drawingSize(node.attrs.height, strokes, editor.isEditable ? EDIT_ROOM : undefined);
         setSize(width, height);
       };
@@ -580,6 +598,274 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         showErasing();
       };
 
+      // ---- lasso: select strokes, then move / scale / copy / cut / duplicate / delete / recolour ----
+      let selection = new Set<string>();
+      let lassoing:
+        | { pointerId: number; kind: 'loop'; points: StrokePoint[] }
+        | { pointerId: number; kind: 'move'; from: StrokePoint; move: StrokeMove }
+        | { pointerId: number; kind: 'scale'; box: Box; move: StrokeMove }
+        | null = null;
+      let colorsOpen = false;
+      const keyOf = (attrs: Record<string, unknown>) => {
+        const data = strokeData(attrs);
+        return `${data.points}|${data.color}|${data.size}|${data.tool}`;
+      };
+      const picked = () => items.filter((item) => selection.has(item.key));
+      const pickedBox = () => strokesBox(picked().map((item) => ({ points: item.points, size: item.data.size })));
+      const lassoHere = () => {
+        if (editor.isDestroyed) return false;
+        const storage = editor.storage.drawing;
+        return storage.active && storage.activeDom === dom && storage.current.mode === 'lasso' && editor.isEditable;
+      };
+      const movedBox = (box: Box, move: StrokeMove): Box => {
+        const at = (x: number, y: number) => ({ x: move.originX + (x - move.originX) * move.scale + move.dx, y: move.originY + (y - move.originY) * move.scale + move.dy });
+        const a = at(box.minX, box.minY);
+        const b = at(box.maxX, box.maxY);
+        return { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y };
+      };
+      const handleRadius = () => 10 * unitsPerPx();
+
+      // Draws the box, the handle and the actions; `move` previews a drag on the picked strokes.
+      const showSelection = (move: StrokeMove = NO_MOVE) => {
+        const moving = move !== NO_MOVE;
+        const transform = moving ? `translate(${move.dx + move.originX * (1 - move.scale)} ${move.dy + move.originY * (1 - move.scale)}) scale(${move.scale})` : '';
+        for (const item of items) {
+          const on = selection.has(item.key);
+          item.path.classList.toggle('drawing-picked', on);
+          if (on && transform) item.path.setAttribute('transform', transform);
+          else item.path.removeAttribute('transform');
+        }
+        const raw = pickedBox();
+        const box = raw && movedBox(raw, move);
+        if (box) {
+          const pad = 6 * unitsPerPx();
+          selRect.setAttribute('x', String(box.minX - pad));
+          selRect.setAttribute('y', String(box.minY - pad));
+          selRect.setAttribute('width', String(box.maxX - box.minX + pad * 2));
+          selRect.setAttribute('height', String(box.maxY - box.minY + pad * 2));
+          selHandle.setAttribute('cx', String(box.maxX + pad));
+          selHandle.setAttribute('cy', String(box.maxY + pad));
+          selHandle.setAttribute('r', String(handleRadius()));
+        }
+        selRect.style.display = box ? 'block' : '';
+        selHandle.style.display = box ? 'block' : '';
+        showActions(moving ? null : box);
+      };
+
+      const actionButton = (path: string, title: string, run: () => void) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.title = title;
+        b.setAttribute('aria-label', title);
+        b.innerHTML = iconSvg(path);
+        b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); });
+        b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); run(); });
+        return b;
+      };
+      const showActions = (box: Box | null) => {
+        const pasteOnly = !box && lassoHere() && !!strokeClipboard;
+        if (!box && !pasteOnly) {
+          actions.replaceChildren();
+          actions.style.display = '';
+          colorsOpen = false;
+          return;
+        }
+        const row = document.createElement('div');
+        row.className = 'drawing-actions-row';
+        if (box) {
+          row.append(
+            actionButton(mdiContentCopy, 'Copy (Ctrl+C)', copyPicked),
+            actionButton(mdiContentCut, 'Cut (Ctrl+X)', () => { copyPicked(); deletePicked(); }),
+            actionButton(mdiContentDuplicate, 'Duplicate (Ctrl+D)', duplicatePicked),
+            actionButton(mdiPaletteOutline, 'Colour', () => { colorsOpen = !colorsOpen; showSelection(); }),
+            actionButton(mdiDeleteOutline, 'Delete (Del)', deletePicked),
+          );
+        }
+        if (strokeClipboard) row.append(actionButton(mdiContentPaste, 'Paste (Ctrl+V)', pasteHere));
+        if (box) row.append(actionButton(mdiClose, 'Clear the selection (Esc)', clearSelection));
+        const parts: HTMLElement[] = [row];
+        if (box && colorsOpen) {
+          const swatches = document.createElement('div');
+          swatches.className = 'drawing-actions-row drawing-actions-colors';
+          const own = currentPen(editor).color;
+          const colors = [{ label: 'Text colour', value: null as string | null }, ...EDITOR_COLORS.map((c) => ({ label: c.label, value: c.text as string | null }))];
+          if (own && own.startsWith('#')) colors.push({ label: 'Pen colour', value: own });
+          for (const c of colors) {
+            const b = actionButton('', c.label, () => recolorPicked(c.value));
+            b.innerHTML = '';
+            b.className = 'drawing-swatch';
+            b.style.background = c.value ?? 'var(--text-main)';
+            swatches.append(b);
+          }
+          parts.push(swatches);
+        }
+        actions.replaceChildren(...parts);
+        actions.style.display = 'flex';
+        // Placed over the selection, in the figure's coordinates.
+        const figure = dom.getBoundingClientRect();
+        const area = svg.getBoundingClientRect();
+        const scale = unitsPerPx();
+        const height = actions.offsetHeight || 44;
+        const width = actions.offsetWidth || 240;
+        let left = 8;
+        let top = -height - 8;
+        if (box) {
+          left = area.left - figure.left + box.minX / scale;
+          top = area.top - figure.top + box.minY / scale - height - 14;
+          if (area.top + box.minY / scale - height - 14 < 0) top = area.top - figure.top + box.maxY / scale + 22;
+        } else {
+          top = 8;
+        }
+        actions.style.left = `${Math.max(0, Math.min(left, figure.width - width))}px`;
+        actions.style.top = `${top}px`;
+      };
+
+      const clearSelection = () => {
+        selection = new Set();
+        colorsOpen = false;
+        showSelection();
+      };
+      // Replaces the picked strokes (one transaction); `make` returns their new versions.
+      const replacePicked = (make: (child: PmNode, item: Item) => PmNode[]): void => {
+        const pos = typeof getPos === 'function' ? getPos() : undefined;
+        const current = typeof pos === 'number' ? editor.state.doc.nodeAt(pos) : null;
+        if (typeof pos !== 'number' || current?.type.name !== 'drawing') return;
+        const byKey = new Map(picked().map((item) => [item.key, item]));
+        const changes: { from: number; to: number; nodes: PmNode[] }[] = [];
+        const next = new Set<string>();
+        current.forEach((child, offset) => {
+          const key = keyOf(child.attrs);
+          const item = byKey.get(key);
+          if (!item) return;
+          byKey.delete(key);
+          const nodes = make(child, item);
+          for (const n of nodes) next.add(keyOf(n.attrs));
+          changes.push({ from: pos + 1 + offset, to: pos + 1 + offset + child.nodeSize, nodes });
+        });
+        if (!changes.length) return;
+        const tr = editor.state.tr;
+        for (const change of changes.reverse()) tr.replaceWith(change.from, change.to, Fragment.from(change.nodes));
+        // Everything deleted: the empty block goes too.
+        const left = tr.doc.nodeAt(pos);
+        if (left?.type.name === 'drawing' && left.childCount === 0) tr.delete(pos, pos + left.nodeSize);
+        selection = next;
+        keepScroll(() => editor.view.dispatch(tr));
+        showSelection();
+      };
+      const strokeNode = (stroke: CopiedStroke) => editor.schema.nodes.drawingStroke.create({
+        points: encodePoints(stroke.points), color: stroke.color, size: stroke.size, tool: stroke.tool,
+      });
+      // Adds strokes at the end and selects them.
+      const appendStrokes = (strokes: CopiedStroke[]) => {
+        const pos = typeof getPos === 'function' ? getPos() : undefined;
+        const current = typeof pos === 'number' ? editor.state.doc.nodeAt(pos) : null;
+        if (typeof pos !== 'number' || current?.type.name !== 'drawing' || !strokes.length) return;
+        const nodes = strokes.map(strokeNode);
+        selection = new Set(nodes.map((n) => keyOf(n.attrs)));
+        keepScroll(() => editor.view.dispatch(editor.state.tr.insert(pos + 1 + current.content.size, nodes)));
+        showSelection();
+      };
+      const copied = (item: Item, move: StrokeMove = NO_MOVE): CopiedStroke => {
+        const moved = moveStroke({ points: item.points, size: item.data.size }, move);
+        return { color: item.data.color, size: moved.size, tool: item.data.tool, points: moved.points };
+      };
+      const copyPicked = () => {
+        const box = pickedBox();
+        if (!box) return;
+        strokeClipboard = { strokes: picked().map((item) => copied(item)), box };
+        showSelection();
+      };
+      const deletePicked = () => replacePicked(() => []);
+      const duplicatePicked = () => {
+        const box = pickedBox();
+        if (!box) return;
+        const { dx, dy } = duplicateOffset(box);
+        appendStrokes(picked().map((item) => copied(item, { ...NO_MOVE, dx, dy })));
+      };
+      const recolorPicked = (color: string | null) => {
+        colorsOpen = false;
+        replacePicked((child) => [child.type.create({ ...child.attrs, color })]);
+      };
+      const pasteHere = () => {
+        if (!strokeClipboard) return;
+        const { dx, dy } = pasteOffset(strokeClipboard.box, items.map((item) => item.box));
+        appendStrokes(strokeClipboard.strokes.map((stroke) => ({ ...stroke, ...moveStroke(stroke, { ...NO_MOVE, dx, dy }) })));
+      };
+      const commitMove = (move: StrokeMove) => {
+        replacePicked((child, item) => {
+          const moved = moveStroke({ points: item.points, size: item.data.size }, move);
+          return [child.type.create({ ...child.attrs, points: encodePoints(moved.points), size: moved.size })];
+        });
+      };
+
+      const lassoDown = (e: PointerEvent, pen: boolean) => {
+        const pt = toPoint(e, pen);
+        const box = pickedBox();
+        const pad = 6 * unitsPerPx();
+        if (box && Math.hypot(pt.x - (box.maxX + pad), pt.y - (box.maxY + pad)) <= handleRadius() * 1.8) {
+          lassoing = { pointerId: e.pointerId, kind: 'scale', box, move: NO_MOVE };
+        } else if (box && pt.x >= box.minX - pad && pt.x <= box.maxX + pad && pt.y >= box.minY - pad && pt.y <= box.maxY + pad) {
+          lassoing = { pointerId: e.pointerId, kind: 'move', from: pt, move: NO_MOVE };
+        } else {
+          selection = new Set();
+          colorsOpen = false;
+          lassoing = { pointerId: e.pointerId, kind: 'loop', points: [pt] };
+          loopLine.setAttribute('points', `${pt.x},${pt.y}`);
+          loopLine.style.display = 'block';
+          showSelection();
+        }
+      };
+      const lassoMove = (e: PointerEvent) => {
+        if (!lassoing) return;
+        const pt = toPoint(e, e.pointerType === 'pen');
+        if (lassoing.kind === 'loop') {
+          lassoing.points.push(pt);
+          loopLine.setAttribute('points', lassoing.points.map((p) => `${p.x},${p.y}`).join(' '));
+        } else if (lassoing.kind === 'move') {
+          lassoing.move = { ...NO_MOVE, dx: pt.x - lassoing.from.x, dy: pt.y - lassoing.from.y };
+          showSelection(lassoing.move);
+        } else {
+          const scale = cornerScale(lassoing.box, pt.x, pt.y);
+          lassoing.move = { dx: 0, dy: 0, scale, originX: lassoing.box.minX, originY: lassoing.box.minY };
+          showSelection(lassoing.move);
+        }
+      };
+      const lassoUp = (keep: boolean) => {
+        const done = lassoing;
+        lassoing = null;
+        if (!done) return;
+        if (done.kind === 'loop') {
+          loopLine.style.display = '';
+          selection = keep ? new Set(items.filter((item) => lassoTakes(done.points, item.points)).map((item) => item.key)) : new Set();
+          showSelection();
+          return;
+        }
+        const { move } = done;
+        if (keep && (move.dx || move.dy || move.scale !== 1)) commitMove(move);
+        else showSelection();
+      };
+      // The selection goes when the lasso is put away or another drawing is worked in.
+      const offSelection = onDrawingChange(editor, () => {
+        if (!lassoHere() && selection.size) clearSelection();
+        else showSelection();
+      });
+      // Desktop keys while the lasso is out here (nothing has the focus then).
+      const onKey = (e: KeyboardEvent) => {
+        if (!lassoHere()) return;
+        const target = e.target as HTMLElement | null;
+        if (target?.closest?.('input, textarea, [contenteditable="true"]')) return;
+        const mod = e.ctrlKey || e.metaKey;
+        const key = e.key.toLowerCase();
+        const run = (fn: () => void) => { e.preventDefault(); e.stopPropagation(); fn(); };
+        if (key === 'escape' && selection.size) run(clearSelection);
+        else if ((key === 'delete' || key === 'backspace') && selection.size) run(deletePicked);
+        else if (mod && key === 'c' && selection.size) run(copyPicked);
+        else if (mod && key === 'x' && selection.size) run(() => { copyPicked(); deletePicked(); });
+        else if (mod && key === 'd' && selection.size) run(duplicatePicked);
+        else if (mod && key === 'v' && strokeClipboard) run(pasteHere);
+      };
+      document.addEventListener('keydown', onKey, true);
+
       render();
 
       // A pen stroke that started outside the block, under it (DrawingStarter): drawn on here.
@@ -627,6 +913,10 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         const state = editor.storage.drawing.current;
         // The pen's eraser end (the S Pen side button on the phone) erases whatever the tool.
         const penEraser = (pen && ((e.buttons & 32) !== 0 || e.button === 5)) || (e.pointerType === 'mouse' && e.button === 2);
+        if (state.mode === 'lasso' && !penEraser) {
+          lassoDown(e, pen);
+          return;
+        }
         if (state.mode === 'eraser' || penEraser) {
           const { x, y } = toPoint(e, pen);
           erasing = { pointerId: e.pointerId, pen, mode: state.eraser, last: { x, y }, removed: new Set(), pieces: new Map() };
@@ -644,6 +934,11 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         drawLive();
       };
       const onPointerMove = (e: PointerEvent) => {
+        if (lassoing && e.pointerId === lassoing.pointerId) {
+          e.preventDefault();
+          lassoMove(e);
+          return;
+        }
         if (erasing && e.pointerId === erasing.pointerId) {
           e.preventDefault();
           const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
@@ -682,6 +977,11 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         if (!frame) frame = requestAnimationFrame(drawLive);
       };
       const finish = (e: PointerEvent, keep: boolean) => {
+        if (lassoing && e.pointerId === lassoing.pointerId) {
+          penTouch = false;
+          lassoUp(keep);
+          return;
+        }
         if (erasing && e.pointerId === erasing.pointerId) {
           penTouch = false;
           if (keep) commitErasing();
@@ -788,10 +1088,12 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
           return true;
         },
         // Pointer input on the drawing is ours; ProseMirror would start a text selection.
-        stopEvent: (event) => /^(pointer|mouse|touch)/.test(event.type) && scroller.contains(event.target as globalThis.Node),
+        stopEvent: (event) => /^(pointer|mouse|touch|click)/.test(event.type) && (scroller.contains(event.target as globalThis.Node) || actions.contains(event.target as globalThis.Node)),
         ignoreMutation: () => true,
         destroy: () => {
           clearLive();
+          offSelection();
+          document.removeEventListener('keydown', onKey, true);
           offPaper();
           if (active?.timer) clearTimeout(active.timer);
           editor.storage.drawing.views.delete(dom);
@@ -805,6 +1107,12 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
   },
 });
 
+// Strokes copied with the lasso (any drawing of any note of this window can paste them).
+interface CopiedStroke { color: string | null; size: number; tool: DrawingTool; points: StrokePoint[] }
+let strokeClipboard: { strokes: CopiedStroke[]; box: Box } | null = null;
+
+const iconSvg = (path: string) => `<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}" fill="currentColor"/></svg>`;
+
 const isEmptyLine = (node: PmNode | null | undefined) => !!node && node.type.name === 'paragraph' && node.childCount === 0;
 
 // Pen strokes started outside a drawing (the S Pen on the phone, a tablet pen on the desktop):
@@ -812,8 +1120,9 @@ const isEmptyLine = (node: PmNode | null | undefined) => !!node && node.type.nam
 // - in the empty page under the note: a drawing at the end;
 // and the stroke goes on in it without lifting the pen. Under a drawing (only empty lines in
 // between) the stroke goes into that drawing instead, which grows. A tap without moving keeps
-// the pen's usual meaning (the cursor). The mouse only while "Draw with the mouse" is on (its
-// press there then never places the cursor or selects).
+// the pen's usual meaning (the cursor); a stroke switches the tool back to the pen. The mouse
+// only while "Draw with the mouse" is on (its press there then never places the cursor or
+// selects).
 export const DrawingStarter = Extension.create({
   name: 'drawingStarter',
 
@@ -882,7 +1191,7 @@ export const DrawingStarter = Extension.create({
           const mouse = e.pointerType === 'mouse' && e.button === 0 && editor.storage.drawing.mouseDraws;
           if ((e.pointerType !== 'pen' && !mouse) || !editor.isEditable) return;
           // The eraser has nothing to erase there.
-          if ((e.buttons & 32) !== 0 || e.button === 5 || editor.storage.drawing.current.mode === 'eraser') return;
+          if ((e.buttons & 32) !== 0 || e.button === 5) return;
           const zone = zoneAt(e);
           if (!zone) return;
           pending = { pointerId: e.pointerId, zone, events: [{ clientX: e.clientX, clientY: e.clientY, pressure: e.pressure }], x: e.clientX, y: e.clientY };
@@ -900,6 +1209,9 @@ export const DrawingStarter = Extension.create({
           const { zone, events: earlier } = pending;
           pending = null;
           e.preventDefault();
+          // Writing in an empty place is writing, whatever tool was out (the lasso or the eraser
+          // have nothing to work on there).
+          if (editor.storage.drawing.current.mode !== 'pen') setDrawingTool(editor, { mode: 'pen' });
           for (const ev of all.slice(0, -1)) earlier.push({ clientX: ev.clientX, clientY: ev.clientY, pressure: ev.pressure });
           start(e, earlier, zone);
         };
