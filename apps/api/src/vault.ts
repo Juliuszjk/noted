@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { db } from './db.js';
+import { dropSetupCode, prepareSetupCode, setupCodeMatches, setupCodeRequired } from './setup-code.js';
 
 // Single-row table: KDF salt, passphrase verifier and the hash of the auth token.
 // The server never sees the passphrase or the master key, and stores only a hash of the token.
@@ -31,6 +32,8 @@ addColumn('recovery_envelope', 'TEXT');
 addColumn('recovery_sealed', 'TEXT');
 addColumn('auth_epoch', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('created_at', 'INTEGER');
+
+if (!db.prepare('SELECT 1 FROM vault WHERE id = 1').get()) prepareSetupCode();
 
 // Told when the auth token changes (the WebSocket server drops its connections).
 export const authRotatedListeners = new Set<() => void>();
@@ -63,7 +66,8 @@ export const vault = new Hono();
 // envelope only allows guessing the passphrase offline (Argon2id makes that slow).
 vault.get('/', (c) => {
   const row = db.prepare('SELECT salt, verifier, key_envelope, recovery_envelope, auth_epoch, created_at FROM vault WHERE id = 1').get();
-  if (!row) return c.json({ error: 'No vault yet' }, 404);
+  // `setupCode`: creating the vault needs the code from the server's log (setup-code.ts).
+  if (!row) return c.json({ error: 'No vault yet', setupCode: setupCodeRequired() }, 404);
   return c.json(row);
 });
 
@@ -134,11 +138,17 @@ vault.put('/', async (c) => {
   if (keyEnvelope === undefined || recoveryEnvelope === undefined || recoverySealed === undefined || !Number.isInteger(epoch) || epoch < 0 || salt.length > 64 || !isSealed(verifier)) {
     return c.json({ error: 'Bad vault fields' }, 400);
   }
+  if (!setupCodeMatches(c.req.header('X-Setup-Code'))) {
+    // Slows down guessing (the code has ~59 bits anyway).
+    await new Promise((r) => setTimeout(r, 1000));
+    return c.json({ error: 'Wrong setup code' }, 403);
+  }
   const result = db
     .prepare('INSERT OR IGNORE INTO vault (id, salt, verifier, auth_hash, key_envelope, recovery_envelope, recovery_sealed, auth_epoch, created_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(salt, verifier, hashToken(auth_token), keyEnvelope, recoveryEnvelope, recoverySealed, epoch, createdAt);
   if (result.changes > 0 && (keyEnvelope || body.created_at)) console.log('vault: set up from a backup');
   if (result.changes === 0) return c.json({ error: 'Vault already exists' }, 409);
+  dropSetupCode();
   return c.json({ success: true }, 201);
 });
 

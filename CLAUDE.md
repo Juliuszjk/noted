@@ -98,6 +98,15 @@ change" link; `normalizeServerUrl`: IP / localhost -> http, host name -> https) 
 `refreshServerInfo` at start adopts a reported public address). `putPublished` refuses without a
 public address. Caveat until phase 2: changing the server on a device that still holds another
 vault's local notes is not guarded. Compose: `infra/docker/.env` (`NOTED_BIND_IP`, `NOTED_PUBLIC_URL`, not in git).
+Self-hosting (phase 3, 2026-10-18): a server without a vault needs a **setup code** to create it
+(`apps/api/src/setup-code.ts`: env `NOTED_SETUP_CODE` or generated into `data/setup-code`, printed
+to the log; `GET /vault` 404 says `setupCode: true`; `PUT /vault` header `X-Setup-Code`, 403 + 1 s
+delay when wrong; dropped once the vault exists). Clients: `fetchVaultStatus`, `setupCodeHeader`,
+`restoreServerVault(.., setupCode)`; unlock screens show the field (desktop Settings "set up the
+server" refuses on such a server: use the unlock screen). Image `ghcr.io/juliuszjk/noted-server`
+(`.github/workflows/server-image.yml`, amd64 + arm64, on `v*` tags or by hand), friends' compose
+`infra/docker/compose.example.yml`, guide `SELF-HOSTING.md`. Dockerfile TZ defaults to UTC, the
+maintainer's compose sets `TZ` (Europe/Warsaw).
 
 ## Security model (do not break)
 

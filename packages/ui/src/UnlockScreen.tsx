@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiUrl, hasServer, normalizeServerUrl, MIN_PASSPHRASE_LENGTH } from '@noted/config';
 import {
-  apiFetch, fetchVault, openWithPassphraseKey, openWithRecoveryKey, changePassphrase, setAuthEpoch, backupVault, vaultInfoOf, openBackup,
+  apiFetch, fetchVaultStatus, setupCodeHeader, WRONG_SETUP_CODE, openWithPassphraseKey, openWithRecoveryKey, changePassphrase, setAuthEpoch, backupVault, vaultInfoOf, openBackup,
   restoreServerVault, connectServer,
 } from '@noted/sync';
 import type { VaultInfo } from '@noted/sync';
@@ -29,6 +29,9 @@ type Mode =
 export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: number, restoreBackupText?: string) => void }) {
   const [mode, setMode] = useState<Mode>(() => (hasServer() ? { kind: 'loading' } : { kind: 'server' }));
   const [serverText, setServerText] = useState(() => apiUrl());
+  // A fresh server wants the setup code from its log before the vault can be created.
+  const [needsCode, setNeedsCode] = useState(false);
+  const [setupCode, setSetupCode] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [confirm, setConfirm] = useState('');
   const [recoveryText, setRecoveryText] = useState('');
@@ -42,7 +45,8 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
 
   const loadVault = async () => {
     try {
-      const info = await fetchVault();
+      const { info, setupCode: codeNeeded } = await fetchVaultStatus();
+      setNeedsCode(codeNeeded);
       setMode(info ? { kind: 'unlock', info } : { kind: 'create' });
       setError('');
     } catch {
@@ -82,13 +86,14 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
         const key = deriveMasterKey(passphrase, salt);
         const res = await apiFetch(`${apiUrl()}/vault`, dummyKey, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...setupCodeHeader(setupCode) },
           body: JSON.stringify({
             salt: bytesToBase64(salt),
             verifier: packBlob(createVerifier(key)),
             auth_token: bytesToBase64(deriveAuthToken(key)),
           }),
         });
+        if (res.status === 403) throw new Error(WRONG_SETUP_CODE);
         if (res.status === 409) {
           await loadVault();
           throw new Error('A vault already exists. Enter its passphrase.');
@@ -125,7 +130,7 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
         }
         if (!dataKey) throw new Error(useRecovery ? 'This recovery key does not open this backup.' : 'Wrong passphrase for this backup.');
         openBackup(dataKey, text);
-        await restoreServerVault(dataKey, vault, 0);
+        await restoreServerVault(dataKey, vault, 0, setupCode);
         if (useRecovery) {
           // Opened with the recovery key: a new passphrase first (the old one is forgotten).
           setPassphrase('');
@@ -193,6 +198,15 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
         )}
         {choosing && (
           <PasswordInput placeholder="Repeat passphrase" value={confirm} onChange={setConfirm} style={inputStyle} />
+        )}
+        {needsCode && (mode.kind === 'create' || mode.kind === 'restore') && (
+          <>
+            <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '6px', lineHeight: 1.5 }}>
+              This server is new: enter the setup code from its log (docker logs noted_api), so nobody else can claim it first.
+            </div>
+            <input placeholder="Setup code XXXX-XXXX-XXXX" value={setupCode} spellCheck={false}
+              onChange={(e) => setSetupCode(e.target.value)} style={{ ...inputStyle, fontFamily: 'monospace' }} />
+          </>
         )}
         {mode.kind === 'recover' && (
           <textarea autoFocus placeholder="XXXX-XXXX-XXXX-…" value={recoveryText} rows={3}

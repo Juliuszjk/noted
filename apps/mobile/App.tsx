@@ -9,7 +9,7 @@ import * as SystemUI from 'expo-system-ui';
 import { generateSalt, createVerifier, deriveAuthToken, bytesToBase64, parseRecoveryKey } from '@noted/crypto';
 import { saveMasterKey, getMasterKey, clearMasterKey, getAuthEpochStored, saveAuthEpoch } from './src/storage';
 import { createExpoStore } from './src/store';
-import { apiFetch, fetchVault, openWithPassphraseKey, openWithRecoveryKey, changePassphrase, setAuthEpoch, mergingNoteStore, connectServer, refreshServerInfo } from '@noted/sync';
+import { apiFetch, fetchVaultStatus, setupCodeHeader, WRONG_SETUP_CODE, openWithPassphraseKey, openWithRecoveryKey, changePassphrase, setAuthEpoch, mergingNoteStore, connectServer, refreshServerInfo } from '@noted/sync';
 import type { LocalNoteStore, LocalBlobStore, VaultInfo } from '@noted/sync';
 import { isLightColor } from '@noted/theme';
 import { registerKdf } from './src/kdf';
@@ -50,6 +50,9 @@ function App() {
 
   const [mode, setMode] = useState<Mode>(() => (hasServer() ? { kind: 'loading' } : { kind: 'server' }));
   const [serverText, setServerText] = useState(() => apiUrl());
+  // A fresh server wants the setup code from its log before the vault can be created.
+  const [needsCode, setNeedsCode] = useState(false);
+  const [setupCode, setSetupCode] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [confirm, setConfirm] = useState('');
   const [recoveryText, setRecoveryText] = useState('');
@@ -98,7 +101,8 @@ function App() {
 
   const loadVault = async () => {
     try {
-      const info = await fetchVault();
+      const { info, setupCode: codeNeeded } = await fetchVaultStatus();
+      setNeedsCode(codeNeeded);
       setMode(info ? { kind: 'unlock', info } : { kind: 'create' });
       setError('');
     } catch {
@@ -168,13 +172,14 @@ function App() {
         const key = await kdfRef.current!.derive(passphrase, bytesToBase64(salt));
         const res = await apiFetch(`${apiUrl()}/vault`, dummyKey, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...setupCodeHeader(setupCode) },
           body: JSON.stringify({
             salt: bytesToBase64(salt),
             verifier: packBlob(createVerifier(key)),
             auth_token: bytesToBase64(deriveAuthToken(key)),
           }),
         });
+        if (res.status === 403) throw new Error(WRONG_SETUP_CODE);
         if (res.status === 409) {
           await loadVault();
           throw new Error('A vault exists. Enter passphrase.');
@@ -261,6 +266,13 @@ function App() {
             ) : null}
             {choosing ? (
               <PasswordField style={styles.input} value={confirm} onChangeText={setConfirm} placeholder="Repeat passphrase" />
+            ) : null}
+            {needsCode && mode.kind === 'create' ? (
+              <>
+                <Text style={styles.label}>This server is new: enter the setup code from its log (docker logs noted_api).</Text>
+                <TextInput style={[styles.input, { fontFamily: 'monospace' }]} value={setupCode} onChangeText={setSetupCode}
+                  autoCapitalize="characters" autoCorrect={false} placeholder="XXXX-XXXX-XXXX" placeholderTextColor={T.on_surface_variant} />
+              </>
             ) : null}
             {mode.kind === 'recover' ? (
               <TextInput style={[styles.input, { fontFamily: 'monospace', minHeight: 72 }]} value={recoveryText} onChangeText={setRecoveryText}

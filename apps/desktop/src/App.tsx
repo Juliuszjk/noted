@@ -13,7 +13,7 @@ import {
   decodeNoteMeta, displayTitle, setTitle, markNoteCreated, setNoteFlag, getNoteFlag, setNoteTrashed,
   deleteNoteForever, unpublishQuietly, uploadPublished, deletePublished, publishedExists, publishExpired, getNotePublish, setNotePublish, setNoteNotebook, getNoteNotebooks, setNoteTag, getNoteTags, setNoteFont, getNoteFont, CATALOG_ID, isSystemNote,
   listCatalog, getSharedEditorPrefs, refreshStaleNoteMeta, listOwnReminders, setOwnReminder, deleteOwnReminder, updateReminderInDoc, setSharedEditorPrefs, sharedPrefsChange, SHARED_EDITOR_PREFS, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, purgeExpiredTrash, getTitleText, getNoteSettings,
-  currentAuthToken, sessionStillValid, setAuthEpoch, getAuthEpoch, exportAttachments, zipNoteWithFiles, backupVault, restoreServerVault, createBackup, restoreBackup, backupFileName, openBackup, compareBackup, restoreBackupNote, findUnusedBlobs, deleteServerBlobs, deletedNoteIds, purgeDeletedNotes, usedBlobIds, BLOB_GRACE_MS, noteBlobIds, docFromSealed, noteBodyText, applyDefaultTitle, setNoteBodyJson, appendNoteLink,
+  currentAuthToken, sessionStillValid, setAuthEpoch, getAuthEpoch, exportAttachments, zipNoteWithFiles, backupVault, restoreServerVault, fetchVaultStatus, createBackup, restoreBackup, backupFileName, openBackup, compareBackup, restoreBackupNote, findUnusedBlobs, deleteServerBlobs, deletedNoteIds, purgeDeletedNotes, usedBlobIds, BLOB_GRACE_MS, noteBlobIds, docFromSealed, noteBodyText, applyDefaultTitle, setNoteBodyJson, appendNoteLink,
   fetchVault, passphraseOpens, parseVaultInfo, serializeVaultInfo, createLiveOwner, publishLive, LIVE_ORIGIN,
   getVaultSetup, createVault, openVault, changeVaultPassword, isNoteLocked, lockNote, unlockNote, readLockedBody, writeLockedBody, noteBodyJson, noteAttachments,
 } from '@noted/sync';
@@ -1865,6 +1865,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
               const vault = backupVault(text);
               if (!vault) throw new Error('This backup has no vault data (made by an older version or offline). Make a new backup first.');
               openBackup(masterKey, text);
+              // A fresh server's setup code can only be typed on the unlock screen.
+              if ((await fetchVaultStatus()).setupCode) throw new Error('This server is new and wants its setup code: log out and set it up from the unlock screen ("Set it up from a backup").');
               await restoreServerVault(masterKey, vault, getAuthEpoch());
               const r = await restoreBackup(masterKey, text, noteStore(db), createDesktopBlobStore(db), 'merge');
               await loadNotes(db);

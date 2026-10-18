@@ -4,8 +4,8 @@ A local-first, end-to-end encrypted, zero-knowledge notes app: a Notion-like blo
 Notesnook-like encryption. Desktop (Tauri, Linux), Android (Expo) and a small sync server
 (Hono + SQLite in Docker). The server only ever stores ciphertext.
 
-> Status: a personal project. The server is single-user (one vault per server) and the server
-> address is built into the apps (see "Server address" below).
+> Status: a personal project. One server holds one vault (one person's notes); run your own,
+> see [SELF-HOSTING.md](SELF-HOSTING.md).
 
 ## Features
 
@@ -49,13 +49,13 @@ Some files are machine-specific or generated, so they are not in the repository.
 ```bash
 pnpm install
 
-# 1. Server address used by the apps (not in git)
+# 1. Optional default server address for your builds (not in git; empty = the apps ask)
 cp packages/config/server.example.ts packages/config/server.ts
-#    edit API_URL / PUBLIC_URL if the server is not on this machine
 
 # 2. Generated bundles (not in git)
 pnpm --filter mobile run build:editor   # editor + KDF pages for the Android WebView
 pnpm --filter api run build:viewer      # viewer for published notes
+pnpm --filter web run build:live        # page of live published notes
 ```
 
 Run `build:editor` again after every change in `packages/editor` or `apps/mobile/editor`.
@@ -87,6 +87,9 @@ Release builds are signed with the key described in `~/.config/noted-android/sig
 
 ## Server with Docker
 
+Running a server from the published image: [SELF-HOSTING.md](SELF-HOSTING.md). Building it
+from this repository:
+
 ```bash
 echo "NOTED_BIND_IP=127.0.0.1" > infra/docker/.env   # address the private API binds to
 docker volume create docker_noted_data
@@ -99,8 +102,9 @@ public internet (e.g. bind it to a VPN address such as Tailscale).
 
 ## Server address
 
-`packages/config/server.ts` is compiled into the apps, so each build talks to one server.
-Choosing the server at first start (and a local-only mode) is planned.
+The apps ask for the server address on the first screen and keep it per device. A fresh
+server prints a setup code to its log; creating the vault needs it.
+`packages/config/server.ts` only gives your own builds a default address.
 
 ## Tests
 

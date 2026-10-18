@@ -21,16 +21,29 @@ export interface VaultInfo {
 
 const NO_KEY = new Uint8Array(32);
 
-export const fetchVault = async (): Promise<VaultInfo | null> => {
+// The vault, or null and whether creating one needs the server's setup code (its log shows it).
+export const fetchVaultStatus = async (): Promise<{ info: VaultInfo | null; setupCode: boolean }> => {
   const res = await apiFetch(`${apiUrl()}/vault`, NO_KEY);
-  if (res.status === 404) return null;
+  if (res.status === 404) {
+    const body = await res.json().catch(() => null);
+    return { info: null, setupCode: body?.setupCode === true };
+  }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const v = await res.json();
   return {
-    salt: v.salt, verifier: v.verifier, keyEnvelope: v.key_envelope ?? null, recoveryEnvelope: v.recovery_envelope ?? null,
-    authEpoch: typeof v.auth_epoch === 'number' ? v.auth_epoch : 0, createdAt: typeof v.created_at === 'number' ? v.created_at : null,
+    info: {
+      salt: v.salt, verifier: v.verifier, keyEnvelope: v.key_envelope ?? null, recoveryEnvelope: v.recovery_envelope ?? null,
+      authEpoch: typeof v.auth_epoch === 'number' ? v.auth_epoch : 0, createdAt: typeof v.created_at === 'number' ? v.created_at : null,
+    },
+    setupCode: false,
   };
 };
+
+export const fetchVault = async (): Promise<VaultInfo | null> => (await fetchVaultStatus()).info;
+
+// Header of a vault creation on a server that wants its setup code.
+export const setupCodeHeader = (code?: string): Record<string, string> => (code?.trim() ? { 'X-Setup-Code': code.trim() } : {});
+export const WRONG_SETUP_CODE = 'Wrong setup code. It is in the server\'s log (docker logs noted_api).';
 
 const verifies = (info: VaultInfo, dataKey: Uint8Array): boolean => {
   const [n, c] = info.verifier.split('.');
@@ -161,15 +174,17 @@ export const vaultInfoOf = (v: BackupVault): VaultInfo => ({
 
 // The server has no vault (new or replaced server): put the backup's vault there, so the same
 // passphrase, recovery key and data key work again. `epoch` = this device's auth epoch.
-export const restoreServerVault = async (dataKey: Uint8Array, v: BackupVault, epoch = 0): Promise<void> => {
+export const restoreServerVault = async (dataKey: Uint8Array, v: BackupVault, epoch = 0, setupCode?: string): Promise<void> => {
   if (!verifies(vaultInfoOf(v), dataKey)) throw new Error('This backup belongs to another vault (a different key).');
   const res = await apiFetch(`${apiUrl()}/vault`, dataKey, {
     method: 'PUT',
-    ...json({
+    headers: { 'Content-Type': 'application/json', ...setupCodeHeader(setupCode) },
+    body: JSON.stringify({
       salt: v.salt, verifier: v.verifier, auth_token: bytesToBase64(deriveAuthToken(dataKey, epoch)), auth_epoch: epoch,
       key_envelope: v.keyEnvelope, recovery_envelope: v.recoveryEnvelope, recovery_sealed: v.recoverySealed, created_at: v.createdAt,
     }),
   });
+  if (res.status === 403) throw new Error(WRONG_SETUP_CODE);
   if (res.status === 409) throw new Error('This server already has a vault, so nothing was changed. This is only for a new or replaced server without one.');
   if (!res.ok) throw new Error(`Setting up the vault failed (HTTP ${res.status})`);
   setAuthEpoch(epoch);

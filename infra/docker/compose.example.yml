@@ -1,0 +1,28 @@
+# A Noted server from the published image. Copy this file to an empty folder as
+# docker-compose.yml, adjust the addresses below, then `docker compose up -d`.
+# Full guide: SELF-HOSTING.md in the repository.
+services:
+  noted-api:
+    image: ghcr.io/juliuszjk/noted-server:latest
+    container_name: noted_api
+    ports:
+      # Private API (the apps sync here). Bind it to a VPN address (e.g. your Tailscale IP) or to
+      # 127.0.0.1 behind an HTTPS reverse proxy; never plain HTTP on a public address.
+      - "127.0.0.1:3333:3000"
+      # Published notes (anyone with a link reads them): 127.0.0.1 behind a proxy or tunnel.
+      - "127.0.0.1:3334:3001"
+    environment:
+      # Local time of the nightly database copies (kept: the newest 7, in the volume).
+      TZ: Europe/Berlin
+      # Address where people open published notes, e.g. https://share.example.com.
+      # Leave empty if you do not publish notes.
+      NOTED_PUBLIC_URL: ""
+      # Optional: your own code for creating the vault; otherwise the server makes one at the
+      # first start and prints it (docker logs noted_api).
+      # NOTED_SETUP_CODE: ""
+    volumes:
+      - noted_data:/app/apps/api/data
+    restart: unless-stopped
+
+volumes:
+  noted_data:

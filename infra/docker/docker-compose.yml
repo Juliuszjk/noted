@@ -1,6 +1,8 @@
-# Lives on Mercury in ~/docker/noted/. Project and volume names are pinned so that moving this
-# directory can never attach an empty database (the volume was created as "docker_noted_data"
-# when the project name came from infra/docker).
+# Builds the server from this repository (the maintainer's setup). To run a server from the
+# published image instead, see compose.example.yml and SELF-HOSTING.md.
+# Project and volume names are pinned so that moving this directory can never attach an empty
+# database (the volume was created as "docker_noted_data" when the project name came from
+# infra/docker).
 name: noted
 
 services:
@@ -12,9 +14,10 @@ services:
     ports:
       # Private API: Tailscale address only (NOTED_BIND_IP in .env next to this file, not in git).
       - "${NOTED_BIND_IP:-127.0.0.1}:3333:3000"
-      # Published notes (viewer + sealed copies): localhost only; Tailscale Funnel exposes it.
+      # Published notes (viewer + sealed copies): localhost only; a tunnel or proxy exposes it.
       - "127.0.0.1:3334:3001"
     environment:
+      TZ: ${TZ:-Europe/Warsaw}
       # Address of published notes as people reach them (NOTED_PUBLIC_URL in .env, not in git);
       # apps learn it from GET /info.
       NOTED_PUBLIC_URL: ${NOTED_PUBLIC_URL:-}
