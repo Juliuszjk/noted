@@ -10,6 +10,9 @@ export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 jdk21="$(ls -d "$HOME"/.local/share/mise/installs/java/temurin-21* 2>/dev/null | tail -1 || true)"
 if [[ -n "$jdk21" ]]; then export JAVA_HOME="$jdk21"; export PATH="$JAVA_HOME/bin:$PATH"; fi
 cd "$here/android"
+# Gradle does not see changes in the workspace packages (packages/*, outside this app), so it
+# would call the old JS bundle up to date: without its output the bundle is always made again.
+rm -rf app/build/generated/assets/react/release app/build/generated/sourcemaps/react/release
 ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --console=plain \
   -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=768m"
 apk="$here/android/app/build/outputs/apk/release/app-release.apk"

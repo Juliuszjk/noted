@@ -51,12 +51,20 @@ const saveName = (name: string) => {
   }
 };
 
+const MISSING_BLOB_RETRIES = 8;
+const MISSING_BLOB_WAIT_MS = 2_000;
+
 const blobHandlers = (id: string, keys: LiveKeys): BlobHandlers => {
   const urls = new Map<string, { url: string; count: number }>();
+  // A file the owner just added is listed (and uploaded) a few seconds after it shows up in
+  // the note: asked again a few times before the editor shows it as missing.
   const bytes = async (ref: BlobRef): Promise<Uint8Array | null> => {
-    const res = await fetch(`/p/${id}/blob/${ref.id}`, { headers: { 'X-Live-Read': keys.read } });
-    if (!res.ok) return null;
-    return unsealBytes(base64ToBytes(ref.key), new Uint8Array(await res.arrayBuffer()));
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(`/p/${id}/blob/${ref.id}`, { headers: { 'X-Live-Read': keys.read } });
+      if (res.ok) return unsealBytes(base64ToBytes(ref.key), new Uint8Array(await res.arrayBuffer()));
+      if (res.status !== 404 || attempt >= MISSING_BLOB_RETRIES) return null;
+      await new Promise((r) => setTimeout(r, MISSING_BLOB_WAIT_MS));
+    }
   };
   const objectUrl = async (ref: BlobRef): Promise<string | null> => {
     const known = urls.get(ref.id);

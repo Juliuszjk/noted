@@ -342,8 +342,10 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   4410 reload; limits: 1 MB update, 20 MB queue, 20 guests / note, token buckets). Owner logic
   `sync/live-owner.ts` (`createLiveOwner`: merge queue, `acceptGuestUpdates` in `sync/live.ts` refuses
   any guest update touching settings / tags / notebooks - and, Yjs being ordered, all later ones of that
-  guest; compaction snapshot on connect and 60 s after guest edits; seq per device in localStorage
-  `noted_live_seq`). Desktop App: `liveOwner`, `watchDoc` on the active note, cursors via
+  guest; compaction snapshot on connect and 60 s after guest edits, and 1.5 s after own edits that
+  add a file (the snapshot's `blobs` list is what guests may download: an image added by the
+  owner stayed "not uploaded yet" for guests until the next snapshot); the guest page asks again
+  on 404 (8 x 2 s); seq per device in localStorage `noted_live_seq`). Desktop App: `liveOwner`, `watchDoc` on the active note, cursors via
   `y-protocols` Awareness + CollaborationCaret (`NoteEditor extraExtensions`, editor key `:live`,
   owner label "Owner"). Guest page `apps/web/src/LiveApp.tsx` + `live-client.ts` (name in localStorage,
   no uploads / note links / notebooks / tags / reminders / note font; a local change of protected types
@@ -427,10 +429,13 @@ useful, see the TODO.
   rewrap differently and arrows between words can never fit every width.
 - **Drawing: handwriting recognition** (parked 2026-10-18, same reason): ML Kit Digital Ink on the
   phone, offline (weak for math). Exporting a drawing as an image: the user does not need it.
-- Attachments > 30 MB: chunked sealed blobs + encrypted manifest, server storing files.
+- **Live notes: guests pasting images / files** (parked 2026-10-18, "maybe some day"): public
+  `PUT /p/:id/blob/:blobId` with the write token (editable only), per-file / per-note quotas +
+  rate limits, guest page compresses + seals, owner accepts blob nodes and lists them. ~1 round.
 - Claude integration (postponed): local MCP server as one more device; a public key-holding
   server was advised against.
-- Low priority: download subfolders by notebook / type; embeds (the user called them a gimmick).
+- Low priority: embeds (the user called them a gimmick). Rejected (2026-10-18): attachments
+  > 30 MB, download subfolders by notebook / type.
 - **Final stage: distribution to friends** (2026-10-16; no iPhone). Blockers first: the server is
   single-user (one `vault` row) and `API_URL` is the hard-coded Tailscale IP. The user's choice:
   NO multi-user accounts on Mercury; friends either run their own server (Docker image + server
@@ -460,6 +465,10 @@ useful, see the TODO.
 - Notebooks missing after an import: `loadNotes` read the catalog before its pending 500 ms save;
   it now keeps notes with a pending save from memory.
 - Import with duplicate file names -> "UNIQUE constraint failed: notes.id" -> ids per file.
+- Stale phone JS (2026-10-18): Gradle took the old JS bundle as up to date after changes only
+  in `packages/*` (outside apps/mobile), so `build-apk.sh` installed old code; the script now
+  deletes the generated bundle first. Check a fix is in the APK: `grep -a -c <string>
+  apps/mobile/android/app/build/generated/assets/react/release/index.android.bundle`.
 - Phone page rewrite once cut `askReactNative` / `uuid`; check the bundle for helpers you removed.
 - `build-editor.mjs` once shipped a page without content.css / KaTeX fonts (marker check added).
 - Task item labels rewritten by Tiptap restarted Android IMEs (random capitals) -> `QuietTaskItem`.

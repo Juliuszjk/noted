@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as Y from 'yjs';
 import { createLiveOwner } from './live-owner';
 import { liveKeys, sealUpdate, unsealUpdate, LIVE_ORIGIN } from './live';
@@ -84,5 +84,42 @@ describe('live owner', () => {
     setTitle(doc, 'Not any more');
     await flush();
     expect(sent).toHaveLength(1);
+  });
+
+  describe('files', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it('sends a new snapshot listing an image this device added, so guests can load it', async () => {
+      vi.useFakeTimers();
+      const puts: { blobs: string[] }[] = [];
+      vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === 'PUT') {
+          puts.push(JSON.parse(init.body as string));
+          return new Response('{}', { status: 200 });
+        }
+        return new Response(JSON.stringify({ exists: true, updates: [] }), { status: 200 });
+      }));
+      const { doc, owner } = setup(true);
+      owner.connected();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(puts).toHaveLength(1);
+      expect(puts[0].blobs).toEqual([]);
+
+      owner.watchDoc('n1', doc);
+      const image = new Y.XmlElement('blobImage');
+      image.setAttribute('blob', 'img1:a2V5');
+      doc.getXmlFragment('default').insert(0, [image]);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(puts).toHaveLength(2);
+      expect(puts[1].blobs).toEqual(['img1']);
+
+      // Typing without new files: no more snapshots.
+      setTitle(doc, 'Typing');
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(puts).toHaveLength(2);
+    });
   });
 });

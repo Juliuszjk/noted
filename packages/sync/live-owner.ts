@@ -41,10 +41,17 @@ interface Share {
   queue: { seq: number; data: string; guest: boolean }[];
   busy: boolean;
   compactTimer: ReturnType<typeof setTimeout> | null;
+  // Files the server lets guests download (as of the last snapshot; null = not sent yet), and
+  // the pending check whether this device's edits added new ones.
+  blobs: Set<string> | null;
+  blobTimer: ReturnType<typeof setTimeout> | null;
 }
 
 // After guests changed something: a new snapshot this much later (unless more comes).
 const COMPACT_DELAY_MS = 60_000;
+// After this device's own edits: this much later, a new snapshot if they added an image or
+// file (the server only hands guests the files the last snapshot listed).
+const BLOB_CHECK_DELAY_MS = 1_500;
 
 const keysFor = (host: LiveOwnerHost, info: NotePublish): Promise<LiveKeys> => {
   const link = fromBase64Url(info.key);
@@ -53,6 +60,8 @@ const keysFor = (host: LiveOwnerHost, info: NotePublish): Promise<LiveKeys> => {
   if (host.passwordKey) return host.passwordKey(link, info.password).then((key) => liveKeys(link, info.password!, key));
   return Promise.resolve(liveKeys(link, info.password));
 };
+
+const liveBlobIds = (doc: Y.Doc): Set<string> => new Set(noteBlobIds(noteBodyJson(doc)));
 
 // Uploads the note as the live note's snapshot (and its settings), covering every update up
 // to `snapshotSeq`.
@@ -67,7 +76,7 @@ export const putLiveNote = async (masterKey: Uint8Array, info: NotePublish, keys
       editable: !!info.editable,
       password: !!info.password,
       expiresAt: info.expiresAt ?? null,
-      blobs: [...new Set(noteBlobIds(noteBodyJson(doc)))],
+      blobs: [...liveBlobIds(doc)],
       snapshot: sealUpdate(keys, Y.encodeStateAsUpdate(doc)),
       snapshotSeq,
     }),
@@ -134,7 +143,9 @@ export const createLiveOwner = (host: LiveOwnerHost) => {
       await drain(share);
       const doc = await host.readNote(share.noteId);
       if (!doc) return;
+      const blobs = liveBlobIds(doc);
       await putLiveNote(host.masterKey, share.info, await share.keys, doc, host.getSeq(share.info.id));
+      share.blobs = blobs;
     } catch (e) {
       console.warn('Live note: snapshot failed:', e);
     }
@@ -145,15 +156,35 @@ export const createLiveOwner = (host: LiveOwnerHost) => {
     share.compactTimer = setTimeout(() => compact(share), COMPACT_DELAY_MS);
   };
 
+  // This device changed the note: a new snapshot soon if a new image / file came in, so guests
+  // can load it (the upload itself runs with the next sync, started when the file was added).
+  const checkBlobsSoon = (share: Share) => {
+    if (share.blobTimer) clearTimeout(share.blobTimer);
+    share.blobTimer = setTimeout(async () => {
+      share.blobTimer = null;
+      if (!online || !shares.has(share.info.id)) return;
+      try {
+        const doc = await host.readNote(share.noteId);
+        if (!doc) return;
+        const known = share.blobs;
+        if (known && [...liveBlobIds(doc)].every((id) => known.has(id))) return;
+        await compact(share);
+      } catch (e) {
+        console.warn('Live note: checking files failed:', e);
+      }
+    }, BLOB_CHECK_DELAY_MS);
+  };
+
   const forget = (id: string) => {
     const share = shares.get(id);
     if (!share) return;
     if (share.compactTimer) clearTimeout(share.compactTimer);
+    if (share.blobTimer) clearTimeout(share.blobTimer);
     shares.delete(id);
     byNote.delete(share.noteId);
   };
   const add = (noteId: string, info: NotePublish) => {
-    const share: Share = { noteId, info, keys: keysFor(host, info), queue: [], busy: false, compactTimer: null };
+    const share: Share = { noteId, info, keys: keysFor(host, info), queue: [], busy: false, compactTimer: null, blobs: null, blobTimer: null };
     shares.set(info.id, share);
     byNote.set(noteId, info.id);
     // Made live on another device: catch up with what guests did since.
@@ -225,6 +256,7 @@ export const createLiveOwner = (host: LiveOwnerHost) => {
         const share = id ? shares.get(id) : undefined;
         if (!share) return;
         share.keys.then((keys) => host.send({ type: 'liveUpdate', id: share.info.id, data: sealUpdate(keys, update) }));
+        checkBlobsSoon(share);
       };
       doc.on('update', onUpdate);
       return () => doc.off('update', onUpdate);
@@ -234,7 +266,9 @@ export const createLiveOwner = (host: LiveOwnerHost) => {
     sendUpdate(noteId: string, update: Uint8Array) {
       const id = byNote.get(noteId);
       const share = id ? shares.get(id) : undefined;
-      if (share) share.keys.then((keys) => host.send({ type: 'liveUpdate', id: share.info.id, data: sealUpdate(keys, update) }));
+      if (!share) return;
+      share.keys.then((keys) => host.send({ type: 'liveUpdate', id: share.info.id, data: sealUpdate(keys, update) }));
+      checkBlobsSoon(share);
     },
 
     // This device's cursor / presence in an open live note (raw awareness update).
