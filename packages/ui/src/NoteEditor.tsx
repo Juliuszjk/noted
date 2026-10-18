@@ -9,8 +9,8 @@ import {
   SlashCommands, NoteLinkSuggestion, createSchemaExtensions, normalizeLinkUrl, setNoteTitles,
   configureBlobs, insertFiles, pastedFilePaths, importImages, NoteActions, setCodeThemeByLanguage, setReminderTimes, requestReminderAtSelection,
 } from '@noted/editor';
-import type { Editor } from '@tiptap/core';
-import type { NoteActionRequest } from '@noted/editor';
+import type { AnyExtension, Editor } from '@tiptap/core';
+import type { NoteActionRequest, SlashItem } from '@noted/editor';
 import type { BlobHandlers } from '@noted/editor';
 import '@noted/editor/content.css';
 import 'katex/dist/katex.min.css';
@@ -69,8 +69,13 @@ export function NoteEditor({
   noteId, ydoc, onUpdate, onOpenLink, notes = [], onOpenNote, onCreateNote, blobs,
   toolbarMode = 'floating', toolbarSlot = null, tableMenuSlot = null, tableToolbarConfig = null, drawingMenuSlot = null, drawingToolbarConfig = null, drawingTools, onStats, fullWidth = false, readOnly = false, spellcheck = true,
   onNoteAction, restore, findSlot = null, onSaveExport, onPublish, toolbarConfig = null, ligatures = true, codeThemeByLanguage, reminderTimes,
-  secondary = false,
+  secondary = false, slashItems, noteLinks = true, extraExtensions = [],
 }: {
+  // Guests of a live note (apps/web): fewer insert menu entries, no "[[" note links, and
+  // extensions of their own (other people's cursors).
+  slashItems?: SlashItem[],
+  noteLinks?: boolean,
+  extraExtensions?: AnyExtension[],
   // The second editor of the split view: the app-wide events (export / publish from the
   // properties panel, "show in the note") are the main editor's; Ctrl+F only while typing here.
   secondary?: boolean,
@@ -421,7 +426,8 @@ export function NoteEditor({
         onEditMath: setMathEdit,
         onEditReminder: setReminderEdit,
       }),
-      NoteLinkSuggestion.configure({
+      ...extraExtensions,
+      ...(noteLinks ? [NoteLinkSuggestion.configure({
         suggestion: {
           // NoteLinkMenu does the searching and inserting.
           render: () => ({
@@ -437,7 +443,7 @@ export function NoteEditor({
             onExit: () => setNoteLinkMenu(null),
           }),
         },
-      }),
+      })] : []),
       NoteActions.configure({
         onRequest: (request: NoteActionRequest) => {
           const ed = editorRef.current;
@@ -700,7 +706,7 @@ export function NoteEditor({
           onClose={() => setNoteLinkMenu(null)}
         />,
       )}
-      {editor && slash && floating(<SlashMenu ref={menuRef} editor={editor} state={slash} onClose={() => setSlash(null)} />)}
+      {editor && slash && floating(<SlashMenu ref={menuRef} editor={editor} state={slash} items={slashItems} onClose={() => setSlash(null)} />)}
       {editor && toolbarMode === 'floating' && floating(<FormatMenu editor={editor} onOpenLink={onOpenLink ? openLink : undefined} linkEditRequest={linkEditRequest} />)}
       {editor && toolbarMode === 'top' && toolbarSlot && createPortal(
         <TopToolbar
@@ -718,7 +724,7 @@ export function NoteEditor({
       {publishOpen && onPublish && (
         <PublishDialog
           title={getTitleText(ydoc).toString().trim()}
-          initial={{ password: published?.password ?? null, selfDestruct: published?.selfDestruct ?? false, autoUpdate: published?.autoUpdate ?? false, expiresAt: published?.expiresAt ?? null }}
+          initial={{ password: published?.password ?? null, selfDestruct: published?.selfDestruct ?? false, autoUpdate: published?.autoUpdate ?? false, expiresAt: published?.expiresAt ?? null, live: !!published?.live, editable: !!published?.editable }}
           url={published ? publishedUrl(published) : null}
           publishedAt={published?.at ?? null}
           onPublish={publishNow}

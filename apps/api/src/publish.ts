@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { db } from './db.js';
 import { VIEWER_JS } from './viewer.generated.js';
+import { LIVE_JS } from './live.generated.js';
+import { liveBlob, liveInitial, liveNeedsPassword, liveShareExists, removeLiveShare } from './live.js';
 
 // Published notes ("monographs"): the client seals a rendered copy of a note with a random
 // key that exists only in the link's #fragment, so this server stores opaque bytes and never
@@ -65,6 +67,8 @@ publishPrivate.put(
       INSERT INTO published (id, data, size, updated_at, once, expires_at) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET data = excluded.data, size = excluded.size, updated_at = excluded.updated_at, once = excluded.once, expires_at = excluded.expires_at
     `).run(id, data, data.length, Date.now(), once, expiresAt);
+    // A live note under the same link becomes this copy.
+    removeLiveShare(id);
     // Ids are shortened in the log; the key is never sent to the server.
     console.log(`publish: stored ${id.slice(0, 4)}… (${data.length} bytes${once ? ', self destruct' : ''}${expiresAt ? `, expires ${new Date(expiresAt).toISOString()}` : ''})`);
     return c.json({ success: true, id });
@@ -76,13 +80,13 @@ publishPrivate.put(
 publishPrivate.get('/:id', (c) => {
   const id = c.req.param('id');
   if (!ID_PATTERN.test(id)) return c.json({ error: 'Bad id' }, 400);
-  return c.json({ exists: !!liveRow<{ updated_at: number }>('updated_at', id) });
+  return c.json({ exists: !!liveRow<{ updated_at: number }>('updated_at', id) || liveShareExists(id) });
 });
 
 publishPrivate.delete('/:id', (c) => {
   const id = c.req.param('id');
   if (!ID_PATTERN.test(id)) return c.json({ error: 'Bad id' }, 400);
-  const removed = db.prepare('DELETE FROM published WHERE id = ?').run(id).changes;
+  const removed = db.prepare('DELETE FROM published WHERE id = ?').run(id).changes + (removeLiveShare(id) ? 1 : 0);
   console.log(`publish: unpublished ${id.slice(0, 4)}…${removed ? '' : ' (was not there)'}`);
   return c.json({ success: true });
 });
@@ -134,11 +138,38 @@ const PAGE_HTML = `<!doctype html>
 </body>
 </html>`;
 
+// A live note (live.ts): the editor page (/live.js) instead of the viewer. Like the viewer it
+// talks only to this origin (the WebSocket included) and loads nothing from elsewhere.
+const LIVE_CSP = [
+  "default-src 'none'", "script-src 'self'", "connect-src 'self'", "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:", "font-src data:", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+].join('; ');
+
+const LIVE_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+<meta name="robots" content="noindex, nofollow">
+<title>Noted</title>
+</head>
+<body>
+<div id="app"><div class="live-status">Opening…</div></div>
+<script src="/live.js"></script>
+</body>
+</html>`;
+
 export const publicApp = new Hono();
 
 publicApp.get('/', (c) => c.text('Noted', 200, COMMON_HEADERS));
 
 publicApp.get('/viewer.js', (c) => c.body(VIEWER_JS, 200, {
+  ...COMMON_HEADERS,
+  'Content-Type': 'application/javascript; charset=utf-8',
+  'Cache-Control': 'public, max-age=300',
+}));
+
+publicApp.get('/live.js', (c) => c.body(LIVE_JS, 200, {
   ...COMMON_HEADERS,
   'Content-Type': 'application/javascript; charset=utf-8',
   'Cache-Control': 'public, max-age=300',
@@ -154,6 +185,15 @@ p{padding:40px 20px;text-align:center;opacity:.7}</style></head><body><p>This no
 publicApp.get('/p/:id', (c) => {
   const id = c.req.param('id');
   if (!ID_PATTERN.test(id)) return c.text('Not found', 404, COMMON_HEADERS);
+  if (liveShareExists(id)) {
+    return c.body(LIVE_HTML, 200, {
+      ...COMMON_HEADERS,
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Security-Policy': LIVE_CSP,
+      'X-Frame-Options': 'DENY',
+      'Cache-Control': 'no-store',
+    });
+  }
   // Only whether it exists: reading the data (and a self destruct) happens in /data.
   if (!liveRow<{ id: string }>('id', id)) {
     return c.body(GONE_HTML, 404, { ...COMMON_HEADERS, 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'", 'Cache-Control': 'no-store' });
@@ -182,6 +222,30 @@ publicApp.get('/p/:id/data', (c) => {
     'Cache-Control': 'no-store',
     ...(row.once ? { 'X-Self-Destructed': '1' } : {}),
   });
+});
+
+// Live note: the sealed state and updates, for the read token (header, never the URL).
+publicApp.get('/p/:id/live', (c) => {
+  const id = c.req.param('id');
+  if (!ID_PATTERN.test(id)) return c.text('Not found', 404, COMMON_HEADERS);
+  const result = liveInitial(id, c.req.header('X-Live-Read'));
+  if ('status' in result) return c.text('Not allowed', result.status, COMMON_HEADERS);
+  return c.json(result.body, 200, { ...COMMON_HEADERS, 'Cache-Control': 'no-store' });
+});
+
+publicApp.get('/p/:id/live/info', (c) => {
+  const id = c.req.param('id');
+  const password = ID_PATTERN.test(id) ? liveNeedsPassword(id) : null;
+  if (password === null) return c.text('Not found', 404, COMMON_HEADERS);
+  return c.json({ password }, 200, { ...COMMON_HEADERS, 'Cache-Control': 'no-store' });
+});
+
+publicApp.get('/p/:id/blob/:blob', (c) => {
+  const id = c.req.param('id');
+  if (!ID_PATTERN.test(id)) return c.text('Not found', 404, COMMON_HEADERS);
+  const result = liveBlob(id, c.req.param('blob'), c.req.header('X-Live-Read'));
+  if ('status' in result) return c.text('Not allowed', result.status, COMMON_HEADERS);
+  return c.body(new Uint8Array(result.data), 200, { ...COMMON_HEADERS, 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store' });
 });
 
 publicApp.notFound((c) => c.text('Not found', 404, COMMON_HEADERS));

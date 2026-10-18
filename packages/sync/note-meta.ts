@@ -35,6 +35,8 @@ export interface NoteMeta {
   locked: boolean;
   // Published to the web (settings `published`, publish.ts); the "Published" view lists these.
   published: boolean;
+  // Published live (live.ts): the owner's apps merge guests' edits (absent = not live).
+  live?: boolean;
   // Reminder chips in the body, with the text of their line (the Reminders view). Absent in
   // meta saved before reminders were indexed (refreshStaleNoteMeta rebuilds those).
   reminders?: NoteReminder[];
@@ -264,6 +266,7 @@ export function buildNoteMeta(doc: Y.Doc): NoteMeta {
     tags: getNoteTags(doc),
     locked,
     published: getNotePublish(doc) !== null,
+    ...(getNotePublish(doc)?.live ? { live: true } : {}),
     reminders: acc.reminders,
   };
 }
@@ -312,6 +315,7 @@ export function decodeNoteMeta(plain: string | null | undefined): NoteMeta {
           tags: Array.isArray(data.tags) ? data.tags.filter((t: unknown) => typeof t === 'string') : [],
           locked: data.locked === true,
           published: data.published === true,
+          ...(data.live === true ? { live: true } : {}),
           ...(Array.isArray(data.reminders) ? { reminders: data.reminders.map(parseNoteReminder).filter(Boolean) as NoteReminder[] } : {}),
         };
       }
@@ -341,6 +345,10 @@ export interface NotePublish {
   autoUpdate?: boolean;
   // The link stops working at this time (ms); null = never.
   expiresAt?: number | null;
+  // Live (live.ts): readers see the note itself, changes arrive at once; `editable`: they may
+  // also edit the title and the body.
+  live?: boolean;
+  editable?: boolean;
 }
 
 export const getNotePublish = (doc: Y.Doc): NotePublish | null => {
@@ -352,6 +360,8 @@ export const getNotePublish = (doc: Y.Doc): NotePublish | null => {
       selfDestruct: value.selfDestruct === true,
       autoUpdate: value.autoUpdate === true,
       expiresAt: typeof value.expiresAt === 'number' ? value.expiresAt : null,
+      live: value.live === true,
+      editable: value.live === true && value.editable === true,
     } : null;
 };
 

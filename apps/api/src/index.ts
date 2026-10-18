@@ -6,6 +6,7 @@ import { vault, vaultPrivate, requireAuth } from './vault.js';
 import { attachRealtime, notifyOnWrite } from './realtime.js';
 import { blobs } from './blobs.js';
 import { publishPrivate, publicApp } from './publish.js';
+import { livePrivate, attachLiveSockets } from './live.js';
 import type { Server } from 'node:http';
 import { startDailyBackups } from './backups.js';
 
@@ -28,6 +29,8 @@ app.use('/blobs/*', requireAuth);
 app.route('/blobs', blobs);
 app.use('/publish/*', requireAuth);
 app.route('/publish', publishPrivate);
+app.use('/live/*', requireAuth);
+app.route('/live', livePrivate);
 
 app.get('/', (c) => {
   return c.text('Noted Zero-Knowledge API is running!');
@@ -116,5 +119,7 @@ startDailyBackups();
 // only serves the viewer and sealed bytes; Docker binds it to 127.0.0.1 on Mercury and
 // Tailscale Funnel exposes just this port over HTTPS. The API above stays Tailscale only.
 const publicPort = process.env.PUBLIC_PORT ? parseInt(process.env.PUBLIC_PORT) : 3001;
-serve({ fetch: publicApp.fetch, port: publicPort, hostname: '0.0.0.0' });
+const publicServer = serve({ fetch: publicApp.fetch, port: publicPort, hostname: '0.0.0.0' });
+// Live published notes: guests' WebSocket (/p/:id/ws).
+attachLiveSockets(publicServer as Server);
 console.log(`Published notes are served on port ${publicPort}`);

@@ -33,7 +33,7 @@ pnpm workspaces + Turborepo (pnpm's default isolated layout, no .npmrc).
 apps/desktop   Tauri v2 + React + TS. Package "desktop", Cargo package "noted". SQLite via tauri-plugin-sql.
 apps/mobile    Expo, Android. Release APK on the phone. Editor = WebView page (apps/mobile/editor). SQLite via expo-sqlite.
 apps/api       Hono + better-sqlite3 + ws, Docker on the server "Mercury".
-apps/web       placeholder (future guest editor / viewer)
+apps/web       guest page of live published notes (React + NoteEditor, esbuild -> apps/api/src/live.generated.ts)
 packages/crypto   XChaCha20-Poly1305 (@noble/ciphers), Argon2id + HKDF (@noble/hashes 1.8)
 packages/sync     Yjs merge, API client, sync engine, editor bridge, backups, import/export helpers
 packages/editor   Tiptap schema (single source of truth), slash menu, toolbar model, content.css
@@ -74,7 +74,10 @@ packages/db, crdt   empty
 - Typecheck: `pnpm --filter desktop exec tsc --noEmit`, `pnpm --filter mobile exec tsc --noEmit`,
   `pnpm --filter api exec tsc --noEmit`, WebView pages: `pnpm --filter mobile exec tsc -p editor/tsconfig.json`.
 - After changing Tauri capabilities (`src-tauri/capabilities/default.json`) run `cargo check` in `src-tauri`.
-- Viewer bundle: `pnpm --filter api run build:viewer` -> `src/viewer.generated.ts`.
+- Viewer bundle: `pnpm --filter api run build:viewer` -> `src/viewer.generated.ts`. Live note page:
+  `pnpm --filter web run build:live` -> `apps/api/src/live.generated.ts` (after changes in apps/web or the
+  shared packages it bundles; the build swaps `packages/config/server.ts` for a stub and fails if a server
+  address ends up in the page).
 
 ## Server
 
@@ -318,6 +321,24 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
 - Publishing: `sync/publish.ts` + `ui/src/publish-html.ts`; server `apps/api/src/publish.ts`
   (separate public Hono server: `/`, `/viewer.js`, `/p/:id`, `/p/:id/data`); viewer
   `apps/api/viewer/viewer.ts` (sandboxed srcdoc iframe). Deleting a note for good unpublishes it.
+- **Live publishing** (2026-10-18, desktop confirmed): Publish dialog switches "Live" + "Allow editing",
+  same link `/p/:id#key`. NotePublish `live` / `editable`, note meta `live`. Keys `deriveLiveKeys`
+  (crypto; from the link key or `publishPasswordKey`): `content` seals the Yjs snapshot + updates, server
+  keeps SHA-256 of `read` (needed for ANY download: no offline password guessing) and `write`.
+  Server `apps/api/src/live.ts`: tables `live_shares` / `live_updates` (global seq), private `/live/:id`
+  (PUT snapshot + settings, `snapshotSeq` compacts the queue; the snapshot covering more wins), owner
+  devices send `liveUpdate` / `liveAwareness` on the private WS and get `live` / `liveAwareness`;
+  public `/p/:id/live` (header X-Live-Read), `/p/:id/live/info` (password?), `/p/:id/blob/:blob` (only
+  blobs the owner listed), WS `/p/:id/ws` (join; 4403 bad token, 4404 gone, 4409 settings changed,
+  4410 reload; limits: 1 MB update, 20 MB queue, 20 guests / note, token buckets). Owner logic
+  `sync/live-owner.ts` (`createLiveOwner`: merge queue, `acceptGuestUpdates` in `sync/live.ts` refuses
+  any guest update touching settings / tags / notebooks - and, Yjs being ordered, all later ones of that
+  guest; compaction snapshot on connect and 60 s after guest edits; seq per device in localStorage
+  `noted_live_seq`). Desktop App: `liveOwner`, `watchDoc` on the active note, cursors via
+  `y-protocols` Awareness + CollaborationCaret (`NoteEditor extraExtensions`, editor key `:live`,
+  owner label "Owner"). Guest page `apps/web/src/LiveApp.tsx` + `live-client.ts` (name in localStorage,
+  no uploads / note links / notebooks / tags / reminders / note font; a local change of protected types
+  stops sending). NoteEditor props `slashItems`, `noteLinks`, `extraExtensions` exist for it.
 - Backups `sync/backup.ts` (sealed notes + blobs + vault data; merge / replace / rollback,
   `compareBackup`); export all `sync/export-all.ts`; importer `ui/src/importers.ts` (ids per
   FILE, `importNoteDocs` merges duplicates and isolates per-note errors).
@@ -346,21 +367,20 @@ push; notification icon = the app's icon; buttons Done / In 1 hour / Tomorrow (E
 Git: private GitHub repo (details in CLAUDE.local.md). Personal data stays out of git: server
 addresses (`packages/config/server.ts`, `infra/docker/.env`), `CLAUDE.local.md`, `docs/private/`,
 `apps/api/data`. Generated files (`*.generated.ts`, `apps/mobile/android/`) are not committed:
-after a fresh clone run `build:editor` and `build:viewer` first. Before going public: grep the
+after a fresh clone run `build:editor`, `build:viewer` and `build:live` first. Before going public: grep the
 tracked files for addresses / names again.
 
 **Drawing steps 1-3 done (2026-10-17)**: block + rendering everywhere, phone drawing (480 Hz,
 side button eraser, pen kinds, erasers, colours incl. custom, width slider), desktop drawing
 menu (floating / at the top), configurable drawing bars, remembered tool choices; option C
-(pen on empty lines / under the note starts drawings), mouse draw mode; confirmed. Next idea
-(ask first): annotations on text anchored IN the body (an invisible inline anchor node holding
-the strokes, NOT a separate Y.Map: locked notes, undo, copy / paste), see the TODO.
+(pen on empty lines / under the note starts drawings), mouse draw mode; confirmed. Further
+drawing ideas (overlay, annotations, handwriting) are parked until the user knows drawing is
+useful, see the TODO.
 
 ## TODO / ideas (not decided yet, ask before doing)
 
-- **Shared editing by link**: guests edit one note live with a limited editor; share key in the
-  fragment, server relays sealed Yjs updates per share id (public WebSocket on the Funnel port,
-  rate limits), owner's app merges. Guest page in apps/web must use `createSchemaExtensions` as is.
+- **Live publishing on the phone** (stage 4, next): Publish sheet switches, `createLiveOwner` in the
+  RN app (merge into the DB via mergingNoteStore / open note via the page), cursors in the page.
 - **S Pen** (plan 2026-10-13, waiting for the user's choices): block atom `drawing` {id, height, paper} in the shared schema;
   strokes in the note's Y.Doc (`Y.Map 'drawings'` id -> Y.Array of compact strokes: logical
   x/y, pressure, tool, palette colour name) so devices merge; SVG via `perfect-freehand`;
@@ -368,7 +388,9 @@ the strokes, NOT a separate Y.Map: locked notes, undo, copy / paste), see the TO
   events); later lasso, highlighter, paper, SVG export, ML Kit Digital Ink. **The user's wish
   (2026-10-17)**: the whole note text + drawing (draw anywhere over / between text, like Samsung
   Notes; "stage B" overlay anchored to blocks); fallback if that proves hard: pulling the S Pen
-  out inserts a drawing block under the cursor. Option C done; annotations on text = next stage. **Phase 0 done
+  out inserts a drawing block under the cursor. Option C done; the overlay over text, annotations
+  and handwriting are parked (2026-10-18): the user first wants to see whether drawing as it is
+  proves useful in daily use. **Phase 0 done
   (2026-10-17)**, probe in Vivaldi and injected over CDP into the editor WebView: pen =
   `pointerType 'pen'`, palm / finger = `touch` (ignore it; pen strokes never cancelled by the
   palm); pressure fine-grained but tops out ~0.47-0.59 (needs scaling); tiltX/Y + altitude /
@@ -383,11 +405,11 @@ the strokes, NOT a separate Y.Map: locked notes, undo, copy / paste), see the TO
   WebView (like Chrome). An https `baseUrl` makes the page a secure context (coalesced events,
   `crypto.randomUUID`) but was not needed for the rate. Native code needs an Expo config plugin
   (android/ is generated). The editor under an overlay grabbed focus (keyboard): drawing mode must blur it.
-- **Drawing: annotations on text** (2026-10-18, user: later): circles / underlines / arrows at
+- **Drawing: annotations on text** (parked 2026-10-18 until drawing proves useful): circles / underlines / arrows at
   words, anchored to characters and stored IN the body (invisible inline anchor node holding
   the strokes; never a separate Y.Map: locked notes, undo, copy / paste). Multi-word circles that
   rewrap differently and arrows between words can never fit every width.
-- **Drawing: handwriting recognition** (2026-10-18, user: later): ML Kit Digital Ink on the
+- **Drawing: handwriting recognition** (parked 2026-10-18, same reason): ML Kit Digital Ink on the
   phone, offline (weak for math). Exporting a drawing as an image: the user does not need it.
 - Attachments > 30 MB: chunked sealed blobs + encrypted manifest, server storing files.
 - Claude integration (postponed): local MCP server as one more device; a public key-holding

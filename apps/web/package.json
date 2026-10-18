@@ -7,11 +7,23 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:live": "node scripts/build-live.mjs"
   },
   "dependencies": {
+    "@noted/config": "workspace:*",
+    "@noted/crypto": "workspace:*",
+    "@noted/editor": "workspace:*",
+    "@noted/sync": "workspace:*",
+    "@noted/theme": "workspace:*",
+    "@noted/ui": "workspace:*",
+    "@tiptap/core": "^3.31.4",
+    "@tiptap/extension-collaboration-caret": "3.31.4",
+    "@tiptap/react": "^3.31.4",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "y-protocols": "1.0.7",
+    "yjs": "^13.6.33"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -19,6 +31,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "esbuild": "0.28.2",
     "eslint": "^10.10.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.6",

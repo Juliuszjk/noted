@@ -25,6 +25,8 @@ interface Props {
   editor: Editor;
   state: SlashMenuState;
   onClose: () => void;
+  // The insert menu's entries (default: all of them).
+  items?: SlashItem[];
 }
 
 const HEADING_PX = [22, 19, 17, 15, 14, 12];
@@ -127,8 +129,8 @@ function Tile({ item, active, onHover, onPick }: { item: SlashItem; active: bool
   );
 }
 
-export const SlashMenu = forwardRef<SlashMenuHandle, Props>(function SlashMenu({ editor, state, onClose }, ref) {
-  const buildModel = (query: string): NavModel => (query ? searchNav(slashItems, query) : initialNav(slashItems));
+export const SlashMenu = forwardRef<SlashMenuHandle, Props>(function SlashMenu({ editor, state, onClose, items = slashItems }, ref) {
+  const buildModel = (query: string): NavModel => (query ? searchNav(items, query) : initialNav(items));
   const [model, setModel] = useState<NavModel>(() => buildModel(state.query));
   useEffect(() => setModel(buildModel(state.query)), [state.query]);
 

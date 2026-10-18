@@ -110,3 +110,14 @@ describe('key envelopes and the recovery key', () => {
     expect(m.deriveAuthToken(key, 1)).not.toEqual(m.deriveAuthToken(key, 0));
   });
 });
+
+describe('deriveLiveKeys', () => {
+  it('gives three different keys that depend on the link key', async () => {
+    const { deriveLiveKeys } = await import('./index');
+    const a = deriveLiveKeys(generateKey());
+    const b = deriveLiveKeys(generateKey());
+    expect(a.content).toHaveLength(32);
+    expect(new Set([a.content, a.read, a.write].map((k) => k.join()))).toHaveProperty('size', 3);
+    expect(a.read.join()).not.toBe(b.read.join());
+  });
+});

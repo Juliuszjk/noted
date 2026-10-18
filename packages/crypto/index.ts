@@ -198,3 +198,15 @@ export function publishPasswordKey(linkKey: Uint8Array, password: string): Uint8
   const stretched = pbkdf2(sha256, new TextEncoder().encode(password.normalize('NFC')), linkKey, { c: 100_000, dkLen: 32 });
   return hkdf(sha256, stretched, linkKey, 'noted-publish-password-v1', 32);
 }
+
+// Keys of a live published note (sync/live.ts), all from the link key (or, with a password,
+// from publishPasswordKey): `content` seals the Yjs updates, the server stores only hashes of
+// `read` (needed to download anything, so a password protected link cannot be guessed offline
+// without the password) and `write` (guests may send edits when the owner allows editing).
+export function deriveLiveKeys(key: Uint8Array): { content: Uint8Array; read: Uint8Array; write: Uint8Array } {
+  return {
+    content: hkdf(sha256, key, undefined, 'noted-live-content-v1', 32),
+    read: hkdf(sha256, key, undefined, 'noted-live-read-v1', 32),
+    write: hkdf(sha256, key, undefined, 'noted-live-write-v1', 32),
+  };
+}

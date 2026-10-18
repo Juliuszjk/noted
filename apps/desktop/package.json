@@ -28,6 +28,7 @@
     "@tauri-apps/plugin-sql": "^2.5.0",
     "@tiptap/core": "^3.31.4",
     "@tiptap/extension-collaboration": "^3.31.4",
+    "@tiptap/extension-collaboration-caret": "3.31.4",
     "@tiptap/extension-image": "^3.31.4",
     "@tiptap/extension-placeholder": "^3.31.4",
     "@tiptap/extension-table": "^3.31.4",
@@ -41,6 +42,7 @@
     "libheif-js": "1.19.8",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "y-protocols": "1.0.7",
     "yjs": "^13.6.33"
   },
   "devDependencies": {

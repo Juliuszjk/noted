@@ -14,7 +14,7 @@ import {
   deleteNoteForever, unpublishQuietly, uploadPublished, deletePublished, publishedExists, publishExpired, getNotePublish, setNotePublish, setNoteNotebook, getNoteNotebooks, setNoteTag, getNoteTags, setNoteFont, getNoteFont, CATALOG_ID, isSystemNote,
   listCatalog, getSharedEditorPrefs, refreshStaleNoteMeta, listOwnReminders, setOwnReminder, deleteOwnReminder, updateReminderInDoc, setSharedEditorPrefs, sharedPrefsChange, SHARED_EDITOR_PREFS, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, purgeExpiredTrash, getTitleText, getNoteSettings,
   currentAuthToken, sessionStillValid, setAuthEpoch, getAuthEpoch, exportAttachments, zipNoteWithFiles, backupVault, restoreServerVault, createBackup, restoreBackup, backupFileName, openBackup, compareBackup, restoreBackupNote, findUnusedBlobs, deleteServerBlobs, deletedNoteIds, purgeDeletedNotes, usedBlobIds, BLOB_GRACE_MS, noteBlobIds, docFromSealed, noteBodyText, applyDefaultTitle, setNoteBodyJson, appendNoteLink,
-  fetchVault, passphraseOpens, parseVaultInfo, serializeVaultInfo,
+  fetchVault, passphraseOpens, parseVaultInfo, serializeVaultInfo, createLiveOwner, publishLive, LIVE_ORIGIN,
   getVaultSetup, createVault, openVault, changeVaultPassword, isNoteLocked, lockNote, unlockNote, readLockedBody, writeLockedBody, noteBodyJson, noteAttachments,
 } from '@noted/sync';
 import { formatBlobRef, parseBlobRef, parseEditorPrefs, DEFAULT_EDITOR_PREFS, newReminderId, applyReminderAction } from '@noted/editor';
@@ -30,6 +30,8 @@ configureVerifierCache({
 });
 import { bytesToBase64, base64ToBytes, seal, unseal, deriveMasterKey, generateSalt } from '@noted/crypto';
 import * as Y from 'yjs';
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
+import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { mdiDotsVertical, mdiBookOutline, mdiDockLeft, mdiFormatListText } from '@mdi/js';
 import {
   SettingsDialog, LockScreen, VaultDialog, LockedNote, NotePicker, NoteEditor, UnlockScreen, NoteList, TabBar, StatusBar, NavPanel, NoteProperties, CatalogPicker, HistoryPreview,
@@ -65,6 +67,15 @@ type ActiveNote = { id: string; ydoc: Y.Doc };
 type Picker = { kind: CatalogKind; x: number; y: number };
 
 const PROBE_INTERVAL_MS = 5000;
+// Live published notes: the newest guest update this device merged, per link id.
+const LIVE_SEQ_KEY = 'noted_live_seq';
+const readLiveSeqs = (): Record<string, number> => {
+  try {
+    return JSON.parse(localStorage.getItem(LIVE_SEQ_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+};
 
 // Reminder notices this device has shown (kept across restarts so a restart does not notify
 // them again; ids name the time, so old ones are dropped once past the "missed" window).
@@ -221,6 +232,32 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   // status dot and reconnects the socket as soon as the server answers again.
   const wsReadyRef = useRef(false);
   const reconnectRef = useRef<() => void>(() => {});
+  // ---- live published notes (sync/live-owner.ts): guests' edits come over the WebSocket ----
+  const wsSendRef = useRef<(message: object) => boolean>(() => false);
+  // Set further down (they are plain functions of this component).
+  const updateNoteDocRef = useRef<(id: string, change: (doc: Y.Doc) => void) => void>(() => {});
+  const docOfRef = useRef<(note: NoteRecord) => Y.Doc | null>(() => null);
+  // Cursors of the open live note (this device's and the guests').
+  const liveAwarenessRef = useRef<{ noteId: string; awareness: Awareness } | null>(null);
+  const liveOwner = useMemo(() => createLiveOwner({
+    masterKey,
+    send: (message) => wsSendRef.current(message),
+    readNote: async (id) => {
+      const active = activeRef.current;
+      if (active?.id === id) return active.ydoc;
+      const note = notesRef.current.find((n) => n.id === id);
+      return note ? docOfRef.current(note) : null;
+    },
+    applyToNote: async (id, updates) => {
+      updateNoteDocRef.current(id, (doc) => doc.transact(() => updates.forEach((u) => Y.applyUpdate(doc, u)), LIVE_ORIGIN));
+    },
+    getSeq: (id) => readLiveSeqs()[id] ?? 0,
+    setSeq: (id, seq) => localStorage.setItem(LIVE_SEQ_KEY, JSON.stringify({ ...readLiveSeqs(), [id]: seq })),
+    onAwareness: (noteId, update) => {
+      const live = liveAwarenessRef.current;
+      if (live?.noteId === noteId) applyAwarenessUpdate(live.awareness, update, LIVE_ORIGIN);
+    },
+  }), [masterKey]);
   useEffect(() => {
     const probe = async () => {
       try {
@@ -277,6 +314,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
 
     const drop = () => {
       wsReadyRef.current = false;
+      wsSendRef.current = () => false;
+      liveOwner.disconnected();
       detach();
       scheduleReconnect();
     };
@@ -300,9 +339,16 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
         lastMessageAt = Date.now();
         try {
           const msg = JSON.parse(ev.data as string);
+          if (liveOwner.handleMessage(msg)) return;
           if (msg.type === 'ready') {
             attempt = 0;
             wsReadyRef.current = true;
+            wsSendRef.current = (message) => {
+              if (ws.readyState !== WebSocket.OPEN) return false;
+              ws.send(JSON.stringify(message));
+              return true;
+            };
+            liveOwner.connected();
             setOnline(true);
             syncWithServer(db);
           } else if (msg.type === 'changed') {
@@ -683,6 +729,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     handleEditorUpdate(id, doc);
     return result;
   };
+  updateNoteDocRef.current = updateNoteDoc;
+  docOfRef.current = docOf;
 
   // ---- catalog (notebooks and tags) ----
   const catalogRecord = notes.find((n) => n.id === CATALOG_ID);
@@ -900,7 +948,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
 
   // Publish / update (note given) or unpublish (null) the open note; the link is kept in the
   // note's settings (so other devices can update or unpublish it).
-  const publishActive = async (note: { title: string; html: string; css: string; font: string | null } | null, settings?: { password: string | null; selfDestruct: boolean; autoUpdate?: boolean; expiresAt?: number | null }) => {
+  const publishActive = async (note: { title: string; html: string; css: string; font: string | null } | null, settings?: { password: string | null; selfDestruct: boolean; autoUpdate?: boolean; expiresAt?: number | null; live?: boolean; editable?: boolean }) => {
     const current = activeRef.current;
     if (!current) return;
     const earlier = getNotePublish(current.ydoc);
@@ -909,7 +957,10 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
       updateNoteDoc(current.id, (doc) => setNotePublish(doc, null));
       return;
     }
-    const info = await uploadPublished(masterKey, note, earlier, settings ?? { password: null, selfDestruct: false });
+    const options = settings ?? { password: null, selfDestruct: false };
+    const info = settings?.live
+      ? await publishLive(masterKey, current.ydoc, earlier, { ...options, editable: !!settings.editable }, earlier?.live ? liveOwner.seq(earlier.id) : 0)
+      : await uploadPublished(masterKey, note, earlier, options);
     updateNoteDoc(current.id, (doc) => setNotePublish(doc, info));
   };
 
@@ -950,6 +1001,46 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     () => notes.filter((n) => !isSystemNote(n.id)).map((n) => ({ note: n, meta: decodeNoteMeta(n.content) })).filter((m) => !m.meta.deleted),
     [notes],
   );
+  // The live published notes of this device and their settings (from the notes themselves, so
+  // a change on another device counts too).
+  const liveNotesKey = metas.filter((m) => m.meta.live && !m.meta.trashedAt).map((m) => `${m.note.id}@${m.note.updated_at}`).join('|');
+  useEffect(() => {
+    liveOwner.setShares(metas.filter((m) => m.meta.live && !m.meta.trashedAt).flatMap(({ note }) => {
+      const doc = activeRef.current?.id === note.id ? activeRef.current.ydoc : docOf(note);
+      const info = doc ? getNotePublish(doc) : null;
+      return info ? [{ noteId: note.id, info }] : [];
+    }));
+  }, [liveNotesKey, liveOwner]);
+  // This device's edits of the open note go to its guests at once.
+  useEffect(() => {
+    if (!activeNote) return;
+    return liveOwner.watchDoc(activeNote.id, activeNote.ydoc);
+  }, [activeNote?.id, activeNote?.ydoc, liveOwner]);
+  // Everyone's cursors in the open live note (the editor is made again when a note goes live).
+  const activeLive = !!activeNote && metas.some((m) => m.note.id === activeNote.id && m.meta.live);
+  const liveAwareness = useMemo(() => (activeNote && activeLive ? new Awareness(activeNote.ydoc) : null), [activeNote?.id, activeNote?.ydoc, activeLive]);
+  useEffect(() => {
+    if (!liveAwareness || !activeNote) return;
+    const noteId = activeNote.id;
+    liveAwarenessRef.current = { noteId, awareness: liveAwareness };
+    const onUpdate = ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
+      if (origin === LIVE_ORIGIN || ![...added, ...updated, ...removed].includes(liveAwareness.clientID)) return;
+      liveOwner.sendAwareness(noteId, encodeAwarenessUpdate(liveAwareness, [liveAwareness.clientID]));
+    };
+    liveAwareness.on('update', onUpdate);
+    return () => {
+      // Guests see the cursor go.
+      liveAwareness.setLocalState(null);
+      liveAwareness.off('update', onUpdate);
+      liveAwareness.destroy();
+      if (liveAwarenessRef.current?.awareness === liveAwareness) liveAwarenessRef.current = null;
+    };
+  }, [liveAwareness]);
+  const liveCaret = useMemo(
+    () => (liveAwareness ? [CollaborationCaret.configure({ provider: { awareness: liveAwareness }, user: { name: 'Owner', color: '#6750a4' } })] : []),
+    [liveAwareness],
+  );
+
   // Where each note outside the trash is (notebooks, tags, linking note), under titles in pickers.
   const places = useMemo(() => notePlaces(
     metas.filter((m) => !m.meta.trashedAt).map(({ note, meta }) => ({
@@ -1576,8 +1667,9 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                   <LockedNote title={getTitleText(activeNote.ydoc).toString()} onOpen={() => withVaultKey(() => {})} />
                 ) : (
                 <NoteEditor
-                  key={lockedCopy ? `${activeNote.id}:locked` : activeNote.id}
+                  key={lockedCopy ? `${activeNote.id}:locked` : activeLive ? `${activeNote.id}:live` : activeNote.id}
                   noteId={activeNote.id}
+                  extraExtensions={lockedCopy ? [] : liveCaret}
                   ydoc={lockedCopy?.doc ?? activeNote.ydoc}
                   onUpdate={lockedCopy ? saveLockedCopy : handleEditorUpdate}
                   onOpenLink={(href) => { openUrl(href).catch((e) => console.error('Opening link failed:', e)); }}

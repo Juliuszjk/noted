@@ -12,6 +12,10 @@ export interface PublishSettings {
   autoUpdate: boolean;
   // When the link stops working (ms); null = never.
   expiresAt: number | null;
+  // Live (sync/live.ts): the link shows the note itself, changes appear at once; with
+  // `editable` readers may edit the title and the text too.
+  live?: boolean;
+  editable?: boolean;
 }
 
 const HOUR = 60 * 60 * 1000;
@@ -91,7 +95,9 @@ export function PublishDialog({ title, url, publishedAt, initial, onPublish, onU
           </button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-          {url ? (settings.autoUpdate ? 'This note is published and follows your edits.' : 'This note is published. Edits appear after Update.') : 'This note will be published to a public URL.'}
+          {settings.live
+            ? (settings.editable ? 'Live: anyone with the link can read and edit the title and the text with you.' : 'Live: anyone with the link sees the note and your edits at once.')
+            : url ? (settings.autoUpdate ? 'This note is published and follows your edits.' : 'This note is published. Edits appear after Update.') : 'This note will be published to a public URL.'}
         </div>
 
         {url && (
@@ -117,16 +123,26 @@ export function PublishDialog({ title, url, publishedAt, initial, onPublish, onU
           </div>
           <div style={row} title="The note is deleted from the server after it was opened once">
             <span>Self destruct</span>
-            <Switch on={settings.selfDestruct} onChange={(on) => setSettings((st) => ({ ...st, selfDestruct: on, autoUpdate: on ? false : st.autoUpdate }))} />
+            <Switch on={settings.selfDestruct} onChange={(on) => setSettings((st) => ({ ...st, selfDestruct: on, autoUpdate: on ? false : st.autoUpdate, live: on ? false : st.live, editable: on ? false : st.editable }))} />
           </div>
-          <div style={{ ...row, opacity: settings.selfDestruct ? 0.5 : 1 }} title="Edits are published by themselves a few seconds after you stop typing">
+          <div style={row} title="Readers see the note itself, and every change at once (yours and theirs)">
+            <span>Live</span>
+            <Switch on={!!settings.live} onChange={(on) => setSettings((st) => ({ ...st, live: on, editable: on ? st.editable : false, selfDestruct: on ? false : st.selfDestruct, autoUpdate: on ? false : st.autoUpdate }))} />
+          </div>
+          {settings.live && (
+            <div style={row} title="Anyone with the link (and the password) can edit the title and the text; notebooks, tags and the other settings stay yours">
+              <span>Allow editing</span>
+              <Switch on={!!settings.editable} onChange={(on) => setSettings((st) => ({ ...st, editable: on }))} />
+            </div>
+          )}
+          {!settings.live && <div style={{ ...row, opacity: settings.selfDestruct ? 0.5 : 1 }} title="Edits are published by themselves a few seconds after you stop typing">
             <span>Update automatically</span>
             <Switch on={settings.autoUpdate} onChange={(on) => {
               if (settings.selfDestruct) return;
               setSettings((st) => ({ ...st, autoUpdate: on }));
               if (url) onAutoUpdate?.(on);
             }} />
-          </div>
+          </div>}
           <div style={row} title="The server deletes the published copy at this time">
             <span>Link expires</span>
             <span style={{ marginLeft: 'auto' }}>
@@ -163,7 +179,7 @@ export function PublishDialog({ title, url, publishedAt, initial, onPublish, onU
         </div>
 
         {error && <div style={{ fontSize: 12, color: 'var(--error)', marginBottom: 8 }}>{error}</div>}
-        {url && publishedAt && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Last published {formatDateTime(publishedAt)}{initial.expiresAt !== settings.expiresAt ? ' • the new expiry applies after Update' : ''}</div>}
+        {url && publishedAt && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Last published {formatDateTime(publishedAt)}{initial.expiresAt !== settings.expiresAt || !!initial.live !== !!settings.live || !!initial.editable !== !!settings.editable || (initial.password ?? null) !== (settings.password ?? null) ? ' • the changes apply after Update' : ''}</div>}
         <div style={{ display: 'flex', gap: 8 }}>
           {url && (
             <button type="button" disabled={!!busy} style={wideButton(false, true)} onClick={() => run('unpublish')}>
