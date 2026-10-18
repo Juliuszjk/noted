@@ -210,3 +210,8 @@ export function deriveLiveKeys(key: Uint8Array): { content: Uint8Array; read: Ui
     write: hkdf(sha256, key, undefined, 'noted-live-write-v1', 32),
   };
 }
+
+// SHA-256 as hex (token hashes the server compares; Hermes has no Web Crypto).
+export function sha256Hex(bytes: Uint8Array): string {
+  return Array.from(sha256(bytes), (b) => b.toString(16).padStart(2, '0')).join('');
+}

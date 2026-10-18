@@ -265,6 +265,10 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   of the window (in place, or under the strokes when taken); desktop keys Ctrl+C / X / V / D,
   Delete, Esc. A pen stroke in an empty place always starts a drawing and switches back to the
   pen. CSS: the canvas rule is `.drawing-scroll > svg` (icons in the figure are svgs too).
+  Finger drawing (2026-10-18): `mouseDraws` ("Draw with the mouse or finger", item `drawMode`, now
+  also on the phone toolbar) makes a primary touch draw like the pen (node view and DrawingStarter);
+  the phone drawing bar's ✕ turns it off. DrawingStarter treats the editor element itself (its
+  min-height under the last block) as the page under the note.
   Stage C (2026-10-18): eraser ring under a hovering S Pen (eraser mode or side button held)
   and under the mouse in eraser mode; the page gets no hover, so `with-stylus.js` sends it
   (`window.__notedPenHover(x, y, sideButton)`, CSS px, ~60 Hz) -> `showPenHover` (drawing.ts).
@@ -339,6 +343,15 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
   owner label "Owner"). Guest page `apps/web/src/LiveApp.tsx` + `live-client.ts` (name in localStorage,
   no uploads / note links / notebooks / tags / reminders / note font; a local change of protected types
   stops sending). NoteEditor props `slashItems`, `noteLinks`, `extraExtensions` exist for it.
+  Desktop keeps an Awareness + caret for every open note (a key change on going live remounted the
+  editor and closed the Publish dialog). Phone (confirmed 2026-10-18): `src/live.ts` (owner made in
+  NotesScreen's WS effect, seq in SecureStore, `applyToNote` = updateNoteRecord + `onLiveNoteChanged`
+  -> EditorScreen pushState at once), page `save` updates go out via `sendUpdate`, NoteMenu switches,
+  `updateShare` right after publishing (the note list learns `live` only after a sync), page
+  `setPublish` must keep `live` / `editable` / `passwordKey`, page saves every 400 ms while typing
+  in a live note, cursors in the page (RN relays raw awareness). `NotePublish.passwordKey` = derived
+  password key (no PBKDF2 in Hermes; the page derives it, `livePasswordKey`). Token hashes via
+  `sha256Hex` (Hermes has no Web Crypto). Static copies strip `.collaboration-carets__*`.
 - Backups `sync/backup.ts` (sealed notes + blobs + vault data; merge / replace / rollback,
   `compareBackup`); export all `sync/export-all.ts`; importer `ui/src/importers.ts` (ids per
   FILE, `importNoteDocs` merges duplicates and isolates per-note errors).
@@ -379,8 +392,6 @@ useful, see the TODO.
 
 ## TODO / ideas (not decided yet, ask before doing)
 
-- **Live publishing on the phone** (stage 4, next): Publish sheet switches, `createLiveOwner` in the
-  RN app (merge into the DB via mergingNoteStore / open note via the page), cursors in the page.
 - **S Pen** (plan 2026-10-13, waiting for the user's choices): block atom `drawing` {id, height, paper} in the shared schema;
   strokes in the note's Y.Doc (`Y.Map 'drawings'` id -> Y.Array of compact strokes: logical
   x/y, pressure, tool, palette colour name) so devices merge; SVG via `perfect-freehand`;

@@ -22,7 +22,9 @@ import { setNoteTitles } from '@noted/editor/note-link';
 import { configureBlobs, parseBlobRef, isHeicFile, insertFiles, importImages } from '@noted/editor/blob-image';
 import { createBlobUrlCache } from '@noted/editor/blob-url-cache';
 import type { BlobRef } from '@noted/editor/blob-image';
-import { base64ToBytes, bytesToBase64, unsealBytes, sealBytes, generateKey } from '@noted/crypto';
+import { base64ToBytes, bytesToBase64, unsealBytes, sealBytes, generateKey, publishPasswordKey } from '@noted/crypto';
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
+import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { compressImageBytes } from '@noted/media';
 import type { MathEditRequest } from '@noted/editor/math';
 import { setReminderTimes } from '@noted/editor/reminder';
@@ -125,8 +127,18 @@ const flush = () => {
 ydoc.on('update', (update: Uint8Array, origin: unknown) => {
   if (origin === REMOTE || !editor) return;
   pending.push(update);
+  // A live published note: guests see the typing every SAVE_DEBOUNCE_MS, not only after a pause.
+  if (timer && getNotePublish(ydoc)?.live) return;
   if (timer) clearTimeout(timer);
   timer = setTimeout(flush, SAVE_DEBOUNCE_MS);
+});
+
+// Cursors of a live published note: guests' come from React Native (sealed and opened there),
+// this phone's go to it while the note is live.
+const awareness = new Awareness(ydoc);
+awareness.on('update', ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
+  if (origin === REMOTE || !getNotePublish(ydoc)?.live || ![...added, ...updated, ...removed].includes(ydoc.clientID)) return;
+  post({ type: 'liveAwareness', update: toBase64(encodeAwarenessUpdate(awareness, [ydoc.clientID])) });
 });
 
 // The title is the doc's Y.Text 'title'; local edits reach React Native through the same
@@ -432,6 +444,8 @@ const startEditor = () => {
   editor = new Editor({
     element: document.getElementById('editor')!,
     extensions: [
+      // Others' cursors (live published notes; never locked ones, whose body is another doc).
+      ...(bodyDoc ? [] : [CollaborationCaret.configure({ provider: { awareness }, user: { name: 'Owner', color: '#6750a4' } })]),
       ...createSchemaExtensions({
         ydoc: bodyDoc ?? ydoc,
         placeholder: 'Start typing...',
@@ -674,6 +688,21 @@ const receive = (raw: string) => {
   } else if (msg.type === 'deleteForever') {
     deleteNoteForever(ydoc);
     flush();
+  } else if (msg.type === 'liveAwareness' && typeof msg.update === 'string') {
+    try {
+      applyAwarenessUpdate(awareness, fromBase64(msg.update), REMOTE);
+    } catch {
+      // not a cursor
+    }
+  } else if (msg.type === 'livePasswordKey' && typeof msg.key === 'string' && typeof msg.password === 'string') {
+    // Live link with a password: PBKDF2 is much faster here than in Hermes.
+    let key: string | null = null;
+    try {
+      key = toBase64(publishPasswordKey(fromBase64(msg.key), msg.password));
+    } catch (e) {
+      console.warn('Password key failed:', e);
+    }
+    post({ type: 'livePasswordKey', key });
   } else if (msg.type === 'getPublishPayload' && editor && msg.info && typeof msg.info.key === 'string') {
     // The copy of the note, sealed for the link (and the password): React Native uploads it.
     const ed = editor;
@@ -690,6 +719,8 @@ const receive = (raw: string) => {
     setNotePublish(ydoc, info && typeof info.id === 'string' && typeof info.key === 'string' && typeof info.at === 'number' ? {
       id: info.id, key: info.key, at: info.at, password: typeof info.password === 'string' ? info.password : null, selfDestruct: info.selfDestruct === true,
       autoUpdate: info.autoUpdate === true, expiresAt: typeof info.expiresAt === 'number' ? info.expiresAt : null,
+      // Live published (sync/live.ts): without these the note was saved as not live.
+      ...(info.live === true ? { live: true, editable: info.editable === true, passwordKey: typeof info.passwordKey === 'string' ? info.passwordKey : null } : {}),
     } : null);
     flush();
   } else if (msg.type === 'editorPrefs') {

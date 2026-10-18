@@ -68,4 +68,21 @@ describe('live owner', () => {
     await flush();
     expect(sent).toHaveLength(1);
   });
+
+  it('takes a note made live on this device at once, and lets it go when unpublished', async () => {
+    const { doc, sent, owner, flush } = setup(true);
+    owner.setShares([]);
+    owner.sendUpdate('n1', new Uint8Array([0, 0]));
+    await flush();
+    expect(sent).toHaveLength(0);
+    owner.updateShare('n1', info(true));
+    owner.watchDoc('n1', doc);
+    setTitle(doc, 'Live now');
+    await flush();
+    expect(sent).toHaveLength(1);
+    owner.updateShare('n1', null);
+    setTitle(doc, 'Not any more');
+    await flush();
+    expect(sent).toHaveLength(1);
+  });
 });

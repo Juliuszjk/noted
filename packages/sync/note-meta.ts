@@ -349,6 +349,9 @@ export interface NotePublish {
   // also edit the title and the body.
   live?: boolean;
   editable?: boolean;
+  // Live with a password: the key derived from link key + password (base64url), so devices
+  // need no PBKDF2 to take part (the phone's JS engine is slow at it).
+  passwordKey?: string | null;
 }
 
 export const getNotePublish = (doc: Y.Doc): NotePublish | null => {
@@ -362,6 +365,7 @@ export const getNotePublish = (doc: Y.Doc): NotePublish | null => {
       expiresAt: typeof value.expiresAt === 'number' ? value.expiresAt : null,
       live: value.live === true,
       editable: value.live === true && value.editable === true,
+      passwordKey: typeof value.passwordKey === 'string' && value.password ? value.passwordKey : null,
     } : null;
 };
 

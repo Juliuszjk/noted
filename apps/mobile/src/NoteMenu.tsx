@@ -69,8 +69,9 @@ interface Props {
   history: { id: string; startedAt: number; endedAt: number }[] | null;
   onOpenHistory: (id: string) => void;
   // Published copy of the note (link and time) and the actions on it.
-  published: { url: string; at: number; password: string | null; selfDestruct: boolean; autoUpdate: boolean; expiresAt: number | null } | null;
-  onPublish: (settings: { password: string | null; selfDestruct: boolean; autoUpdate: boolean; expiresAt: number | null }) => Promise<void>;
+  published: { url: string; at: number; password: string | null; selfDestruct: boolean; autoUpdate: boolean; expiresAt: number | null; live: boolean; editable: boolean } | null;
+  // live: readers see the note itself and every change at once; editable: they may edit too.
+  onPublish: (settings: { password: string | null; selfDestruct: boolean; autoUpdate: boolean; expiresAt: number | null; live: boolean; editable: boolean }) => Promise<void>;
   onUnpublish: () => Promise<void>;
   // Published already: "Update automatically" takes effect at once.
   onAutoUpdate: (on: boolean) => void;
@@ -108,12 +109,14 @@ export function NoteMenu(p: Props) {
     return () => { hide.remove(); show.remove(); };
   }, []);
   const [autoUpdate, setAutoUpdate] = useState(p.published?.autoUpdate ?? false);
+  const [live, setLive] = useState(p.published?.live ?? false);
+  const [editable, setEditable] = useState(p.published?.editable ?? false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const runPublish = async (kind: 'publish' | 'unpublish') => {
     setBusy(kind);
     setPublishError(null);
     try {
-      await (kind === 'publish' ? p.onPublish({ password: password || null, selfDestruct, autoUpdate: autoUpdate && !selfDestruct, expiresAt }) : p.onUnpublish());
+      await (kind === 'publish' ? p.onPublish({ password: password || null, selfDestruct: selfDestruct && !live, autoUpdate: autoUpdate && !selfDestruct && !live, expiresAt, live, editable: live && editable }) : p.onUnpublish());
     } catch (e) {
       setPublishError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -185,7 +188,9 @@ export function NoteMenu(p: Props) {
         <View style={styles.handle} />
         {page === 'publish' ? subPage('Publish to the web', (
           <View style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
-            <Text style={styles.detail}>{p.published ? (p.published.autoUpdate ? 'This note is published and follows your edits.' : 'This note is published. Edits appear after Update.') : 'This note will be published to a public URL.'}</Text>
+            <Text style={styles.detail}>{live
+              ? (editable ? 'Live: anyone with the link can read and edit the title and the text with you.' : 'Live: anyone with the link sees the note and your edits at once.')
+              : p.published ? (p.published.autoUpdate ? 'This note is published and follows your edits.' : 'This note is published. Edits appear after Update.') : 'This note will be published to a public URL.'}</Text>
             {p.published ? (
               <View style={[styles.pubBox, styles.pubLinkRow]}>
                 <Text style={styles.linkUrl} numberOfLines={1}>{p.published.url}</Text>
@@ -208,13 +213,26 @@ export function NoteMenu(p: Props) {
               <View style={styles.pubRow}>
                 <Text style={styles.pubLabel}>Self destruct</Text>
                 <View style={{ flex: 1 }} />
-                <ThemedSwitch value={selfDestruct} onValueChange={(on) => { setSelfDestruct(on); if (on) setAutoUpdate(false); }} />
+                <ThemedSwitch value={selfDestruct} onValueChange={(on) => { setSelfDestruct(on); if (on) { setAutoUpdate(false); setLive(false); setEditable(false); } }} />
               </View>
-              <View style={[styles.pubRow, selfDestruct && { opacity: 0.5 }]}>
-                <Text style={styles.pubLabel}>Update automatically</Text>
+              <View style={styles.pubRow}>
+                <Text style={styles.pubLabel}>Live</Text>
                 <View style={{ flex: 1 }} />
-                <ThemedSwitch disabled={selfDestruct} value={autoUpdate} onValueChange={(on) => { setAutoUpdate(on); if (p.published) p.onAutoUpdate(on); }} />
+                <ThemedSwitch value={live} onValueChange={(on) => { setLive(on); if (on) { setSelfDestruct(false); setAutoUpdate(false); } else setEditable(false); }} />
               </View>
+              {live ? (
+                <View style={styles.pubRow}>
+                  <Text style={styles.pubLabel}>Allow editing</Text>
+                  <View style={{ flex: 1 }} />
+                  <ThemedSwitch value={editable} onValueChange={setEditable} />
+                </View>
+              ) : (
+                <View style={[styles.pubRow, selfDestruct && { opacity: 0.5 }]}>
+                  <Text style={styles.pubLabel}>Update automatically</Text>
+                  <View style={{ flex: 1 }} />
+                  <ThemedSwitch disabled={selfDestruct} value={autoUpdate} onValueChange={(on) => { setAutoUpdate(on); if (p.published) p.onAutoUpdate(on); }} />
+                </View>
+              )}
               <View style={[styles.pubRow, { alignItems: 'flex-start', paddingVertical: 8 }]}>
                 <Text style={[styles.pubLabel, { marginTop: 10 }]}>Link expires</Text>
                 <View style={{ flex: 1, marginLeft: 12 }}>

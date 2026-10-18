@@ -49,6 +49,8 @@ import type { NoteMeta, CatalogKind, CatalogEntry, SharedEditorPrefs, OwnReminde
 import { NoteRecord } from '@noted/types';
 import { WS_URL, SYNC_INTERVAL_MS, WS_STALE_MS } from '@noted/config';
 import { EditorScreen } from './EditorScreen';
+import { startLiveOwner, getLiveOwner } from './live';
+import { getNotePublish } from '@noted/sync';
 import { Drawer } from './Drawer';
 import { Sheet } from './Sheet';
 import { TabsSheet } from './TabsSheet';
@@ -133,6 +135,13 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     let lastMessageAt = Date.now();
     let attempt = 0;
     let stopped = false;
+    // Live published notes: guests' edits and cursors come over this socket (live.ts).
+    let ready = false;
+    const live = startLiveOwner(masterKey, dbStore, (message) => {
+      if (!ready || !socket || socket.readyState !== WebSocket.OPEN) return false;
+      socket.send(JSON.stringify(message));
+      return true;
+    }, () => syncWithServer());
 
     const detach = () => {
       if (watchdog) clearInterval(watchdog);
@@ -154,7 +163,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
       retryTimer = setTimeout(() => { retryTimer = null; connect(); }, delay);
     };
 
-    const drop = () => { setOnline(false); detach(); scheduleReconnect(); };
+    const drop = () => { ready = false; live.disconnected(); setOnline(false); detach(); scheduleReconnect(); };
 
     const connect = () => {
       if (stopped) return;
@@ -167,7 +176,12 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
         lastMessageAt = Date.now();
         try {
           const msg = JSON.parse(ev.data as string);
-          if (msg.type === 'ready') setOnline(true);
+          if (live.handleMessage(msg)) return;
+          if (msg.type === 'ready') {
+            ready = true;
+            live.connected();
+            setOnline(true);
+          }
           if (msg.type === 'ready' || msg.type === 'changed') { attempt = 0; syncWithServer(); }
         } catch { }
       };
@@ -225,6 +239,21 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     }
     return map;
   }, [notes, masterKey]);
+  // The live published notes and their settings (from the notes, so changes made on another
+  // device count too).
+  const liveKey = notes.filter((n) => metas.get(n.id)?.live && !metas.get(n.id)?.trashedAt).map((n) => `${n.id}@${n.updated_at}`).join('|');
+  useEffect(() => {
+    const owner = getLiveOwner();
+    if (!owner) return;
+    owner.setShares(notes.filter((n) => liveKey.includes(`${n.id}@`)).flatMap((n) => {
+      try {
+        const info = n.yjs_state ? getNotePublish(docFromSealed(masterKey, n.yjs_state)) : null;
+        return info ? [{ noteId: n.id, info }] : [];
+      } catch {
+        return [];
+      }
+    }));
+  }, [liveKey, masterKey]);
   const titles = useMemo(() => {
     // Last edited first: the note pickers ("[[", "/goto", "/linkto") show them in this order
     // before anything is typed.

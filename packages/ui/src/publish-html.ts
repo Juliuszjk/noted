@@ -63,9 +63,10 @@ export const buildPublishedNote = async (editorDom: HTMLElement): Promise<{ html
   const clone = editorDom.cloneNode(true) as HTMLElement;
   clone.removeAttribute('contenteditable');
   clone.querySelectorAll('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'));
-  // Editing helpers that make no sense on a read-only page.
-  clone.querySelectorAll('.image-node button, .ProseMirror-separator, .search-match, .drawing-paper, .drawing-cut, .drawing-eraser, .drawing-lasso, .drawing-selection, .drawing-handle, .drawing-actions').forEach((el) => {
-    if (el.classList.contains('search-match')) el.replaceWith(...Array.from(el.childNodes));
+  // Editing helpers that make no sense on a read-only page, and other people's cursors and
+  // selections in a live note (published as a copy again, they stayed highlighted).
+  clone.querySelectorAll('.image-node button, .ProseMirror-separator, .search-match, .drawing-paper, .drawing-cut, .drawing-eraser, .drawing-lasso, .drawing-selection, .drawing-handle, .drawing-actions, .collaboration-carets__caret, .collaboration-carets__selection').forEach((el) => {
+    if (el.classList.contains('search-match') || el.classList.contains('collaboration-carets__selection')) el.replaceWith(...Array.from(el.childNodes));
     else el.remove();
   });
   clone.querySelectorAll('.is-empty').forEach((el) => el.classList.remove('is-empty', 'is-editor-empty'));

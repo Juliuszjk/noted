@@ -1016,9 +1016,10 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     if (!activeNote) return;
     return liveOwner.watchDoc(activeNote.id, activeNote.ydoc);
   }, [activeNote?.id, activeNote?.ydoc, liveOwner]);
-  // Everyone's cursors in the open live note (the editor is made again when a note goes live).
-  const activeLive = !!activeNote && metas.some((m) => m.note.id === activeNote.id && m.meta.live);
-  const liveAwareness = useMemo(() => (activeNote && activeLive ? new Awareness(activeNote.ydoc) : null), [activeNote?.id, activeNote?.ydoc, activeLive]);
+  // Everyone's cursors in a live note. Every open note has them ready (cursors are only sent
+  // and received while it is live), so going live never makes the editor again (that closed
+  // the publish dialog).
+  const liveAwareness = useMemo(() => (activeNote ? new Awareness(activeNote.ydoc) : null), [activeNote?.id, activeNote?.ydoc]);
   useEffect(() => {
     if (!liveAwareness || !activeNote) return;
     const noteId = activeNote.id;
@@ -1667,7 +1668,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                   <LockedNote title={getTitleText(activeNote.ydoc).toString()} onOpen={() => withVaultKey(() => {})} />
                 ) : (
                 <NoteEditor
-                  key={lockedCopy ? `${activeNote.id}:locked` : activeLive ? `${activeNote.id}:live` : activeNote.id}
+                  key={lockedCopy ? `${activeNote.id}:locked` : activeNote.id}
                   noteId={activeNote.id}
                   extraExtensions={lockedCopy ? [] : liveCaret}
                   ydoc={lockedCopy?.doc ?? activeNote.ydoc}

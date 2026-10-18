@@ -14,6 +14,7 @@
     "@noted/types": "workspace:*",
     "@noted/ui": "workspace:*",
     "@pchmn/expo-material3-theme": "^1.4.0",
+    "@tiptap/extension-collaboration-caret": "3.31.4",
     "@types/react-dom": "19.3.0",
     "@ungap/structured-clone": "^1.4.0",
     "abort-controller": "^3.0.0",
@@ -56,7 +57,8 @@
     "react-native-svg": "15.15.4",
     "react-native-webview": "^14.0.1",
     "react-native-worklets": "0.10.1",
-    "whatwg-url-minimum": "^0.2.0"
+    "whatwg-url-minimum": "^0.2.0",
+    "y-protocols": "1.0.7"
   },
   "devDependencies": {
     "@expo/ngrok": "^4.1.3",

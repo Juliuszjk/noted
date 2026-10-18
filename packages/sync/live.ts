@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { deriveLiveKeys, publishPasswordKey, sealBytes, unsealBytes, bytesToBase64, base64ToBytes } from '@noted/crypto';
+import { deriveLiveKeys, publishPasswordKey, sealBytes, unsealBytes, bytesToBase64, base64ToBytes, sha256Hex } from '@noted/crypto';
 
 // Live published notes, the parts both sides share (the guest page in the public server and
 // the owner's apps; owner-only code is in live-owner.ts). The note's Yjs state and every
@@ -14,9 +14,8 @@ export interface LiveKeys {
   write: string;
 }
 
-const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
-export const tokenHash = async (token: string): Promise<string> =>
-  hex(await globalThis.crypto.subtle.digest('SHA-256', base64ToBytes(token) as BufferSource));
+// Not Web Crypto: the phone's JS engine has none.
+export const tokenHash = async (token: string): Promise<string> => sha256Hex(base64ToBytes(token));
 
 // `linkKey` = the key in the link; with a password this runs PBKDF2 (pass `passwordKey` when
 // the platform derived it elsewhere, e.g. the phone's WebView).

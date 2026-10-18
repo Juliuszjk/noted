@@ -1,8 +1,9 @@
 import * as Y from 'yjs';
 import { API_URL } from '@noted/config';
 import { apiFetch } from './client';
-import { fromBase64Url, nextPublishInfo, publishExpired } from './publish';
+import { fromBase64Url, nextPublishInfo, publishExpired, toBase64Url } from './publish';
 import type { PublishOptions } from './publish';
+import { publishPasswordKey } from '@noted/crypto';
 import { acceptGuestUpdates, liveKeys, LIVE_ORIGIN, sealUpdate, tokenHash, unsealUpdate } from './live';
 import type { LiveKeys } from './live';
 import { noteBlobIds, noteBodyJson } from './doc-json';
@@ -48,6 +49,7 @@ const COMPACT_DELAY_MS = 60_000;
 const keysFor = (host: LiveOwnerHost, info: NotePublish): Promise<LiveKeys> => {
   const link = fromBase64Url(info.key);
   if (!info.password) return Promise.resolve(liveKeys(link, null));
+  if (info.passwordKey) return Promise.resolve(liveKeys(link, info.password, fromBase64Url(info.passwordKey)));
   if (host.passwordKey) return host.passwordKey(link, info.password).then((key) => liveKeys(link, info.password!, key));
   return Promise.resolve(liveKeys(link, info.password));
 };
@@ -143,29 +145,45 @@ export const createLiveOwner = (host: LiveOwnerHost) => {
     share.compactTimer = setTimeout(() => compact(share), COMPACT_DELAY_MS);
   };
 
+  const forget = (id: string) => {
+    const share = shares.get(id);
+    if (!share) return;
+    if (share.compactTimer) clearTimeout(share.compactTimer);
+    shares.delete(id);
+    byNote.delete(share.noteId);
+  };
+  const add = (noteId: string, info: NotePublish) => {
+    const share: Share = { noteId, info, keys: keysFor(host, info), queue: [], busy: false, compactTimer: null };
+    shares.set(info.id, share);
+    byNote.set(noteId, info.id);
+    // Made live on another device: catch up with what guests did since.
+    if (online) compact(share);
+  };
+
   return {
+    // One note's publish settings changed on this device (null: not published): takes effect
+    // at once, before the note list knows (setShares follows later).
+    updateShare(noteId: string, info: NotePublish | null) {
+      const id = byNote.get(noteId);
+      const current = id ? shares.get(id) : undefined;
+      const live = info?.live && !publishExpired(info) ? info : null;
+      if (current && (!live || live.id !== current.info.id || live.key !== current.info.key || live.password !== current.info.password)) forget(current.info.id);
+      if (!live) return;
+      const kept = shares.get(live.id);
+      if (kept) kept.info = live;
+      else add(noteId, live);
+    },
+
     // The live notes on this device (notes whose publish info says live), after loading notes
     // and whenever that may have changed.
     setShares(list: { noteId: string; info: NotePublish }[]) {
       const wanted = new Map(list.filter((s) => s.info.live && !publishExpired(s.info)).map((s) => [s.info.id, s]));
       for (const [id, share] of shares) {
         const next = wanted.get(id);
-        if (!next || next.info.key !== share.info.key || next.info.password !== share.info.password) {
-          if (share.compactTimer) clearTimeout(share.compactTimer);
-          shares.delete(id);
-          byNote.delete(share.noteId);
-        } else {
-          share.info = next.info;
-        }
+        if (!next || next.info.key !== share.info.key || next.info.password !== share.info.password) forget(id);
+        else share.info = next.info;
       }
-      for (const [id, s] of wanted) {
-        if (shares.has(id)) continue;
-        const share: Share = { noteId: s.noteId, info: s.info, keys: keysFor(host, s.info), queue: [], busy: false, compactTimer: null };
-        shares.set(id, share);
-        byNote.set(s.noteId, id);
-        // Made live on another device: catch up with what guests did since.
-        if (online) compact(share);
-      }
+      for (const [id, s] of wanted) if (!shares.has(id)) add(s.noteId, s.info);
     },
 
     // The private WebSocket is (again) ready: catch up and send snapshots.
@@ -212,6 +230,13 @@ export const createLiveOwner = (host: LiveOwnerHost) => {
       return () => doc.off('update', onUpdate);
     },
 
+    // An edit of the note made on this device (platforms without the note's doc at hand).
+    sendUpdate(noteId: string, update: Uint8Array) {
+      const id = byNote.get(noteId);
+      const share = id ? shares.get(id) : undefined;
+      if (share) share.keys.then((keys) => host.send({ type: 'liveUpdate', id: share.info.id, data: sealUpdate(keys, update) }));
+    },
+
     // This device's cursor / presence in an open live note (raw awareness update).
     sendAwareness(noteId: string, update: Uint8Array) {
       const id = byNote.get(noteId);
@@ -233,7 +258,13 @@ export const publishLive = async (
 ): Promise<NotePublish> => {
   const info: NotePublish = { ...nextPublishInfo(earlier, { ...options, selfDestruct: false, autoUpdate: false }), live: true, editable: options.editable };
   const link = fromBase64Url(info.key);
-  const keys = info.password ? liveKeys(link, info.password, passwordKey ? await passwordKey(link, info.password) : undefined) : liveKeys(link, null);
+  let keys = liveKeys(link, null);
+  if (info.password) {
+    const derived = earlier?.passwordKey && earlier.password === info.password && earlier.key === info.key ? fromBase64Url(earlier.passwordKey)
+      : passwordKey ? await passwordKey(link, info.password) : publishPasswordKey(link, info.password);
+    info.passwordKey = toBase64Url(derived);
+    keys = liveKeys(link, info.password, derived);
+  }
   await putLiveNote(masterKey, info, keys, doc, lastSeq);
   return info;
 };

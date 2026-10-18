@@ -37,7 +37,7 @@ export const PUBLISH_MAGIC = 0x4e;
 export const PUBLISH_FORMAT = 1;
 export const PUBLISH_FLAG_PASSWORD = 1;
 
-const toBase64Url = (bytes: Uint8Array): string => {
+export const toBase64Url = (bytes: Uint8Array): string => {
   let binary = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

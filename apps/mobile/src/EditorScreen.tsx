@@ -36,6 +36,8 @@ import type { NotePublish } from '@noted/sync';
 import { seal, unseal, bytesToBase64, base64ToBytes } from '@noted/crypto';
 import { EDITOR_HTML } from './editorHtml.generated';
 import { goingAway } from './away';
+import { getLiveOwner, onLiveNoteChanged, onLiveAwareness } from './live';
+import { publishLive } from '@noted/sync';
 
 interface EditorScreenProps {
   // Settings > Backup > compare: show this note's backup version next to it once the page is ready.
@@ -132,6 +134,8 @@ export function EditorScreen({
   const [menuPage, setMenuPage] = useState<'main' | 'publish' | 'links'>('main');
   // The page's answer to getPublishPayload.
   const payloadWaiterRef = useRef<((sealed: Uint8Array | null) => void) | null>(null);
+  // The page's answer to livePasswordKey (PBKDF2 runs there).
+  const passwordKeyWaiterRef = useRef<((key: Uint8Array | null) => void) | null>(null);
   // Top of the keyboard on screen while it is up.
   const keyboardTopRef = useRef<number | null>(null);
   // The box around the page (it ends where the keyboard starts).
@@ -204,9 +208,20 @@ export function EditorScreen({
   const saveFailuresRef = useRef(0);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveFromEditor = (data: { update: string }) => {
-    unsavedRef.current.push(base64ToBytes(data.update));
+    const update = base64ToBytes(data.update);
+    unsavedRef.current.push(update);
+    // A live published note: guests get the edit at once.
+    getLiveOwner()?.sendUpdate(note.id, update);
     storeUnsaved();
   };
+  // Guests changed this note (live.ts stored it): into the page now, not at the next poll.
+  useEffect(() => onLiveNoteChanged((id) => {
+    if (id === note.id && readyRef.current && pendingSavesRef.current === 0) pushState('remote');
+  }), [note.id, masterKey]);
+  // Guests' cursors to the page.
+  useEffect(() => onLiveAwareness((id, update) => {
+    if (id === note.id && readyRef.current) sendToEditor({ type: 'liveAwareness', update: bytesToBase64(update) });
+  }), [note.id]);
   const storeUnsaved = () => {
     pendingSavesRef.current++;
     queueRef.current = queueRef.current.then(async () => {
@@ -324,6 +339,11 @@ export function EditorScreen({
             pendingSavesRef.current--;
           }
         });
+      } else if (msg.type === 'liveAwareness' && typeof msg.update === 'string') {
+        getLiveOwner()?.sendAwareness(note.id, base64ToBytes(msg.update));
+      } else if (msg.type === 'livePasswordKey') {
+        passwordKeyWaiterRef.current?.(typeof msg.key === 'string' ? base64ToBytes(msg.key) : null);
+        passwordKeyWaiterRef.current = null;
       } else if (msg.type === 'publishSealed') {
         payloadWaiterRef.current?.(typeof msg.data === 'string' ? base64ToBytes(msg.data) : null);
         payloadWaiterRef.current = null;
@@ -638,7 +658,27 @@ export function EditorScreen({
   }, [selfDestructId, visible]);
 
   // The page also seals the copy (a password means PBKDF2, much faster there than in Hermes).
-  const publish = async (settings: { password: string | null; selfDestruct: boolean; autoUpdate: boolean; expiresAt: number | null }) => {
+  const publish = async (settings: { password: string | null; selfDestruct: boolean; autoUpdate: boolean; expiresAt: number | null; live: boolean; editable: boolean }) => {
+    if (settings.live) {
+      // Live: the stored note (after the page's last edits) is the snapshot.
+      await queueRef.current;
+      const sealedState = await loadSealedState();
+      if (!sealedState) throw new Error('The note could not be prepared');
+      const earlier = noteState.published;
+      const info = await publishLive(masterKey, docFromSealed(masterKey, sealedState), earlier, settings,
+        earlier?.live ? getLiveOwner()?.seq(earlier.id) ?? 0 : 0,
+        (linkKey, password) => new Promise<Uint8Array>((resolve, reject) => {
+          const done = (key: Uint8Array | null) => (key ? resolve(key) : reject(new Error('The password could not be prepared')));
+          passwordKeyWaiterRef.current = done;
+          sendToEditor({ type: 'livePasswordKey', key: bytesToBase64(linkKey), password });
+          setTimeout(() => { if (passwordKeyWaiterRef.current === done) { passwordKeyWaiterRef.current = null; done(null); } }, 30_000);
+        }));
+      sendToEditor({ type: 'setPublish', info });
+      setNoteState((st) => ({ ...st, published: info }));
+      // The note list learns it later (after a sync): guests' edits and ours flow from now.
+      getLiveOwner()?.updateShare(note.id, info);
+      return;
+    }
     const info = nextPublishInfo(noteState.published, settings);
     const sealed = await new Promise<Uint8Array | null>((resolve) => {
       payloadWaiterRef.current = resolve;
@@ -649,11 +689,13 @@ export function EditorScreen({
     await putPublished(masterKey, info, sealed);
     sendToEditor({ type: 'setPublish', info });
     setNoteState((st) => ({ ...st, published: info }));
+    getLiveOwner()?.updateShare(note.id, null);
   };
   const unpublish = async () => {
     if (noteState.published) await deletePublished(masterKey, noteState.published);
     sendToEditor({ type: 'setPublish', info: null });
     setNoteState((st) => ({ ...st, published: null }));
+    getLiveOwner()?.updateShare(note.id, null);
   };
 
   const openHistory = async (id: string) => {
@@ -796,6 +838,7 @@ export function EditorScreen({
             url: publishedUrl(noteState.published), at: noteState.published.at,
             password: noteState.published.password ?? null, selfDestruct: !!noteState.published.selfDestruct,
             autoUpdate: !!noteState.published.autoUpdate, expiresAt: noteState.published.expiresAt ?? null,
+            live: !!noteState.published.live, editable: !!noteState.published.editable,
           } : null}
           onPublish={publish}
           onUnpublish={unpublish}
