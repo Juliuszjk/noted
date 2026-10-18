@@ -19,7 +19,12 @@ import type { TableMoveResult } from '@noted/editor/table-tools';
 import { insertImageFromUrl } from '@noted/editor/blob-image';
 import { toolbarGroups, toolbarItem, CELL_TOOLBAR_ITEMS } from '@noted/editor/toolbar-items';
 import type { ToolbarConfig } from '@noted/editor/toolbar-items';
-import { slashItems, HEADING_ICONS } from '@noted/editor/slash-items';
+import { slashItems as allSlashItems, slashItemsWithoutPublish, HEADING_ICONS } from '@noted/editor/slash-items';
+
+// A phone without a server has nowhere to publish to (RN says so in `editorPrefs`).
+let canPublish = true;
+export const setCanPublish = (on: boolean): void => { canPublish = on; };
+const currentSlashItems = () => (canPublish ? allSlashItems : slashItemsWithoutPublish);
 import type { SlashItem } from '@noted/editor/slash';
 import { activate, searchNav } from '@noted/editor/slash-nav';
 import type { NavModel } from '@noted/editor/slash-nav';
@@ -1050,7 +1055,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   // Every main-row button (group) by its id; Settings > Toolbar decides which show and in
   // what order (setToolbarConfig).
   const parts: Record<string, El[]> = {
-    insert: [button(mdiPlus, 'Insert', () => (openSheet === 'insert' ? closeSheet() : insertSheet(slashItems, 'Choose a block to insert')), undefined, 'tb-plus')],
+    insert: [button(mdiPlus, 'Insert', () => (openSheet === 'insert' ? closeSheet() : insertSheet(currentSlashItems(), 'Choose a block to insert')), undefined, 'tb-plus')],
     outdent: [button(mdiFormatIndentDecrease, 'Outdent', () => chain().outdentContent().run())],
     indent: [button(mdiFormatIndentIncrease, 'Indent', () => chain().indentContent().run())],
     bold: [button(mdiFormatBold, 'Bold', () => chain().toggleBold().run(), () => editor.isActive('bold'))],
@@ -1140,9 +1145,9 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     slashPanel.classList.remove('open');
     slashPanel.replaceChildren();
   }
-  const backToInsert = () => insertSheet(slashItems, 'Choose a block to insert', [], false);
+  const backToInsert = () => insertSheet(currentSlashItems(), 'Choose a block to insert', [], false);
   const slashModel = (props: SlashProps): NavModel =>
-    (slashNav && slashNav.query === props.query ? slashNav.model : searchNav(slashItems, props.query));
+    (slashNav && slashNav.query === props.query ? slashNav.model : searchNav(currentSlashItems(), props.query));
   // Submenus open inside the panel; the table picker and the note link picker are sheets. The
   // keyboard stays up all the time (the panel's buttons do not take the focus).
   const pickSlash = (item: SlashItem, range: { from: number; to: number }) => {

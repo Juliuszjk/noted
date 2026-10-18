@@ -29,7 +29,7 @@ import { compressImageBytes } from '@noted/media';
 import type { MathEditRequest } from '@noted/editor/math';
 import { setReminderTimes } from '@noted/editor/reminder';
 import type { ReminderEditRequest } from '@noted/editor/reminder';
-import { createToolbar } from './toolbar';
+import { createToolbar, setCanPublish } from './toolbar';
 import { createDrawingBar } from './drawing-bar';
 import { restoreDrawingTools, showPenHover } from '@noted/editor/drawing';
 import { createFindBar } from './find';
@@ -732,6 +732,7 @@ const receive = (raw: string) => {
       setCodeThemeByLanguage(editor, editorPrefs.codeThemeByLanguage);
       setReminderTimes(editor, { morning: editorPrefs.reminderMorning, evening: editorPrefs.reminderEvening });
     }
+    setCanPublish(msg.canPublish !== false);
     toolbarConfig = parseToolbarConfig(JSON.stringify(msg.toolbar ?? null));
     tableToolbarConfig = parseToolbarConfig(JSON.stringify(msg.tableToolbar ?? null));
     toolbarApi?.setToolbarConfig(toolbarConfig, tableToolbarConfig);

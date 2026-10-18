@@ -2,6 +2,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { generateKey } from '@noted/crypto';
 import { createBlob, uploadPendingBlobs, fetchSealedBlob, openBlob } from './blobs';
 import type { LocalBlobStore } from './blobs';
+import { setServerAddress } from '@noted/config';
+
+// Requests go to a stubbed fetch; any address will do (builds may have no default).
+setServerAddress({ api: 'http://test.invalid', public: '' });
 
 const memoryStore = () => {
   const rows = new Map<string, { sealed: Uint8Array; uploaded: boolean }>();

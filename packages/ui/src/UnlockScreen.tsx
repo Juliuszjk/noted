@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { apiUrl, hasServer, normalizeServerUrl, MIN_PASSPHRASE_LENGTH } from '@noted/config';
+import { apiUrl, hasServer, normalizeServerUrl, setServerAddress, MIN_PASSPHRASE_LENGTH } from '@noted/config';
 import {
   apiFetch, fetchVaultStatus, setupCodeHeader, WRONG_SETUP_CODE, openWithPassphraseKey, openWithRecoveryKey, changePassphrase, setAuthEpoch, backupVault, vaultInfoOf, openBackup,
-  restoreServerVault, connectServer,
+  restoreServerVault, connectServer, createLocalVault, readLocalVault,
 } from '@noted/sync';
 import type { VaultInfo } from '@noted/sync';
 import { PasswordInput } from './PasswordInput';
@@ -23,10 +23,15 @@ type Mode =
   // The server has no vault (new or replaced server): set it up from a backup file.
   | { kind: 'restore' };
 
-// First screen: create the vault, unlock it, recover it with the recovery key, or set it up
-// from a backup. `onUnlock` gets the data key and the auth token epoch of the vault (and the
-// backup, whose notes the app then restores).
-export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: number, restoreBackupText?: string) => void }) {
+// First screen: choose a server (or none), create the vault, unlock it, recover it with the
+// recovery key, or set it up from a backup. `onUnlock` gets the data key and the auth token epoch
+// of the vault (and the backup, whose notes the app then restores). `knownVerifier`: the vault
+// whose notes this device already holds (null = none yet); another vault is refused, its key
+// could not read them.
+export function UnlockScreen({ onUnlock, knownVerifier = null }: {
+  onUnlock: (key: Uint8Array, epoch: number, restoreBackupText?: string) => void;
+  knownVerifier?: string | null;
+}) {
   const [mode, setMode] = useState<Mode>(() => (hasServer() ? { kind: 'loading' } : { kind: 'server' }));
   const [serverText, setServerText] = useState(() => apiUrl());
   // A fresh server wants the setup code from its log before the vault can be created.
@@ -58,6 +63,19 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
     if (hasServer()) loadVault();
   }, []);
 
+  const otherVault = (verifier: string) => {
+    if (knownVerifier && verifier !== knownVerifier) {
+      throw new Error('This device holds the notes of another vault, which this one could not read. Go back to that vault\'s server, or remove this device\'s Noted data first.');
+    }
+  };
+
+  const withoutServer = () => {
+    setError('');
+    setServerAddress({ api: '', public: '' });
+    setMode({ kind: 'loading' });
+    loadVault();
+  };
+
   const changeServer = () => {
     setError('');
     setServerText(apiUrl());
@@ -77,6 +95,7 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
       if (mode.kind === 'server') {
         const base = normalizeServerUrl(serverText);
         if (!base) throw new Error('Enter the server address, e.g. https://notes.example.com or 100.64.0.1:3333.');
+        if (!hasServer() && readLocalVault()) throw new Error('This device keeps its vault without a server: unlock it, then use Settings > Sync > Connect a server (the notes go along).');
         await connectServer(base);
         setMode({ kind: 'loading' });
         await loadVault();
@@ -84,12 +103,19 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
         newPassphraseOk();
         const salt = generateSalt();
         const key = deriveMasterKey(passphrase, salt);
+        const verifier = packBlob(createVerifier(key));
+        otherVault(verifier);
+        if (!hasServer()) {
+          createLocalVault(salt, verifier);
+          onUnlock(key, 0);
+          return;
+        }
         const res = await apiFetch(`${apiUrl()}/vault`, dummyKey, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', ...setupCodeHeader(setupCode) },
           body: JSON.stringify({
             salt: bytesToBase64(salt),
-            verifier: packBlob(createVerifier(key)),
+            verifier,
             auth_token: bytesToBase64(deriveAuthToken(key)),
           }),
         });
@@ -104,12 +130,14 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
         const salt = Uint8Array.from(atob(mode.info.salt), (c) => c.charCodeAt(0));
         const dataKey = openWithPassphraseKey(mode.info, deriveMasterKey(passphrase, salt));
         if (!dataKey) throw new Error('Wrong passphrase.');
+        otherVault(mode.info.verifier);
         onUnlock(dataKey, mode.info.authEpoch);
       } else if (mode.kind === 'recover') {
         const recoveryKey = parseRecoveryKey(recoveryText);
         if (!recoveryKey) throw new Error('That is not a valid recovery key (check for typos).');
         const dataKey = openWithRecoveryKey(mode.info, recoveryKey);
         if (!dataKey) throw new Error('This recovery key does not open this vault.');
+        otherVault(mode.info.verifier);
         setPassphrase('');
         setConfirm('');
         setMode({ kind: 'newPassphrase', info: mode.info, dataKey });
@@ -130,6 +158,7 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
         }
         if (!dataKey) throw new Error(useRecovery ? 'This recovery key does not open this backup.' : 'Wrong passphrase for this backup.');
         openBackup(dataKey, text);
+        otherVault(vault.verifier);
         await restoreServerVault(dataKey, vault, 0, setupCode);
         if (useRecovery) {
           // Opened with the recovery key: a new passphrase first (the old one is forgotten).
@@ -169,13 +198,17 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
       >
         <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '4px' }}>Noted</div>
         <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '16px', lineHeight: 1.5 }}>
-          {mode.kind === 'create' && 'Create a passphrase for your encrypted vault. Save the recovery key in Settings afterwards: without it a forgotten passphrase cannot be recovered.'}
+          {mode.kind === 'create' && (hasServer()
+            ? 'Create a passphrase for your encrypted vault. Save the recovery key in Settings afterwards: without it a forgotten passphrase cannot be recovered.'
+            : 'Create a passphrase for your encrypted vault, kept on this device only (a server can be connected later in Settings > Sync). Save the recovery key and make backups: without them a forgotten passphrase or a lost disk cannot be recovered.')}
           {mode.kind === 'unlock' && 'Enter your passphrase to unlock your notes.'}
           {mode.kind === 'recover' && 'Enter your recovery key (the groups of letters and digits you saved).'}
           {mode.kind === 'newPassphrase' && 'Recovery key accepted. Choose a new passphrase for every device.'}
           {mode.kind === 'loading' && 'Connecting to server...'}
-          {mode.kind === 'server' && 'Enter the address of your Noted server. Your notes are encrypted on this device: the server only ever stores sealed data.'}
-          {mode.kind === 'restore' && 'The server has no vault yet. Pick a Noted backup (.nbackup) and enter the passphrase it was made with: the vault comes back with the same passphrase and recovery key, then your notes are restored and uploaded.'}
+          {mode.kind === 'server' && 'Enter the address of your Noted server (it only ever stores encrypted data), or use Noted without one: your notes then stay on this device, and a server can be connected later.'}
+          {mode.kind === 'restore' && (hasServer()
+            ? 'The server has no vault yet. Pick a Noted backup (.nbackup) and enter the passphrase it was made with: the vault comes back with the same passphrase and recovery key, then your notes are restored and uploaded.'
+            : 'Pick a Noted backup (.nbackup) and enter the passphrase it was made with: the vault comes back on this device with the same passphrase and recovery key, then your notes are restored.')}
         </div>
         {mode.kind === 'server' && (
           <input autoFocus placeholder="https://notes.example.com" value={serverText} spellCheck={false}
@@ -237,7 +270,13 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
         )}
         {mode.kind === 'create' && (
           <button type="button" style={{ ...linkStyle, display: 'block' }} onClick={() => { setError(''); setPassphrase(''); setMode({ kind: 'restore' }); }}>
-            New or replaced server? Set it up from a backup
+            {hasServer() ? 'New or replaced server? Set it up from a backup' : 'Have a backup? Set the vault up from it'}
+          </button>
+        )}
+        {mode.kind === 'server' && (
+          <button type="button" onClick={withoutServer} disabled={busy}
+            style={{ width: '100%', marginTop: 8, padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-main)', cursor: 'pointer' }}>
+            Use without a server
           </button>
         )}
         {mode.kind === 'server' && hasServer() && (
@@ -247,7 +286,7 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
         )}
         {mode.kind !== 'server' && (
           <button type="button" style={{ ...linkStyle, display: 'block' }} onClick={changeServer}>
-            Server: {apiUrl().replace(/^https?:\/\//, '')} · change
+            {hasServer() ? `Server: ${apiUrl().replace(/^https?:\/\//, '')}` : 'No server (this device only)'} · change
           </button>
         )}
         {mode.kind === 'restore' && (

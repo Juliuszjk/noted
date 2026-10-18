@@ -38,6 +38,8 @@ describe('setting up a server from a backup', async () => {
   const { getAuthEpoch } = await import('./client');
 
   it('keeps the vault in the backup and puts it on an empty server', async () => {
+    const { setServerAddress } = await import('@noted/config');
+    setServerAddress({ api: 'http://test.invalid', public: '' });
     const dataKey = generateKey();
     const info = vaultFor(dataKey, { keyEnvelope: 'a.b', recoveryEnvelope: 'c.d', createdAt: 5 });
     const vault = { salt: info.salt, verifier: info.verifier, keyEnvelope: 'a.b', recoveryEnvelope: 'c.d', recoverySealed: 'e.f', createdAt: 5 };

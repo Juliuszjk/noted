@@ -9,18 +9,18 @@ import * as SystemUI from 'expo-system-ui';
 import { generateSalt, createVerifier, deriveAuthToken, bytesToBase64, parseRecoveryKey } from '@noted/crypto';
 import { saveMasterKey, getMasterKey, clearMasterKey, getAuthEpochStored, saveAuthEpoch } from './src/storage';
 import { createExpoStore } from './src/store';
-import { apiFetch, fetchVaultStatus, setupCodeHeader, WRONG_SETUP_CODE, openWithPassphraseKey, openWithRecoveryKey, changePassphrase, setAuthEpoch, mergingNoteStore, connectServer, refreshServerInfo } from '@noted/sync';
+import { apiFetch, fetchVaultStatus, setupCodeHeader, WRONG_SETUP_CODE, openWithPassphraseKey, openWithRecoveryKey, changePassphrase, setAuthEpoch, mergingNoteStore, connectServer, refreshServerInfo, createLocalVault, readLocalVault } from '@noted/sync';
 import type { LocalNoteStore, LocalBlobStore, VaultInfo } from '@noted/sync';
 import { isLightColor } from '@noted/theme';
 import { registerKdf } from './src/kdf';
 import { AppState, Appearance } from 'react-native';
-import { LockScreen, readAppLock, cacheVaultInfoForLock } from './src/LockScreen';
+import { LockScreen, readAppLock, cacheVaultInfoForLock, cachedVaultVerifier } from './src/LockScreen';
 import { setVaultKey } from './src/vault-session';
 import { NotesScreen } from './src/NotesScreen';
 import { T, PasswordField, refreshTheme, useThemeVersion, themed } from './src/ui';
 import { KdfRunner, KdfHandle } from './src/KdfRunner';
 import { DialogHost } from './src/Dialog';
-import { apiUrl, hasServer, normalizeServerUrl, MIN_PASSPHRASE_LENGTH } from '@noted/config';
+import { apiUrl, hasServer, normalizeServerUrl, setServerAddress, MIN_PASSPHRASE_LENGTH } from '@noted/config';
 import { backgroundWasIntended } from './src/away';
 
 // Status bar icons (clock, battery) contrast with the app background: light on a dark theme,
@@ -163,6 +163,7 @@ function App() {
       if (mode.kind === 'server') {
         const base = normalizeServerUrl(serverText);
         if (!base) throw new Error('Enter the server address, e.g. https://notes.example.com or 100.64.0.1:3333.');
+        if (!hasServer() && readLocalVault()) throw new Error('This phone keeps its vault without a server: unlock it, then use Settings > Sync > Connect a server (the notes go along).');
         await connectServer(base);
         setMode({ kind: 'loading' });
         await loadVault();
@@ -170,12 +171,19 @@ function App() {
         newPassphraseOk();
         const salt = generateSalt();
         const key = await kdfRef.current!.derive(passphrase, bytesToBase64(salt));
+        const verifier = packBlob(createVerifier(key));
+        otherVault(verifier);
+        if (!hasServer()) {
+          createLocalVault(salt, verifier);
+          await unlocked(key, 0);
+          return;
+        }
         const res = await apiFetch(`${apiUrl()}/vault`, dummyKey, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', ...setupCodeHeader(setupCode) },
           body: JSON.stringify({
             salt: bytesToBase64(salt),
-            verifier: packBlob(createVerifier(key)),
+            verifier,
             auth_token: bytesToBase64(deriveAuthToken(key)),
           }),
         });
@@ -189,12 +197,14 @@ function App() {
       } else if (mode.kind === 'unlock') {
         const key = openWithPassphraseKey(mode.info, await kdfRef.current!.derive(passphrase, mode.info.salt));
         if (!key) throw new Error('Wrong passphrase.');
+        otherVault(mode.info.verifier);
         await unlocked(key, mode.info.authEpoch);
       } else if (mode.kind === 'recover') {
         const recoveryKey = parseRecoveryKey(recoveryText);
         if (!recoveryKey) throw new Error('That is not a valid recovery key (check for typos).');
         const dataKey = openWithRecoveryKey(mode.info, recoveryKey);
         if (!dataKey) throw new Error('This recovery key does not open this vault.');
+        otherVault(mode.info.verifier);
         setPassphrase('');
         setConfirm('');
         setMode({ kind: 'newPassphrase', info: mode.info, dataKey });
@@ -224,6 +234,21 @@ function App() {
     }
   };
 
+  // The notes on this phone belong to one vault; another vault's key could not read them.
+  const otherVault = (verifier: string) => {
+    const known = cachedVaultVerifier();
+    if (known && verifier !== known) {
+      throw new Error('This phone holds the notes of another vault, which this one could not read. Go back to that vault\'s server, or clear Noted\'s app data first.');
+    }
+  };
+
+  const withoutServer = () => {
+    setError('');
+    setServerAddress({ api: '', public: '' });
+    setMode({ kind: 'loading' });
+    loadVault();
+  };
+
   const changeServer = () => {
     setError('');
     setServerText(apiUrl());
@@ -249,11 +274,13 @@ function App() {
           {notice ? <Text style={styles.notice}>{notice}</Text> : null}
           <View style={styles.card}>
             <Text style={styles.label}>
-              {mode.kind === 'create' ? 'Create a passphrase (save the recovery key in Settings afterwards):'
+              {mode.kind === 'create' ? (hasServer()
+                ? 'Create a passphrase (save the recovery key in Settings afterwards):'
+                : 'Create a passphrase for a vault on this phone only (a server can be connected later in Settings > Sync). Save the recovery key and make backups:')
                 : mode.kind === 'unlock' ? 'Enter passphrase:'
                 : mode.kind === 'recover' ? 'Enter your recovery key:'
                 : mode.kind === 'newPassphrase' ? 'Recovery key accepted. Choose a new passphrase:'
-                : mode.kind === 'server' ? 'Address of your Noted server (it only ever stores encrypted data):'
+                : mode.kind === 'server' ? 'Address of your Noted server (it only ever stores encrypted data), or use Noted without one: notes then stay on this phone.'
                 : 'Connecting to server...'}
             </Text>
             {mode.kind === 'server' ? (
@@ -305,6 +332,11 @@ function App() {
                 <Text style={styles.linkText}>Back to the passphrase</Text>
               </TouchableOpacity>
             ) : null}
+            {mode.kind === 'server' ? (
+              <TouchableOpacity onPress={withoutServer} disabled={busy} style={[styles.button, styles.secondary]}>
+                <Text style={styles.secondaryText}>Use without a server</Text>
+              </TouchableOpacity>
+            ) : null}
             {mode.kind === 'server' && hasServer() ? (
               <TouchableOpacity onPress={() => { setError(''); setMode({ kind: 'loading' }); loadVault(); }} style={styles.link}>
                 <Text style={styles.linkText}>Back: keep {apiUrl().replace(/^https?:\/\//, '')}</Text>
@@ -312,7 +344,7 @@ function App() {
             ) : null}
             {mode.kind !== 'server' ? (
               <TouchableOpacity onPress={changeServer} style={styles.link}>
-                <Text style={styles.linkText}>Server: {apiUrl().replace(/^https?:\/\//, '')} · change</Text>
+                <Text style={styles.linkText}>{hasServer() ? `Server: ${apiUrl().replace(/^https?:\/\//, '')}` : 'No server (this phone only)'} · change</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -331,6 +363,8 @@ const styles = themed(() => StyleSheet.create({
   input: { backgroundColor: T.surface_container_high, color: T.on_surface, padding: 12, borderRadius: 8, marginBottom: 16, fontSize: 16 },
   button: { backgroundColor: T.primary, padding: 14, borderRadius: 24, alignItems: 'center' },
   buttonText: { color: T.on_primary, fontWeight: 'bold', fontSize: 16 },
+  secondary: { marginTop: 10, backgroundColor: 'transparent', borderWidth: 1, borderColor: T.outline_variant },
+  secondaryText: { color: T.on_surface, fontSize: 16 },
   error: { color: T.error, fontSize: 12, marginBottom: 12, textAlign: 'center' },
   link: { marginTop: 14, alignItems: 'center' },
   linkText: { color: T.primary, fontSize: 14 },

@@ -6,6 +6,10 @@ import type { LocalNoteStore } from './engine';
 import { sealDoc } from './doc';
 import { buildNoteMeta, encodeNoteMeta, setTitle, deleteNoteForever } from './note-meta';
 import type { NoteRecord } from '@noted/types';
+import { setServerAddress } from '@noted/config';
+
+// Requests go to a stubbed fetch; any address will do (builds may have no default).
+setServerAddress({ api: 'http://test.invalid', public: '' });
 
 afterEach(() => vi.unstubAllGlobals());
 

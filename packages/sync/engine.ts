@@ -1,6 +1,6 @@
 import { NoteRecord } from '@noted/types';
 import { fetchRemoteNote, pushNote, keyMatchesVault, ensureAuthRegistered, apiFetch } from './client';
-import { apiUrl } from '@noted/config';
+import { apiUrl, hasServer } from '@noted/config';
 import { sealDoc, mergeRemote, docFromSealed } from './doc';
 import { buildNoteMeta, encodeNoteMeta, isNoteDeleted } from './note-meta';
 import { seal } from '@noted/crypto';
@@ -24,6 +24,8 @@ export const runSyncEngine = async (
   activeNoteId: string | null,
   activeNoteDoc: Y.Doc | null
 ): Promise<{ changedAnything: boolean; requiresReload: boolean; failedNotes: number }> => {
+  // A device without a server keeps everything locally: nothing to sync.
+  if (!hasServer()) return { changedAnything: false, requiresReload: false, failedNotes: 0 };
   let failedNotes = 0;
   let changedAnything = false;
   let requiresReload = false;

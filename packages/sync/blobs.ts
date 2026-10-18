@@ -1,4 +1,4 @@
-import { apiUrl } from '@noted/config';
+import { apiUrl, hasServer } from '@noted/config';
 import { base64ToBytes, bytesToBase64, generateKey, sealBytes, unsealBytes } from '@noted/crypto';
 import { apiFetch } from './client';
 
@@ -45,6 +45,8 @@ export const uploadBlob = async (masterKey: Uint8Array, id: string, sealed: Uint
 
 // Uploads everything still queued. Returns how many failed (they stay queued).
 export const uploadPendingBlobs = async (masterKey: Uint8Array, store: LocalBlobStore): Promise<number> => {
+  // Without a server they stay queued (uploaded once one is connected).
+  if (!hasServer()) return 0;
   let failed = 0;
   for (const id of await store.pending()) {
     try {

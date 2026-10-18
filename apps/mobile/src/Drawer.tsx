@@ -27,7 +27,8 @@ interface Props {
   onDelete: (kind: 'notebooks' | 'tags', id: string) => void;
   onSettings: () => void;
   // Connection state under the app name (sync runs on its own; a tap syncs now).
-  sync: { online: boolean; syncing: boolean; status: string; lastSyncAt: number | null; onSync: () => void };
+  // localOnly: this phone works without a server.
+  sync: { online: boolean; localOnly?: boolean; syncing: boolean; status: string; lastSyncAt: number | null; onSync: () => void };
   onClose: () => void;
 }
 
@@ -72,7 +73,9 @@ export function Drawer({ view, counts, notebooks, tags, onView, onCreate, onRena
         <View style={styles.head}>
           <View style={{ flex: 1 }}>
             <Text style={styles.brand}>Noted</Text>
-            <TouchableOpacity style={styles.sync} onPress={sync.onSync} disabled={sync.syncing} accessibilityLabel="Sync now">
+            {sync.localOnly ? (
+              <View style={styles.sync}><Text style={styles.syncText}>This phone only</Text></View>
+            ) : <TouchableOpacity style={styles.sync} onPress={sync.onSync} disabled={sync.syncing} accessibilityLabel="Sync now">
               <View style={[styles.syncDot, { backgroundColor: sync.online ? T.primary : T.error }]} />
               <Text style={styles.syncText} numberOfLines={1}>
                 {sync.syncing ? 'Syncing…'
@@ -80,7 +83,7 @@ export function Drawer({ view, counts, notebooks, tags, onView, onCreate, onRena
                   : !sync.online ? 'Offline'
                   : `Online${sync.lastSyncAt ? ` · synced ${new Date(sync.lastSyncAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}`}
               </Text>
-            </TouchableOpacity>
+            </TouchableOpacity>}
           </View>
           <TouchableOpacity style={styles.iconBtn} onPress={onSettings} accessibilityLabel="Settings">
             <Icon path={mdiCogOutline} size={22} color={T.on_surface_variant} />

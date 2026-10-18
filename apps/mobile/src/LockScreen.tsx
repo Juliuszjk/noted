@@ -28,6 +28,9 @@ export const readAppLock = (): AppLock => {
 };
 export const writeAppLock = (lock: AppLock) => SecureStore.setItem(APP_LOCK_KEY, JSON.stringify(lock));
 
+// The vault whose notes this phone holds (null = none yet): the unlock screen refuses another.
+export const cachedVaultVerifier = (): string | null => parseVaultInfo(SecureStore.getItem(VAULT_INFO_KEY))?.verifier ?? null;
+
 export const cacheVaultInfoForLock = async () => {
   const info = await fetchVault().catch(() => null);
   if (info) await SecureStore.setItemAsync(VAULT_INFO_KEY, serializeVaultInfo(info));

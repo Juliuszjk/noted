@@ -14,6 +14,8 @@ export interface TextStats {
 
 interface Props {
   online: boolean;
+  // This device works without a server: no connection dot, no sync button.
+  localOnly?: boolean;
   syncing: boolean;
   // No local change waits for upload.
   synced: boolean;
@@ -38,7 +40,7 @@ import { formatDateTime } from './format-date';
 // Bottom bar: connection and sync on the left; layout, focus mode, zoom, text statistics,
 // creation date and sync state on the right.
 export function StatusBar(props: Props) {
-  const { online, syncing, synced, onSync, fullWidth, onToggleWidth, focusMode, onToggleFocus, zoom, onZoom, stats, created, message } = props;
+  const { online, localOnly, syncing, synced, onSync, fullWidth, onToggleWidth, focusMode, onToggleFocus, zoom, onZoom, stats, created, message } = props;
   const [statsOpen, setStatsOpen] = useState(false);
   const statsRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +64,9 @@ export function StatusBar(props: Props) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: 28, padding: '0 8px', borderTop: '1px solid var(--border)', backgroundColor: 'var(--bg-surface-low)' }}>
+      {localOnly ? (
+        <span title="Your notes are kept on this device only (no server). Settings > Sync connects one." style={{ ...text, margin: '0 6px' }}>This device only</span>
+      ) : <>
       <span
         title={online ? 'Online: connected to the server' : 'Offline'}
         style={{
@@ -71,6 +76,7 @@ export function StatusBar(props: Props) {
         }}
       />
       <IconBtn icon={mdiSync} title="Sync now" onClick={onSync} size={15} style={{ ...small, animation: syncing ? 'noted-spin 1s linear infinite' : undefined }} />
+      </>}
 
       {message && <span style={{ fontSize: 12, color: 'var(--error)', marginLeft: 6, whiteSpace: 'nowrap' }}>{message}</span>}
       <div style={{ flex: 1 }} />

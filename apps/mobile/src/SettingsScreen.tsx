@@ -17,7 +17,7 @@ import { readBackupSettings, writeBackupSettings, chooseBackupFolder, writeBacku
 import type { MobileBackupSettings } from './backups';
 import type { EditorPrefs } from '@noted/editor/editor-prefs-lite';
 import { getEditorPrefs, setEditorPrefs, getToolbarConfig, setToolbarConfig, getTableToolbarConfig, setTableToolbarConfig, getDrawingToolbarConfig, setDrawingToolbarConfig } from './prefs';
-import { MIN_PASSPHRASE_LENGTH, apiUrl } from '@noted/config';
+import { MIN_PASSPHRASE_LENGTH, apiUrl, hasServer, normalizeServerUrl } from '@noted/config';
 import { bytesToBase64, formatRecoveryKey, generateSalt } from '@noted/crypto';
 import {
   fetchVault, openWithPassphraseKey, changePassphrase, getRecoveryKey, logoutOtherDevices, fetchAccountStats,
@@ -37,7 +37,7 @@ import { backgroundRestricted, askUnrestricted } from './battery';
 
 // Settings (the phone's version of the desktop's): Account, Sync, Appearance, Backup & export.
 
-type Page = 'list' | 'compare' | 'account' | 'sync' | 'appearance' | 'editor' | 'toolbar' | 'noteMenu' | 'backup' | 'lock' | 'vault' | 'recovery' | 'passphrase';
+type Page = 'list' | 'compare' | 'account' | 'sync' | 'connect' | 'appearance' | 'editor' | 'toolbar' | 'noteMenu' | 'backup' | 'lock' | 'vault' | 'recovery' | 'passphrase';
 
 interface Props {
   masterKey: Uint8Array;
@@ -48,6 +48,8 @@ interface Props {
   lastSyncAt: number | null;
   notebookNames: Map<string, string>;
   onSyncNow: () => void;
+  // Only on a phone without a server: moves its vault to a server (or joins the same vault there).
+  onConnectServer?: (base: string, setupCode: string) => Promise<void>;
   // "Clean up storage" (like the desktop's): find, then remove.
   cleanup: { find: (includeRecent: boolean) => Promise<CleanupPlan>; run: (plan: CleanupPlan) => Promise<string> };
   // The default title is shared by all devices (written into the synced catalog).
@@ -385,10 +387,19 @@ export function SettingsScreen(p: Props) {
     setCompare({ ...compare, diffs });
   };
   const [form, setForm] = useState({ current: '', next: '', repeat: '' });
+  const [connectForm, setConnectForm] = useState({ address: '', code: '' });
+  const connect = () => run('connect', async () => {
+    const base = normalizeServerUrl(connectForm.address);
+    if (!base) throw new Error('Enter the server address, e.g. https://notes.example.com or 100.64.0.1:3333.');
+    await p.onConnectServer!(base, connectForm.code);
+    setPage('sync');
+    return 'Connected: every note is being uploaded (encrypted).';
+  });
 
   const back = () => {
     setMessage(null);
     if (page === 'recovery' || page === 'passphrase') setPage('account');
+    else if (page === 'connect') setPage('sync');
     else if (page === 'compare') setPage('backup');
     else if (page !== 'list') setPage('list');
     else p.onClose();
@@ -438,7 +449,7 @@ export function SettingsScreen(p: Props) {
 
   const titles: Record<Page, string> = {
     list: 'Settings', compare: 'Compare backup', lock: 'App lock', vault: 'Vault', account: 'Account', sync: 'Sync', appearance: 'Appearance', editor: 'Editor', toolbar: 'Toolbar', noteMenu: 'Note menu', backup: 'Backup & export',
-    recovery: 'Data recovery key', passphrase: 'Change passphrase',
+    recovery: 'Data recovery key', passphrase: 'Change passphrase', connect: 'Connect a server',
   };
 
   return (
@@ -484,6 +495,7 @@ export function SettingsScreen(p: Props) {
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: T.primary, fontSize: 12 }}>End-to-end encrypted</Text>
                   <Text style={styles.cardTitle}>Your vault</Text>
+                  {!hasServer() ? <Text style={styles.rowText}>This phone only (no server)</Text> : null}
                   <Text style={styles.rowText}>{vault?.createdAt ? `Created ${formatDateTime(vault.createdAt).slice(0, 10)}` : 'Created before settings existed'}</Text>
                   {stats ? <Text style={styles.rowText}>{stats.notes} notes ({size(stats.noteBytes)}) • {stats.blobs} images and files ({size(stats.blobBytes)})</Text> : null}
                 </View>
@@ -502,14 +514,14 @@ export function SettingsScreen(p: Props) {
                 onPress={() => appAlert('Log out?', 'You will need the passphrase (or the recovery key) to unlock Noted here again.', [
                   { text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: p.onLogout },
                 ])} />
-              <Row title="Log out from all other devices" danger description="Every other device has to enter the passphrase again."
+              {hasServer() ? <Row title="Log out from all other devices" danger description="Every other device has to enter the passphrase again."
                 onPress={() => appAlert('Log out the other devices?', 'They will ask for the passphrase the next time they connect. This phone stays logged in.', [
                   { text: 'Cancel', style: 'cancel' },
                   { text: 'Log them out', style: 'destructive', onPress: () => run('logout', async () => {
                     await saveAuthEpoch(await logoutOtherDevices(p.masterKey));
                     return 'The other devices are logged out.';
                   }) },
-                ])} />
+                ])} /> : null}
             </>
           )}
 
@@ -552,7 +564,29 @@ export function SettingsScreen(p: Props) {
             </>
           )}
 
-          {page === 'sync' && (
+          {page === 'sync' && !hasServer() && (
+            <Row title="Server" description="None: your notes are kept on this phone only, so make backups (Backup & export). With a server of your own they sync between your devices."
+              onPress={p.onConnectServer ? () => setPage('connect') : undefined}
+              right={<Text style={{ color: T.primary }}>Connect…</Text>} />
+          )}
+
+          {page === 'connect' && (
+            <>
+              <Text style={styles.note}>
+                Your vault (the same passphrase and recovery key) moves to the server, then every note is uploaded, encrypted as always.
+                A new server asks for the setup code from its log; a server that already holds this vault needs none.
+              </Text>
+              <TextInput value={connectForm.address} onChangeText={(address) => setConnectForm((f) => ({ ...f, address }))} placeholder="https://notes.example.com"
+                autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholderTextColor={T.on_surface_variant} style={styles.input} />
+              <TextInput value={connectForm.code} onChangeText={(code) => setConnectForm((f) => ({ ...f, code }))} placeholder="Setup code (new server only)"
+                autoCapitalize="characters" autoCorrect={false} placeholderTextColor={T.on_surface_variant} style={[styles.input, { fontFamily: 'monospace' }]} />
+              <TouchableOpacity disabled={!!busy} style={[styles.button, styles.primary]} onPress={connect}>
+                <Text style={[styles.buttonText, { color: T.on_primary }]}>{busy === 'connect' ? 'Connecting…' : 'Connect'}</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {page === 'sync' && hasServer() && (
             <>
               <Row title="Server" description={apiUrl()} right={
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

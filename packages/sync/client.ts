@@ -1,4 +1,4 @@
-import { apiUrl, REQUEST_TIMEOUT_MS } from '@noted/config';
+import { apiUrl, hasServer, REQUEST_TIMEOUT_MS } from '@noted/config';
 import { deriveAuthToken, checkVerifier, base64ToBytes, bytesToBase64 } from '@noted/crypto';
 import { RemoteNote } from '@noted/types';
 
@@ -13,12 +13,17 @@ const authHeaders = (masterKey: Uint8Array): Record<string, string> => ({
   Authorization: `Bearer ${currentAuthToken(masterKey)}`,
 });
 
-export const apiFetch = (url: string, masterKey: Uint8Array, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS) =>
-  fetch(url, {
-    ...init,
-    headers: { ...authHeaders(masterKey), ...(init.headers as Record<string, string> | undefined) },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+// A device without a server (local only) never sends anything: every call fails like offline.
+export const NO_SERVER_MESSAGE = 'This device works without a server.';
+
+export const apiFetch = (url: string, masterKey: Uint8Array, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> =>
+  hasServer()
+    ? fetch(url, {
+      ...init,
+      headers: { ...authHeaders(masterKey), ...(init.headers as Record<string, string> | undefined) },
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    : Promise.reject(new Error(NO_SERVER_MESSAGE));
 
 export const fetchRemoteNote = async (id: string, masterKey: Uint8Array): Promise<RemoteNote> => {
   const res = await apiFetch(`${apiUrl()}/notes/${id}`, masterKey);

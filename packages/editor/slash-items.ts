@@ -317,3 +317,6 @@ export const slashItems: SlashItem[] = [
   exportItem,
   publishItem,
 ];
+
+// A device without a server has nowhere to publish to.
+export const slashItemsWithoutPublish: SlashItem[] = slashItems.filter((item) => item !== publishItem);

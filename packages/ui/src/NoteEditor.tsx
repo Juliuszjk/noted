@@ -11,6 +11,7 @@ import {
 } from '@noted/editor';
 import type { AnyExtension, Editor } from '@tiptap/core';
 import type { NoteActionRequest, SlashItem } from '@noted/editor';
+import { slashItemsWithoutPublish } from '@noted/editor';
 import type { BlobHandlers } from '@noted/editor';
 import '@noted/editor/content.css';
 import 'katex/dist/katex.min.css';
@@ -706,7 +707,7 @@ export function NoteEditor({
           onClose={() => setNoteLinkMenu(null)}
         />,
       )}
-      {editor && slash && floating(<SlashMenu ref={menuRef} editor={editor} state={slash} items={slashItems} onClose={() => setSlash(null)} />)}
+      {editor && slash && floating(<SlashMenu ref={menuRef} editor={editor} state={slash} items={slashItems ?? (onPublish ? undefined : slashItemsWithoutPublish)} onClose={() => setSlash(null)} />)}
       {editor && toolbarMode === 'floating' && floating(<FormatMenu editor={editor} onOpenLink={onOpenLink ? openLink : undefined} linkEditRequest={linkEditRequest} />)}
       {editor && toolbarMode === 'top' && toolbarSlot && createPortal(
         <TopToolbar

@@ -68,7 +68,8 @@ interface Props {
   onExport: () => void;
   // Opens the publish dialog; `published` = a public copy exists.
   published: boolean;
-  onPublish: () => void;
+  // Absent on a device without a server (nowhere to publish to).
+  onPublish?: () => void;
   onTrash: () => void;
   onRestore: () => void;
   onDeleteForever: () => void;
@@ -269,17 +270,19 @@ export function NoteProperties(p: Props) {
         <span style={{ flex: 1 }}>Export…</span>
         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Markdown, text, PDF</span>
       </button>
-      <button
-        type="button"
-        onClick={p.onPublish}
-        style={{ ...rowBase, width: '100%', border: 'none', background: 'transparent', color: 'var(--text-main)', cursor: 'pointer', textAlign: 'left' }}
-        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-surface-high)'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
-      >
-        <Icon path={mdiWeb} size={16} style={{ color: p.published ? 'var(--primary)' : 'var(--text-muted)' }} />
-        <span style={{ flex: 1 }}>Publish…</span>
-        <span style={{ fontSize: 11, color: p.published ? 'var(--primary)' : 'var(--text-muted)' }}>{p.published ? 'Published' : 'Public link'}</span>
-      </button>
+      {p.onPublish && (
+        <button
+          type="button"
+          onClick={p.onPublish}
+          style={{ ...rowBase, width: '100%', border: 'none', background: 'transparent', color: 'var(--text-main)', cursor: 'pointer', textAlign: 'left' }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-surface-high)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+        >
+          <Icon path={mdiWeb} size={16} style={{ color: p.published ? 'var(--primary)' : 'var(--text-muted)' }} />
+          <span style={{ flex: 1 }}>Publish…</span>
+          <span style={{ fontSize: 11, color: p.published ? 'var(--primary)' : 'var(--text-muted)' }}>{p.published ? 'Published' : 'Public link'}</span>
+        </button>
+      )}
       <div style={rowBase}>
         <Icon path={mdiDockTop} size={16} style={{ color: 'var(--text-muted)' }} />
         <span style={{ flex: 1 }}>Toolbar at the top</span>

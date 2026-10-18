@@ -22,7 +22,7 @@ import { BackupCompare } from './BackupCompare';
 import { Select } from './Select';
 import type { ThemeMode } from '@noted/theme';
 import { THEME_PRESETS } from '@noted/theme';
-import { MIN_PASSPHRASE_LENGTH } from '@noted/config';
+import { MIN_PASSPHRASE_LENGTH, normalizeServerUrl } from '@noted/config';
 import { Icon } from './Icon';
 import { PasswordInput } from './PasswordInput';
 import { formatDateTime } from './format-date';
@@ -51,8 +51,10 @@ export interface SettingsHost {
   // Files: a save dialog (false = cancelled) and an open dialog for a text file.
   saveFile: (name: string, data: Uint8Array | string) => Promise<boolean>;
   openTextFile: (extensions: string[]) => Promise<string | null>;
-  // Sync
+  // Sync ('' = this device works without a server)
   serverUrl: string;
+  // Only without a server: moves this device's vault to a server (or joins the same vault there).
+  connectServer?: (base: string, setupCode: string) => Promise<void>;
   online: boolean;
   syncing: boolean;
   lastSyncAt: number | null;
@@ -272,7 +274,7 @@ function ChangePassphraseModal({ host, onClose }: { host: SettingsHost; onClose:
     setBusy(true);
     try {
       const info = await fetchVault();
-      if (!info) throw new Error('No vault on the server.');
+      if (!info) throw new Error('No vault found.');
       const salt = Uint8Array.from(atob(info.salt), (c) => c.charCodeAt(0));
       const dataKey = openWithPassphraseKey(info, await host.deriveKey(current, salt));
       if (!dataKey || dataKey.some((b, i) => b !== host.masterKey[i])) throw new Error('The current passphrase is wrong.');
@@ -343,7 +345,7 @@ function AccountSection({ host }: { host: SettingsHost }) {
           <div style={{ fontSize: 11, color: 'var(--primary)' }}>End-to-end encrypted</div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>Your vault</div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-            {host.serverUrl.replace(/^https?:\/\//, '')} • {vault?.createdAt ? `Created ${formatDateTime(vault.createdAt).slice(0, 10)}` : 'Created before settings existed'}
+            {host.serverUrl ? host.serverUrl.replace(/^https?:\/\//, '') : 'This device only'} • {vault?.createdAt ? `Created ${formatDateTime(vault.createdAt).slice(0, 10)}` : 'Created before settings existed'}
           </div>
           {stats && (
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
@@ -368,12 +370,14 @@ function AccountSection({ host }: { host: SettingsHost }) {
       <Row title="Log out" description="Removes the key from this device. Its notes stay here encrypted and come back when you unlock again.">
         <button type="button" style={btn('danger')} onClick={() => setModal('logout')}>Log out</button>
       </Row>
-      <Row
-        title="Log out from all other devices"
-        description="Every other device has to enter the passphrase again. A device that someone else already unlocked keeps the notes it has stored."
-      >
-        <button type="button" style={btn('danger')} onClick={() => setModal('logoutOthers')}>Log out from all other devices</button>
-      </Row>
+      {host.serverUrl && (
+        <Row
+          title="Log out from all other devices"
+          description="Every other device has to enter the passphrase again. A device that someone else already unlocked keeps the notes it has stored."
+        >
+          <button type="button" style={btn('danger')} onClick={() => setModal('logoutOthers')}>Log out from all other devices</button>
+        </Row>
+      )}
 
       {modal === 'recovery' && <RecoveryKeyModal host={host} onClose={() => { setModal(null); reload(); }} />}
       {modal === 'passphrase' && <ChangePassphraseModal host={host} onClose={() => setModal(null)} />}
@@ -416,6 +420,7 @@ function SyncSection({ host }: { host: SettingsHost }) {
     return () => clearTimeout(wait);
   }, [phase]);
   const busy = phase === 'syncing' || host.syncing;
+  if (!host.serverUrl) return host.connectServer ? <ConnectServerRow connect={host.connectServer} /> : null;
   return (
     <>
       <Row title="Server" description={host.serverUrl}>
@@ -437,6 +442,50 @@ function SyncSection({ host }: { host: SettingsHost }) {
         <style>{'@keyframes noted-spin { to { transform: rotate(-360deg); } }'}</style>
       </Row>
       {host.findCleanup && host.runCleanup && <CleanupRow find={host.findCleanup} run={host.runCleanup} />}
+    </>
+  );
+}
+
+// A device without a server: notes stay here until the vault goes to a server.
+function ConnectServerRow({ connect }: { connect: (base: string, setupCode: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [address, setAddress] = useState('');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async () => {
+    setError(null);
+    const base = normalizeServerUrl(address);
+    if (!base) return setError('Enter the server address, e.g. https://notes.example.com or 100.64.0.1:3333.');
+    setBusy(true);
+    try {
+      await connect(base, code);
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Row title="Server" description="None: your notes are kept on this device only, so make backups (Backup & export). With a server of your own they sync between your devices.">
+        <button type="button" style={btn('primary')} onClick={() => setOpen(true)}>Connect a server…</button>
+      </Row>
+      {open && (
+        <Modal title="Connect a server" onClose={() => setOpen(false)}>
+          <form onSubmit={(e) => { e.preventDefault(); submit(); }}>
+            <div style={note}>
+              Your vault (the same passphrase and recovery key) moves to the server, then every note is uploaded, encrypted
+              as always. A new server asks for the setup code from its log; a server that already holds this vault needs none.
+            </div>
+            <input autoFocus placeholder="https://notes.example.com" value={address} spellCheck={false} onChange={(e) => setAddress(e.target.value)} style={field} />
+            <input placeholder="Setup code (new server only)" value={code} spellCheck={false} onChange={(e) => setCode(e.target.value)} style={{ ...field, fontFamily: 'monospace' }} />
+            {error && <div style={errorText}>{error}</div>}
+            <button type="submit" disabled={busy} style={btn('primary')}>{busy ? 'Connecting…' : 'Connect'}</button>
+          </form>
+        </Modal>
+      )}
     </>
   );
 }
@@ -947,13 +996,15 @@ function BackupSection({ host }: { host: SettingsHost }) {
         })}>Open backup…</button>
       </Row>
       {messageAt('restore')}
-      <Row title="Set up the server from a backup" description="Only for a new or replaced server that has no vault yet: the vault comes back from the backup (same passphrase and recovery key), then all notes are uploaded.">
-        <button type="button" disabled={!!busy} style={btn()} onClick={() => run('server', async () => {
-          const text = await host.openTextFile(['nbackup', 'json']);
-          return text === null ? null : host.setUpServer(text);
-        })}>{busy === 'server' ? 'Working…' : 'Choose backup…'}</button>
-      </Row>
-      {messageAt('server')}
+      {host.serverUrl && (
+        <Row title="Set up the server from a backup" description="Only for a new or replaced server that has no vault yet: the vault comes back from the backup (same passphrase and recovery key), then all notes are uploaded.">
+          <button type="button" disabled={!!busy} style={btn()} onClick={() => run('server', async () => {
+            const text = await host.openTextFile(['nbackup', 'json']);
+            return text === null ? null : host.setUpServer(text);
+          })}>{busy === 'server' ? 'Working…' : 'Choose backup…'}</button>
+        </Row>
+      )}
+      {host.serverUrl && messageAt('server')}
       <Heading>Automatic backups</Heading>
       <Row title="Automatic backups" description={`Made when Noted runs and one is due; the newest 10 are kept.${auto.last ? ` Last one: ${formatDateTime(auto.last)}.` : ''}`}>
         <Segmented value={auto.interval} options={[['off', 'Never'], ['daily', 'Daily'], ['weekly', 'Weekly']]} onChange={(interval) => host.onAutoBackup({ ...auto, interval })} />

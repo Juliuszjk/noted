@@ -96,8 +96,7 @@ default, stored on first start. Unlock screens ask for the address when none is 
 change" link; `normalizeServerUrl`: IP / localhost -> http, host name -> https) and check it with
 `GET /info` (`{app:'noted', version, publicUrl}`, env `NOTED_PUBLIC_URL`; `connectServer`,
 `refreshServerInfo` at start adopts a reported public address). `putPublished` refuses without a
-public address. Caveat until phase 2: changing the server on a device that still holds another
-vault's local notes is not guarded. Compose: `infra/docker/.env` (`NOTED_BIND_IP`, `NOTED_PUBLIC_URL`, not in git).
+public address. Compose: `infra/docker/.env` (`NOTED_BIND_IP`, `NOTED_PUBLIC_URL`, not in git).
 Self-hosting (phase 3, 2026-10-18): a server without a vault needs a **setup code** to create it
 (`apps/api/src/setup-code.ts`: env `NOTED_SETUP_CODE` or generated into `data/setup-code`, printed
 to the log; `GET /vault` 404 says `setupCode: true`; `PUT /vault` header `X-Setup-Code`, 403 + 1 s
@@ -107,6 +106,20 @@ server" refuses on such a server: use the unlock screen). Image `ghcr.io/juliusz
 (`.github/workflows/server-image.yml`, amd64 + arm64, on `v*` tags or by hand), friends' compose
 `infra/docker/compose.example.yml`, guide `SELF-HOSTING.md`. Dockerfile TZ defaults to UTC, the
 maintainer's compose sets `TZ` (Europe/Warsaw).
+Local-only mode (phase 2, 2026-10-18): server address `{api: '', public: ''}` stored = no server
+(`hasServer()` false). `apiFetch` then rejects without sending (`NO_SERVER_MESSAGE`),
+`runSyncEngine` / `uploadPendingBlobs` return at once (blobs stay queued). The vault row lives on
+the device: `configureLocalVault` (desktop localStorage `noted_local_vault`, phone SecureStore
+`noted_local_vault` in `src/server-address.ts`), record = `BackupVault`; `fetchVaultStatus`,
+`changePassphrase`, `getRecoveryKey`, `fetchBackupVault`, `restoreServerVault` use it without a
+server; `createLocalVault`. Unlock screens: "Use without a server", and refuse a vault other than
+the one whose notes the device holds (`knownVerifier` = cached vault info `noted_vault_info`).
+Later "Settings > Sync > Connect a server" = `moveVaultToServer` (empty server: PUT /vault with the
+envelopes + setup code; same vault there: joins with its epoch; other vault: refused; failure
+restores "no server"), then the apps flip `serverOn` and sync. Hidden without a server: publish
+(desktop NoteProperties / NoteEditor `onPublish`, phone menu tile + `openPublish`), log out other
+devices, clean up storage, set up the server from a backup, background sync row; status bar /
+drawer say "This device / phone only".
 
 ## Security model (do not break)
 

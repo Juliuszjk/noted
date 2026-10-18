@@ -1,9 +1,10 @@
-import { apiUrl } from '@noted/config';
+import { apiUrl, hasServer, serverAddress, setServerAddress } from '@noted/config';
 import {
   base64ToBytes, bytesToBase64, checkVerifier, deriveAuthToken, generateKey, recoveryWrappingKey, seal, unseal,
   unwrapKey, wrapKey,
 } from '@noted/crypto';
 import { apiFetch, getAuthEpoch, setAuthEpoch } from './client';
+import { fetchServerInfo } from './server-info';
 
 // The vault and the account settings: passphrase change, recovery key, logging out other
 // devices. The data key (that encrypts every note) never changes; the passphrase's key and
@@ -22,7 +23,12 @@ export interface VaultInfo {
 const NO_KEY = new Uint8Array(32);
 
 // The vault, or null and whether creating one needs the server's setup code (its log shows it).
+// Without a server: the vault kept on this device.
 export const fetchVaultStatus = async (): Promise<{ info: VaultInfo | null; setupCode: boolean }> => {
+  if (!hasServer()) {
+    const local = readLocalVault();
+    return { info: local ? vaultInfoOf(local) : null, setupCode: false };
+  }
   const res = await apiFetch(`${apiUrl()}/vault`, NO_KEY);
   if (res.status === 404) {
     const body = await res.json().catch(() => null);
@@ -71,6 +77,10 @@ const check = async (res: Response, what: string) => {
 
 // New passphrase: `newSalt` and `newPassphraseKey` = Argon2id(new passphrase, newSalt).
 export const changePassphrase = async (dataKey: Uint8Array, newSalt: Uint8Array, newPassphraseKey: Uint8Array): Promise<void> => {
+  if (!hasServer()) {
+    writeLocalVault({ ...requireLocalVault(), salt: bytesToBase64(newSalt), keyEnvelope: wrapKey(newPassphraseKey, dataKey) });
+    return;
+  }
   const res = await apiFetch(`${apiUrl()}/account/password`, dataKey, {
     method: 'PUT', ...json({ salt: bytesToBase64(newSalt), key_envelope: wrapKey(newPassphraseKey, dataKey) }),
   });
@@ -80,6 +90,16 @@ export const changePassphrase = async (dataKey: Uint8Array, newSalt: Uint8Array,
 // The recovery key: the saved one, or (with `renew`, or when none exists yet) a new one that
 // replaces it on the server.
 export const getRecoveryKey = async (dataKey: Uint8Array, renew = false): Promise<Uint8Array> => {
+  if (!hasServer()) {
+    const local = requireLocalVault();
+    if (!renew && local.recoverySealed) {
+      const key = unseal(dataKey, local.recoverySealed);
+      if (key.length === 32) return key;
+    }
+    const recoveryKey = generateKey();
+    writeLocalVault({ ...local, recoveryEnvelope: wrapKey(recoveryWrappingKey(recoveryKey), dataKey), recoverySealed: seal(dataKey, recoveryKey) });
+    return recoveryKey;
+  }
   if (!renew) {
     const res = await apiFetch(`${apiUrl()}/account/recovery`, dataKey);
     await check(res, 'Reading the recovery key');
@@ -156,6 +176,7 @@ export interface BackupVault {
 }
 
 export const fetchBackupVault = async (dataKey: Uint8Array): Promise<BackupVault | null> => {
+  if (!hasServer()) return readLocalVault();
   const info = await fetchVault();
   if (!info) return null;
   let recoverySealed: string | null = null;
@@ -174,8 +195,14 @@ export const vaultInfoOf = (v: BackupVault): VaultInfo => ({
 
 // The server has no vault (new or replaced server): put the backup's vault there, so the same
 // passphrase, recovery key and data key work again. `epoch` = this device's auth epoch.
+// Without a server the vault is kept on this device instead.
 export const restoreServerVault = async (dataKey: Uint8Array, v: BackupVault, epoch = 0, setupCode?: string): Promise<void> => {
   if (!verifies(vaultInfoOf(v), dataKey)) throw new Error('This backup belongs to another vault (a different key).');
+  if (!hasServer()) {
+    if (readLocalVault()) throw new Error('This device already has a vault, so nothing was changed.');
+    writeLocalVault(v);
+    return;
+  }
   const res = await apiFetch(`${apiUrl()}/vault`, dataKey, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...setupCodeHeader(setupCode) },
@@ -197,5 +224,70 @@ export const parseVaultInfo = (text: string | null): VaultInfo | null => {
     return v && typeof v.salt === 'string' && typeof v.verifier === 'string' ? v as VaultInfo : null;
   } catch {
     return null;
+  }
+};
+
+// ---- a vault without a server (local only) ----
+// What the server's vault row would hold, kept by the app instead (desktop localStorage, phone
+// SecureStore). The same data goes to a server when the device connects to one later.
+
+export interface LocalVaultStorage {
+  load(): string | null;
+  save(text: string): void;
+}
+
+let localVaultStorage: LocalVaultStorage | null = null;
+export const configureLocalVault = (storage: LocalVaultStorage): void => { localVaultStorage = storage; };
+
+export const readLocalVault = (): BackupVault | null => {
+  try {
+    const v = JSON.parse(localVaultStorage?.load() ?? 'null');
+    return v && typeof v.salt === 'string' && typeof v.verifier === 'string'
+      ? { salt: v.salt, verifier: v.verifier, keyEnvelope: v.keyEnvelope ?? null, recoveryEnvelope: v.recoveryEnvelope ?? null, recoverySealed: v.recoverySealed ?? null, createdAt: v.createdAt ?? null }
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeLocalVault = (v: BackupVault): void => {
+  if (!localVaultStorage) throw new Error('This app cannot keep a vault without a server.');
+  localVaultStorage.save(JSON.stringify(v));
+};
+
+const requireLocalVault = (): BackupVault => {
+  const v = readLocalVault();
+  if (!v) throw new Error('This device has no vault.');
+  return v;
+};
+
+// A new vault on this device only (no server). `verifier` = packed createVerifier(key).
+export const createLocalVault = (salt: Uint8Array, verifier: string): void => {
+  if (hasServer()) throw new Error('This device has a server: the vault is created there.');
+  if (readLocalVault()) throw new Error('This device already has a vault.');
+  writeLocalVault({ salt: bytesToBase64(salt), verifier, keyEnvelope: null, recoveryEnvelope: null, recoverySealed: null, createdAt: Date.now() });
+};
+
+// A device without a server starts syncing with `base`: an empty server gets this vault (needs
+// its setup code), a server with this same vault is joined; another vault's server is refused.
+// Returns the auth epoch to keep. On failure the device stays without a server.
+export const moveVaultToServer = async (dataKey: Uint8Array, base: string, setupCode?: string): Promise<number> => {
+  if (hasServer()) throw new Error('This device already has a server.');
+  const local = requireLocalVault();
+  const info = await fetchServerInfo(base);
+  const before = serverAddress();
+  setServerAddress({ api: base, public: info.publicUrl });
+  try {
+    const { info: existing } = await fetchVaultStatus();
+    if (existing) {
+      if (!verifies(existing, dataKey)) throw new Error('This server holds another vault (a different passphrase). Nothing was changed.');
+      setAuthEpoch(existing.authEpoch);
+      return existing.authEpoch;
+    }
+    await restoreServerVault(dataKey, local, 0, setupCode);
+    return 0;
+  } catch (e) {
+    setServerAddress(before);
+    throw e;
   }
 };

@@ -14,6 +14,7 @@ import { relativeTime } from '@noted/ui/src/note-list';
 import { formatDateTime } from '@noted/ui/src/format-date';
 import { T, Icon, PasswordField, ThemedSwitch, Select, themed } from './ui';
 import { getNoteMenuLayout } from './note-menu-layout';
+import { hasServer } from '@noted/config';
 
 const HOUR = 60 * 60 * 1000;
 const EXPIRY: [string, string, number | null][] = [
@@ -416,7 +417,7 @@ export function NoteMenu(p: Props) {
                   case 'export': return tile('export', 'Export', mdiExportVariant, () => setPage('export'));
                   case 'files': return tile('files', p.attachments ? `Attached files (${p.attachments.length})` : 'Attached files', mdiPaperclip, () => setPage('files'));
                   case 'history': return tile('history', 'History', mdiHistory, () => setPage('history'));
-                  case 'publish': return p.locked ? null : tile('publish', p.published ? 'Published' : 'Publish', mdiWeb, () => setPage('publish'));
+                  case 'publish': return p.locked || !hasServer() ? null : tile('publish', p.published ? 'Published' : 'Publish', mdiWeb, () => setPage('publish'));
                   default: return null;
                 }
               })}

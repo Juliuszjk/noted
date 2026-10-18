@@ -47,10 +47,11 @@ import {
 import { SettingsScreen } from './SettingsScreen';
 import type { NoteMeta, CatalogKind, CatalogEntry, SharedEditorPrefs, OwnReminder } from '@noted/sync';
 import { NoteRecord } from '@noted/types';
-import { wsUrl, SYNC_INTERVAL_MS, WS_STALE_MS } from '@noted/config';
+import { wsUrl, hasServer, SYNC_INTERVAL_MS, WS_STALE_MS } from '@noted/config';
 import { EditorScreen } from './EditorScreen';
 import { startLiveOwner, getLiveOwner } from './live';
-import { getNotePublish } from '@noted/sync';
+import { getNotePublish, moveVaultToServer, refreshServerInfo } from '@noted/sync';
+import { saveAuthEpoch } from './storage';
 import { Drawer } from './Drawer';
 import { Sheet } from './Sheet';
 import { TabsSheet } from './TabsSheet';
@@ -76,6 +77,8 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
   const [online, setOnline] = useState(false);
   // The last sync reached the server (the WebSocket can be down while syncing works).
   const [serverOk, setServerOk] = useState(false);
+  // false = this phone works without a server (nothing is sent); true after connecting one.
+  const [serverOn, setServerOn] = useState(hasServer);
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -93,6 +96,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
   };
 
   const syncWithServer = async () => {
+    if (!hasServer()) return;
     if (syncingRef.current) {
       syncAgainRef.current = true;
       return;
@@ -199,7 +203,8 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
       watchdog = setInterval(() => { if (Date.now() - lastMessageAt > WS_STALE_MS) drop(); }, 10000);
     };
 
-    connect();
+    // Without a server nothing connects (runs again once one is connected).
+    if (serverOn) connect();
     // Notes in the trash for more than 7 days are deleted for good, then the list loads.
     // Meta saved by older versions gets its reminders indexed (locally, nothing is uploaded).
     purgeExpiredTrash(masterKey, dbStore).catch(() => 0)
@@ -217,7 +222,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
       if (intervalRef.current) clearInterval(intervalRef.current);
       detach();
     };
-  }, [masterKey]);
+  }, [masterKey, serverOn]);
 
   // Decrypted metadata of every note: list, views, titles of note links.
   // Rows are painted again after a theme change.
@@ -992,7 +997,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
             if ('id' in view && view.id === id) setView({ kind: 'notes' });
           }}
           onSettings={() => { setDrawerOpen(false); setSettingsOpen(true); }}
-          sync={{ online: isOnline, syncing, status: syncStatus, lastSyncAt, onSync: () => syncWithServer() }}
+          sync={{ online: isOnline, localOnly: !serverOn, syncing, status: syncStatus, lastSyncAt, onSync: () => syncWithServer() }}
           onClose={() => setDrawerOpen(false)}
         />
       ) : null}
@@ -1098,6 +1103,12 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
           syncing={syncing}
           notebookNames={new Map(catalog.notebooks.map((n) => [n.id, n.name]))}
           onSyncNow={syncWithServer}
+          onConnectServer={serverOn ? undefined : async (base, setupCode) => {
+            await saveAuthEpoch(await moveVaultToServer(masterKey, base, setupCode));
+            setServerOn(true);
+            refreshServerInfo();
+            syncWithServer();
+          }}
           onSharedPrefs={setSharedPrefs}
           onCompareNote={(id, state, createdAt) => {
             setSettingsOpen(false);

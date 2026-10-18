@@ -4,6 +4,10 @@ import { createLiveOwner } from './live-owner';
 import { liveKeys, sealUpdate, unsealUpdate, LIVE_ORIGIN } from './live';
 import { setTitle, getTitleText } from './note-meta';
 import type { NotePublish } from './note-meta';
+import { setServerAddress } from '@noted/config';
+
+// Requests go to a stubbed fetch; any address will do (builds may have no default).
+setServerAddress({ api: 'http://test.invalid', public: '' });
 
 const KEY = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';
 const info = (editable: boolean): NotePublish => ({ id: 'abcdefghijklmnop', key: KEY, at: 1, live: true, editable });

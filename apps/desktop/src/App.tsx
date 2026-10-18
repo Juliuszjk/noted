@@ -6,10 +6,10 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
-import { apiUrl, SYNC_INTERVAL_MS, wsUrl, WS_STALE_MS, KEY_STORAGE, VERIFIER_STORAGE, SERVER_STORAGE, configureServerStorage } from '@noted/config';
+import { apiUrl, hasServer, SYNC_INTERVAL_MS, wsUrl, WS_STALE_MS, KEY_STORAGE, VERIFIER_STORAGE, SERVER_STORAGE, configureServerStorage } from '@noted/config';
 import { NoteRecord } from '@noted/types';
 import {
-  runSyncEngine, uploadPendingBlobs, LocalNoteStore, mergingNoteStore, configureVerifierCache, refreshServerInfo, buildNoteMeta, encodeNoteMeta,
+  runSyncEngine, uploadPendingBlobs, LocalNoteStore, mergingNoteStore, configureVerifierCache, configureLocalVault, moveVaultToServer, refreshServerInfo, buildNoteMeta, encodeNoteMeta,
   decodeNoteMeta, displayTitle, setTitle, markNoteCreated, setNoteFlag, getNoteFlag, setNoteTrashed,
   deleteNoteForever, unpublishQuietly, uploadPublished, deletePublished, publishedExists, publishExpired, getNotePublish, setNotePublish, setNoteNotebook, getNoteNotebooks, setNoteTag, getNoteTags, setNoteFont, getNoteFont, CATALOG_ID, isSystemNote,
   listCatalog, getSharedEditorPrefs, refreshStaleNoteMeta, listOwnReminders, setOwnReminder, deleteOwnReminder, updateReminderInDoc, setSharedEditorPrefs, sharedPrefsChange, SHARED_EDITOR_PREFS, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, purgeExpiredTrash, getTitleText, getNoteSettings,
@@ -30,6 +30,8 @@ configureVerifierCache({
 });
 // The server this device talks to (chosen on the unlock screen), kept in localStorage too.
 configureServerStorage(() => localStorage.getItem(SERVER_STORAGE), (text) => localStorage.setItem(SERVER_STORAGE, text));
+// Without a server the vault's data (salt, verifier, envelopes) lives here instead.
+configureLocalVault({ load: () => localStorage.getItem('noted_local_vault'), save: (text) => localStorage.setItem('noted_local_vault', text) });
 import { bytesToBase64, base64ToBytes, seal, unseal, deriveMasterKey, generateSalt } from '@noted/crypto';
 import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
@@ -175,6 +177,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   const magnifier = useMagnifier(activeNote?.id ?? null);
   const [syncMessage, setSyncMessage] = useState('');
   const [online, setOnline] = useState(false);
+  // false = this device works without a server (nothing is sent); true after connecting one.
+  const [serverOn, setServerOn] = useState(hasServer);
   const [syncing, setSyncing] = useState(false);
   // Settings > Sync: when a sync last reached the server.
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
@@ -263,6 +267,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   // The server may report a new public address for published notes.
   useEffect(() => { refreshServerInfo(); }, []);
   useEffect(() => {
+    if (!serverOn) return;
     const probe = async () => {
       try {
         const res = await fetch(`${apiUrl()}/`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
@@ -281,11 +286,11 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
       window.removeEventListener('online', probe);
       window.removeEventListener('offline', probe);
     };
-  }, []);
+  }, [serverOn]);
 
   // ---- realtime channel ----
   useEffect(() => {
-    if (!db) return;
+    if (!db || !serverOn) return;
     let socket: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let watchdog: ReturnType<typeof setInterval> | null = null;
@@ -530,6 +535,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   });
 
   const syncWithServer = async (database: Database) => {
+    if (!hasServer()) return;
     if (syncingRef.current) {
       syncAgainRef.current = true;
       return;
@@ -1704,7 +1710,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                   restore={restore && restore.noteId === activeNote.id ? restore : null}
                   findSlot={findSlot}
                   onSaveExport={saveExport}
-                  onPublish={lockedCopy ? undefined : publishActive}
+                  onPublish={lockedCopy || !serverOn ? undefined : publishActive}
                 />
                 )}
               </div>
@@ -1764,7 +1770,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
             trashed={!!activeMeta.meta.trashedAt}
             onExport={() => window.dispatchEvent(new Event('noted:export'))}
             published={!!getNotePublish(activeNote.ydoc)}
-            onPublish={() => window.dispatchEvent(new Event('noted:publish'))}
+            onPublish={serverOn ? () => window.dispatchEvent(new Event('noted:publish')) : undefined}
             onTrash={() => noteAction([activeNote.id], 'trash')}
             onRestore={() => noteAction([activeNote.id], 'restore')}
             onDeleteForever={() => noteAction([activeNote.id], 'deleteForever')}
@@ -1775,6 +1781,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
       </div>
       <StatusBar
         online={online}
+        localOnly={!serverOn}
         syncing={syncing}
         synced={synced}
         onSync={() => { if (db) syncWithServer(db); }}
@@ -1845,8 +1852,15 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
             onEpochChanged: (epoch) => { writeEpoch(epoch); reconnectRef.current?.(); },
             saveFile: saveFileDialog,
             openTextFile: openTextFileDialog,
-            serverUrl: apiUrl(),
+            serverUrl: serverOn ? apiUrl() : '',
             online,
+            // A device without a server: its vault goes to (or joins) a server, then syncs.
+            connectServer: serverOn ? undefined : async (base, setupCode) => {
+              writeEpoch(await moveVaultToServer(masterKey, base, setupCode));
+              setServerOn(true);
+              refreshServerInfo();
+              if (db) syncWithServer(db);
+            },
             syncing,
             lastSyncAt,
             onSyncNow: () => { if (db) syncWithServer(db); },
@@ -1890,7 +1904,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
               setDownloadFolder(path);
             },
             // Settings > Sync "Clean up storage".
-            findCleanup: async (includeRecent) => {
+            findCleanup: !serverOn ? undefined : async (includeRecent) => {
               if (!db) throw new Error('Not ready yet');
               const store = noteStore(db);
               const deleted = await deletedNoteIds(masterKey, store);
@@ -1901,7 +1915,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
               const files = await findUnusedBlobs(masterKey, store, vaultKey, fromHistory, Date.now(), includeRecent ? 0 : BLOB_GRACE_MS);
               return { deletedNotes: deleted, fileIds: files.blobs.map((b) => b.id), fileBytes: files.bytes };
             },
-            runCleanup: async (plan) => {
+            runCleanup: !serverOn ? undefined : async (plan) => {
               if (!db) throw new Error('Not ready yet');
               const store = noteStore(db);
               const notesDone = await purgeDeletedNotes(masterKey, store, plan.deletedNotes);
@@ -2075,7 +2089,7 @@ export default function App() {
   return (
     <>
       {notice && <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', padding: '8px 14px', borderRadius: 8, fontSize: 13, backgroundColor: 'var(--bg-surface-high)', border: '1px solid var(--border)' }}>{notice}</div>}
-      <UnlockScreen onUnlock={(key: Uint8Array, epoch: number, backupText?: string) => {
+      <UnlockScreen knownVerifier={parseVaultInfo(readCachedVaultInfo())?.verifier ?? null} onUnlock={(key: Uint8Array, epoch: number, backupText?: string) => {
         setRestoreText(backupText);
         localStorage.setItem(KEY_STORAGE, bytesToBase64(key));
         writeEpoch(epoch);

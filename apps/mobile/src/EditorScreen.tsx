@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, BackHandler, Keyboard, AppState, Linking, Share, Platform, ToastAndroid, Dimensions } from 'react-native';
 import { appAlert, onDialogShown } from './Dialog';
+import { hasServer } from '@noted/config';
 import { rememberKeyboardHeight } from './keyboard-height';
 import * as Clipboard from 'expo-clipboard';
 import * as Print from 'expo-print';
@@ -283,7 +284,7 @@ export function EditorScreen({
       if (msg.type === 'ready') {
         readyRef.current = true;
         sendToEditor({ type: 'theme', colors: T });
-        sendToEditor({ type: 'editorPrefs', prefs: getEditorPrefs(), toolbar: getToolbarConfig(), tableToolbar: getTableToolbarConfig(), drawingToolbar: getDrawingToolbarConfig(), drawingTools: getDrawingTools() });
+        sendToEditor({ type: 'editorPrefs', canPublish: hasServer(), prefs: getEditorPrefs(), toolbar: getToolbarConfig(), tableToolbar: getTableToolbarConfig(), drawingToolbar: getDrawingToolbarConfig(), drawingTools: getDrawingTools() });
         sendToEditor({ type: 'titles', titles: titlesRef.current, places: placesRef.current, archived: archivedRef.current, currentId: note.id });
         sendToEditor({ type: 'catalog', ...catalogRef.current });
         pushState('init');
@@ -348,7 +349,8 @@ export function EditorScreen({
         payloadWaiterRef.current?.(typeof msg.data === 'string' ? base64ToBytes(msg.data) : null);
         payloadWaiterRef.current = null;
       } else if (msg.type === 'openPublish') {
-        openMenu('publish');
+        if (hasServer()) openMenu('publish');
+        else appAlert('Publishing needs a server', 'This phone works without a server, so there is nowhere to publish to. Settings > Sync connects one.');
       } else if (msg.type === 'text' && typeof msg.text === 'string') {
         if (msg.purpose === 'share') Share.share({ message: msg.text, title: msg.title || undefined }).catch(() => {});
         else Clipboard.setStringAsync(msg.text);
@@ -459,7 +461,7 @@ export function EditorScreen({
 
   // Settings > Editor / Toolbar changed while the note is open.
   useEffect(() => onPrefsChange(() => {
-    if (readyRef.current) sendToEditor({ type: 'editorPrefs', prefs: getEditorPrefs(), toolbar: getToolbarConfig(), tableToolbar: getTableToolbarConfig(), drawingToolbar: getDrawingToolbarConfig() });
+    if (readyRef.current) sendToEditor({ type: 'editorPrefs', canPublish: hasServer(), prefs: getEditorPrefs(), toolbar: getToolbarConfig(), tableToolbar: getTableToolbarConfig(), drawingToolbar: getDrawingToolbarConfig() });
   }), []);
 
   const catalogRef = useRef(catalog);
