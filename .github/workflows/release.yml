@@ -57,12 +57,18 @@ jobs:
       - run: pnpm install --frozen-lockfile --filter "desktop..."
       # No built-in server address: the apps ask on the first screen.
       - run: cp packages/config/server.example.ts packages/config/server.ts
+      # Updater: signed update bundles + latest.json in the release (the apps read
+      # releases/latest/download/latest.json); VITE_NOTED_UPDATES turns the app's check on.
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VITE_NOTED_UPDATES: '1'
         with:
           projectPath: apps/desktop
           releaseId: ${{ needs.draft.outputs.id }}
+          args: --config {"bundle":{"createUpdaterArtifacts":true}}
 
   android:
     needs: draft
@@ -99,7 +105,10 @@ jobs:
           echo "$KEYSTORE" | base64 -d > "$dir/release.keystore"
           printf 'NOTED_RELEASE_STORE_FILE=%s\nNOTED_RELEASE_STORE_PASSWORD=%s\nNOTED_RELEASE_KEY_ALIAS=%s\nNOTED_RELEASE_KEY_PASSWORD=%s\n' \
             "$dir/release.keystore" "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > "$dir/signing.properties"
-      - run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --console=plain -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+      # EXPO_PUBLIC_NOTED_UPDATES: the release APK looks for newer releases (src/updates.ts).
+      - env:
+          EXPO_PUBLIC_NOTED_UPDATES: '1'
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --console=plain -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
         working-directory: apps/mobile/android
       - env:
           GH_TOKEN: ${{ github.token }}

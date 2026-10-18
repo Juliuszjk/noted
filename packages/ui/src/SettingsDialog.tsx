@@ -125,6 +125,8 @@ export interface SettingsHost {
   runImport?: (source: ImportSource, files: ImportFile[], on: ImportProgress) => Promise<{ notes: number; skipped?: number; errors: string[] }>;
   // Files dragged over the window (the import drop zone listens while it is shown).
   onFileDrop?: (listener: (event: { type: 'over' | 'leave' | 'drop'; paths: string[] }) => void) => () => void;
+  // The app's version; `onCheck` (release builds only) looks for a newer one.
+  version?: { current: string; onCheck?: () => void };
   // Desktop integration (absent where it does not apply)
   desktop?: {
     autostart: boolean;
@@ -143,7 +145,7 @@ const SECTIONS: { group: string; id: SectionId; label: string; icon: string; key
   { group: 'Customization', id: 'editor', label: 'Editor', icon: mdiFormatText, keywords: 'default title font size ligatures arrows spell check spellcheck languages dictionary words' },
   { group: 'Customization', id: 'toolbar', label: 'Toolbar', icon: mdiDockTop, keywords: 'toolbar buttons customize order hide' },
   { group: 'Customization', id: 'shortcuts', label: 'Keyboard shortcuts', icon: mdiKeyboardOutline, keywords: 'keyboard shortcuts keys hotkeys keybindings ctrl tab' },
-  { group: 'Customization', id: 'desktop', label: 'Desktop integration', icon: mdiMonitor, keywords: 'autostart startup tray minimize close system' },
+  { group: 'Customization', id: 'desktop', label: 'Desktop integration', icon: mdiMonitor, keywords: 'autostart startup tray minimize close system version update updates' },
   { group: 'Import & export', id: 'import', label: 'Importer', icon: mdiImport, keywords: 'import markdown obsidian notesnook text html zip' },
   { group: 'Import & export', id: 'backup', label: 'Backup & export', icon: mdiBackupRestore, keywords: 'backup restore automatic export markdown text html zip attachments' },
   { group: 'Privacy & security', id: 'lock', label: 'App lock', icon: mdiLockOutline, keywords: 'app lock password idle inactivity screen' },
@@ -703,6 +705,11 @@ function DesktopSection({ host }: { host: SettingsHost }) {
       <Row title="Close to the system tray" description="Closing the window keeps Noted running in the tray (Quit from the tray menu ends it).">
         <Switch on={d.closeToTray} onChange={(closeToTray) => set({ closeToTray })} />
       </Row>
+      {host.version && (
+        <Row title={`Noted ${host.version.current}`} description={host.version.onCheck ? 'Noted looks for a new version at start and twice a day.' : 'Built from source: updates come with the next build.'}>
+          {host.version.onCheck && <button type="button" style={btn()} onClick={host.version.onCheck}>Check for updates</button>}
+        </Row>
+      )}
     </>
   );
 }

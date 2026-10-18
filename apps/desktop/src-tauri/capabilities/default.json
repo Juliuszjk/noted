@@ -127,6 +127,8 @@
           "path": "$APPDATA/blobs/*"
         }
       ]
-    }
+    },
+    "updater:default",
+    "process:allow-restart"
   ]
 }

@@ -13,6 +13,13 @@ struct TrayBehaviour {
     minimize_to_tray: AtomicBool,
 }
 
+// The updater can replace a Windows install or an AppImage; a .deb / .rpm belongs to the
+// package manager (and a binary built from source to whoever built it).
+#[tauri::command]
+fn can_self_update() -> bool {
+    cfg!(windows) || std::env::var_os("APPIMAGE").is_some()
+}
+
 #[tauri::command]
 fn set_tray_behaviour(state: State<TrayBehaviour>, close_to_tray: bool, minimize_to_tray: bool) {
     state.close_to_tray.store(close_to_tray, Ordering::Relaxed);
@@ -353,6 +360,9 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_sql::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        // Updates from the GitHub releases (only release builds made by CI ask, see updates.ts).
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         // The autostart entry starts the app with `--autostart`: it then stays in the tray.
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![AUTOSTART_ARG])))
         .manage(TrayBehaviour::default())
@@ -423,6 +433,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             set_tray_behaviour,
+            can_self_update,
             spellcheck_languages_available,
             set_spellcheck,
             get_custom_words,

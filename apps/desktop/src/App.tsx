@@ -4,6 +4,7 @@ import Database from '@tauri-apps/plugin-sql';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { apiUrl, hasServer, SYNC_INTERVAL_MS, wsUrl, WS_STALE_MS, KEY_STORAGE, VERIFIER_STORAGE, SERVER_STORAGE, configureServerStorage } from '@noted/config';
@@ -60,6 +61,7 @@ import type { DesktopIntegration } from './settings-host';
 import { getThemeMode, setThemeMode } from './theme';
 import { readDownloadFolder, writeDownloadFolder, chooseDownloadFolder } from './download-folder';
 import { useMagnifier } from './magnifier';
+import { UPDATES_ON, checkForUpdates } from './updates';
 import { SplitPane, DropZones, zoneAt, DEFAULT_FLOAT } from './SplitPane';
 import type { SplitMode, SplitSide, FloatBox } from './SplitPane';
 
@@ -144,6 +146,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   const [drawingToolbarConfig, setDrawingToolbarConfig] = useState(readDrawingToolbarConfig);
   const [spellLanguages, setSpellLanguages] = useState<string[]>([]);
   const [desktopIntegration, setDesktopIntegration] = useState<DesktopIntegration>({ autostart: false, closeToTray: false, minimizeToTray: false });
+  const [appVersion, setAppVersion] = useState('');
+  useEffect(() => { getVersion().then(setAppVersion).catch(() => {}); }, []);
   useEffect(() => {
     applyAppZoom(readAppZoom());
     backupFolderPath().then(setBackupFolder, () => {});
@@ -2044,6 +2048,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
             onTableToolbarConfig: (config) => { setTableToolbarConfig(config); writeTableToolbarConfig(config); },
             drawingToolbarConfig,
             onDrawingToolbarConfig: (config) => { setDrawingToolbarConfig(config); writeDrawingToolbarConfig(config); },
+            version: appVersion ? { current: appVersion, onCheck: UPDATES_ON ? () => { checkForUpdates(true); } : undefined } : undefined,
             desktop: {
               ...desktopIntegration,
               onChange: (next) => {

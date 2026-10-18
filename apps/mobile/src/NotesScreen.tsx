@@ -8,6 +8,7 @@ import type { ReminderState } from '@noted/editor/reminder-time';
 import { reminderNotices, parseNoticeId } from '@noted/ui/src/reminder-notify';
 import { syncReminderNotifications, attachReminderHandlers, applyNoticeAction } from './reminder-notifications';
 import { offerUnrestricted } from './battery';
+import { watchForUpdates } from './updates';
 import { updateReminderWidget } from './reminder-widget';
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, PanResponder, BackHandler, AppState, Linking } from 'react-native';
@@ -477,6 +478,8 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     const notices = reminderNotices(reminderList, Date.now());
     void syncReminderNotifications(notices).then(() => { if (notices.length) void offerUnrestricted(); });
   }, [reminderList, loaded]);
+  // New releases (release APKs only, updates.ts).
+  useEffect(() => watchForUpdates(), []);
   // The home screen widget (reminder-widget.tsx) follows the list and the colours.
   useEffect(() => {
     if (loaded) void updateReminderWidget(reminderList);

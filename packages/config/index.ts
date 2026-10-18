@@ -71,3 +71,9 @@ export const REQUEST_TIMEOUT_MS = 8000;
 export const MIN_PASSPHRASE_LENGTH = 12;
 export const KEY_STORAGE = 'noted_master_key';
 export const VERIFIER_STORAGE = 'noted_vault_verifier';
+
+// Releases the apps update from (desktop updater manifest, phone APK check).
+export const RELEASES_PAGE = 'https://github.com/Juliuszjk/noted/releases/latest';
+export const LATEST_RELEASE_API = 'https://api.github.com/repos/Juliuszjk/noted/releases/latest';
+// How often a running app looks for a new version.
+export const UPDATE_CHECK_MS = 12 * 60 * 60 * 1000;

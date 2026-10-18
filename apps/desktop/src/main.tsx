@@ -5,11 +5,13 @@ import { DialogHost } from "@noted/ui";
 import { resolveTheme } from "@noted/theme";
 import { applyTheme, getThemeMode, watchSystemTheme } from "./theme";
 import { routeFileDropsToEditors } from "./file-drop";
+import { watchForUpdates } from "./updates";
 
 // Colours before the first paint, then the system (matugen) theme as soon as it is read.
 applyTheme(resolveTheme(getThemeMode(), null, window.matchMedia('(prefers-color-scheme: dark)').matches));
 watchSystemTheme();
 routeFileDropsToEditors();
+watchForUpdates();
 
 // Focus moving to an element outside the window (scrollIntoView) can still scroll the
 // overflow-hidden document; put it back at once.

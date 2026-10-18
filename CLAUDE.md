@@ -82,7 +82,15 @@ packages/db, crdt   empty
   push the tag: `.github/workflows/release.yml` makes a draft release (Linux AppImage + deb on
   ubuntu-22.04, Windows exe + msi, Android arm64 APK signed with secrets `NOTED_ANDROID_*`) and
   `server-image.yml` pushes the image. Builds use `server.example.ts` (no default server).
-  License AGPL-3.0-or-later (`LICENSE`).
+  License AGPL-3.0-or-later (`LICENSE`). Publish the draft by hand (`gh release edit vX.Y.Z --draft=false --latest`).
+- **Updates** (only CI release builds: `VITE_NOTED_UPDATES=1` / `EXPO_PUBLIC_NOTED_UPDATES=1` in
+  release.yml; local builds never check): desktop `src/updates.ts` (tauri-plugin-updater, manifest
+  `releases/latest/download/latest.json` uploaded by tauri-action with `createUpdaterArtifacts`,
+  signed with secrets `TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)`, public key in tauri.conf.json;
+  installs itself on Windows and in an AppImage (`can_self_update`), otherwise opens the releases
+  page), at start + 20 s and every 12 h, Settings > Desktop integration "Check for updates".
+  Phone `src/updates.ts`: GitHub API latest release, dialog opens the APK download; Settings list
+  shows the version. Repo address: `RELEASES_PAGE` / `LATEST_RELEASE_API` in `@noted/config`.
 
 ## Server
 

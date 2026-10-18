@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet, TextInput, ActivityIndicator, BackHandler, Appearance, AppState } from 'react-native';
 import { appAlert } from './Dialog';
+import { APP_VERSION, UPDATES_ON, checkForUpdates } from './updates';
 import * as Clipboard from 'expo-clipboard';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
@@ -485,6 +486,9 @@ export function SettingsScreen(p: Props) {
                   <Icon path={mdiChevronRight} size={22} color={T.on_surface_variant} />
                 </TouchableOpacity>
               ))}
+              <Row title={`Noted ${APP_VERSION}`} description={UPDATES_ON ? 'Noted looks for a new version at start and twice a day.' : 'Built from source: updates come with the next build.'}
+                onPress={UPDATES_ON ? () => { void checkForUpdates(true); } : undefined}
+                right={UPDATES_ON ? <Text style={{ color: T.primary, fontWeight: '600' }}>Check</Text> : undefined} />
             </>
           )}
 
