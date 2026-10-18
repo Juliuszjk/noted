@@ -199,7 +199,7 @@ export const createDesktopBlobHandlers = (
       const files: File[] = [];
       for (const path of paths) {
         const bytes = await invoke<ArrayBuffer>('read_local_file', { path });
-        const name = path.split('/').pop() || 'file';
+        const name = path.split(/[\\/]/).pop() || 'file';
         const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
         files.push(new File([bytes], name, { type: MIME_BY_EXTENSION[ext] ?? '' }));
       }

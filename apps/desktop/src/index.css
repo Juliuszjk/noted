@@ -21,6 +21,12 @@ body {
   user-select: none;
 }
 
+/* WebView2 (Windows) paints plain grey scroll bars on white whatever the theme; WebKitGTK
+   keeps the GTK ones. */
+.chromium * {
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 45%, transparent) transparent;
+}
+
 .tiptap {
   outline: none;
   min-height: 250px;
