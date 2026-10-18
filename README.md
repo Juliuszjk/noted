@@ -1,11 +1,25 @@
 # Noted
 
 A local-first, end-to-end encrypted, zero-knowledge notes app: a Notion-like block editor with
-Notesnook-like encryption. Desktop (Tauri, Linux), Android (Expo) and a small sync server
+Notesnook-like encryption. Desktop (Tauri: Linux, Windows), Android (Expo) and a small sync server
 (Hono + SQLite in Docker). The server only ever stores ciphertext.
 
-> Status: a personal project. One server holds one vault (one person's notes); run your own,
-> see [SELF-HOSTING.md](SELF-HOSTING.md).
+> Status: a personal project shared with friends. One server holds one vault (one person's
+> notes): run your own ([SELF-HOSTING.md](SELF-HOSTING.md)), or use the apps without a server.
+
+## Install
+
+Download from [Releases](https://github.com/Juliuszjk/noted/releases):
+
+- **Windows**: `Noted_x.y.z_x64-setup.exe`. It is not signed, so Windows SmartScreen warns
+  ("Windows protected your PC"): *More info* > *Run anyway*.
+- **Linux**: `Noted_x.y.z_amd64.AppImage` (`chmod +x`, then run it) or the `.deb`.
+- **Android**: `Noted-x.y.z-android-arm64.apk`. Allow installing from your browser or file
+  manager when Android asks.
+
+On the first screen enter your server's address, or choose **Use without a server**: your notes
+then stay on that one device (make backups: Settings > Backup & export), and a server can be
+connected later (Settings > Sync).
 
 ## Features
 
@@ -30,7 +44,8 @@ Notesnook-like encryption. Desktop (Tauri, Linux), Android (Expo) and a small sy
 apps/desktop    Tauri v2 + React desktop app
 apps/mobile     Expo (Android) app; the editor runs as a WebView page (apps/mobile/editor)
 apps/api        Hono API + public publish server (better-sqlite3, ws)
-apps/web        placeholder
+apps/mcp        MCP server: Claude Code as one more device of your vault
+apps/web        page of live published notes (bundled into the server)
 packages/       crypto, sync, editor (shared Tiptap schema), ui, config, theme, types, media
 infra/docker    Dockerfile and docker-compose for the server
 ```
@@ -112,3 +127,8 @@ server prints a setup code to its log; creating the vault needs it.
 pnpm -C packages/sync exec vitest run        # also: crypto, editor, ui, theme
 pnpm --filter desktop exec tsc --noEmit      # also: mobile, api
 ```
+
+## License
+
+[GNU AGPL-3.0-or-later](LICENSE). You may use, change and share Noted; changed versions you
+distribute, or run as a service for others, must be published under the same license.

@@ -10,7 +10,7 @@ import { appAlert } from './Dialog';
 // with it, blocks that job, so the app asks once to be let off it ("Unrestricted" battery);
 // Settings > Sync shows the state and asks again.
 const ASKED_KEY = 'noted_battery_asked';
-const PACKAGE = Constants.expoConfig?.android?.package ?? 'com.apollo.noted';
+const PACKAGE = Constants.expoConfig?.android?.package ?? 'io.github.juliuszjk.noted';
 
 export const backgroundRestricted = async (): Promise<boolean> => {
   try {

@@ -1,29 +1,23 @@
 # Noted — project memory for Claude Code
 
 Local-first, end-to-end encrypted, zero-knowledge notes app (Notion-like editor, Notesnook-like
-encryption and UI). Personal tool of one user (personal details in `CLAUDE.local.md`, not in git).
+encryption and UI). One vault per server, everyone runs their own (`SELF-HOSTING.md`). The
+maintainer's private notes (working rules, server, status, ideas) live in `CLAUDE.local.md`, not in git.
 
 **More detail lives in `docs/`** (read the relevant part before changing a feature):
 - `docs/features.md`: full notes on Editor, Desktop, Mobile, Publishing, Settings/backups/import, Theme.
 - `docs/private/claude-md-history-2026-10-12.md` (not in git): history of all rounds (1-25), rejected ideas, old TODO detail.
 - `docs/private/claude-md-full-2026-10-15.md` (not in git): the complete CLAUDE.md before it was trimmed.
 
-## Working rules (from the user, always apply)
+## Working rules (always apply)
 
-- Talk to the user in **Polish**. Write all code and code comments in **English**.
-- **Git / GitHub** (private repo, see CLAUDE.local.md): commit and push **only after the user has
-  tested a finished feature and confirmed it works as wanted**; then commit (message, splitting,
-  branches as you see fit) and push without asking. Before every commit grep the staged files for
-  personal data (addresses, names, e-mail). Never force-push or rewrite history unasked.
-- The user's shell is **fish** (Mercury's too). Commands you hand to the user must work in fish,
-  or be wrapped with `bash -c '...'`. Heredocs and `$(...)` do not work in fish; use `; and`.
+- Write all code and code comments in **English**; match the surrounding code.
 - After any change to an app entry file (e.g. `apps/desktop/src/App.tsx`) **restart the app
   windows**, do not rely on Vite hot reload (a hot reload once reset the master key to zeros).
-- Small, verifiable steps: change, then tests + typecheck, then **rebuild and install the
-  affected apps without asking** (desktop install script, phone APK; see "Running"), then ask
-  the user to test. Make a backup copy of files you rewrite heavily.
+- Small, verifiable steps: change, then tests + typecheck, then rebuild the affected apps (see
+  "Running") and test them. Make a backup copy of files you rewrite heavily.
 - Never weaken the encryption or the zero-knowledge server to "make something work".
-- Ideas in "TODO / ideas" are not decided: ask before building them.
+- Never commit personal data (server addresses, names, e-mail): grep the staged files first.
 
 ## Stack and layout
 
@@ -32,7 +26,7 @@ pnpm workspaces + Turborepo (pnpm's default isolated layout, no .npmrc).
 ```
 apps/desktop   Tauri v2 + React + TS. Package "desktop", Cargo package "noted". SQLite via tauri-plugin-sql.
 apps/mobile    Expo, Android. Release APK on the phone. Editor = WebView page (apps/mobile/editor). SQLite via expo-sqlite.
-apps/api       Hono + better-sqlite3 + ws, Docker on the server "Mercury".
+apps/api       Hono + better-sqlite3 + ws, Docker (self-hosted).
 apps/web       guest page of live published notes (React + NoteEditor, esbuild -> apps/api/src/live.generated.ts)
 apps/mcp       MCP server for Claude Code (Node 22+, node:sqlite; esbuild -> dist/noted-mcp.mjs)
 packages/crypto   XChaCha20-Poly1305 (@noble/ciphers), Argon2id + HKDF (@noble/hashes 1.8)
@@ -51,22 +45,23 @@ packages/db, crdt   empty
 - Desktop dev: `pnpm --filter desktop run tauri dev`
 - Desktop production (installed): `apps/desktop/scripts/install-linux.sh` builds
   (`tauri build --no-bundle`, ~4 min) and installs `~/.local/bin/noted`, icons and
-  `~/.local/share/applications/noted.desktop`. `--no-build` only installs. Identifier stays
-  `com.apollo.desktop` (same SQLite file as dev, own localStorage). Do not run dev and the
+  `~/.local/share/applications/noted.desktop`. `--no-build` only installs. Identifier
+  `io.github.juliuszjk.noted` (same SQLite file as dev, own localStorage; until 0.1 it was
+  `com.apollo.desktop`: `main.rs move_old_data` renames those XDG folders once). Do not run dev and the
   installed app at the same time (one database). Icons: `pnpm tauri icon src-tauri/icons/icon-source-1024.png`.
 - Second desktop instance (sync testing; debug builds skip single-instance):
   `mkdir -p /tmp/noted-b && env XDG_DATA_HOME=/tmp/noted-b/data XDG_CONFIG_HOME=/tmp/noted-b/config XDG_CACHE_HOME=/tmp/noted-b/cache apps/desktop/src-tauri/target/debug/noted`
   (needs a debug build first: `cargo build` in `src-tauri`; no debug binary exists by default). Without one:
   close the installed Noted and run `~/.local/bin/noted` with the same `env XDG_...` (release keeps single-instance).
-- Mobile dev (Expo Go over Tailscale):
+- Mobile dev (Expo Go; phone and computer on one network, e.g. Tailscale):
   `REACT_NATIVE_PACKAGER_HOSTNAME=$(tailscale ip -4) pnpm --filter mobile exec expo start -c`
-- **Mobile APK** (package `com.apollo.noted`): `apps/mobile/scripts/build-apk.sh` = Gradle
+- **Mobile APK** (package `io.github.juliuszjk.noted`; `com.apollo.noted` before 0.1 is a separate app): `apps/mobile/scripts/build-apk.sh` = Gradle
   `assembleRelease` (arm64-v8a) with JDK 21 from mise (Java 25 breaks CMake), then
   `adb install -r`. `android/` is generated (`npx expo prebuild --platform android`, CNG;
   app.json + plugins are the source: icons, `allowBackup: false`, cleartext HTTP to the
   Tailscale API, `plugins/with-release-signing.js`). Release key:
   `~/.config/noted-android/noted-release.keystore` + `signing.properties` (outside the repo).
-  The user's phone (see CLAUDE.local.md); adb works for testing (screencap, input, screenrecord + ffmpeg).
+  A phone over adb works for testing (screencap, input, screenrecord + ffmpeg).
 - **After any change in `packages/editor` or `apps/mobile/editor` (or the KDF page) run
   `pnpm --filter mobile run build:editor`** (runs `scripts/check-messages.mjs` first: every
   RN <-> page message type sent must be handled on the other side; esbuild ->
@@ -81,6 +76,13 @@ packages/db, crdt   empty
   `pnpm --filter web run build:live` -> `apps/api/src/live.generated.ts` (after changes in apps/web or the
   shared packages it bundles; the build swaps `packages/config/server.ts` for a stub and fails if a server
   address ends up in the page).
+
+- **Releases**: `node scripts/set-version.mjs X.Y.Z` (desktop package.json, tauri.conf.json,
+  Cargo.toml, app.json + versionCode = major*1e6 + minor*1e3 + patch), commit, `git tag vX.Y.Z`,
+  push the tag: `.github/workflows/release.yml` makes a draft release (Linux AppImage + deb on
+  ubuntu-22.04, Windows exe + msi, Android arm64 APK signed with secrets `NOTED_ANDROID_*`) and
+  `server-image.yml` pushes the image. Builds use `server.example.ts` (no default server).
+  License AGPL-3.0-or-later (`LICENSE`).
 
 ## Server
 
@@ -105,7 +107,7 @@ delay when wrong; dropped once the vault exists). Clients: `fetchVaultStatus`, `
 server" refuses on such a server: use the unlock screen). Image `ghcr.io/juliuszjk/noted-server`
 (`.github/workflows/server-image.yml`, amd64 + arm64, on `v*` tags or by hand), friends' compose
 `infra/docker/compose.example.yml`, guide `SELF-HOSTING.md`. Dockerfile TZ defaults to UTC, the
-maintainer's compose sets `TZ` (Europe/Warsaw).
+maintainer's compose sets `TZ`.
 Local-only mode (phase 2, 2026-10-18): server address `{api: '', public: ''}` stored = no server
 (`hasServer()` false). `apiFetch` then rejects without sending (`NO_SERVER_MESSAGE`),
 `runSyncEngine` / `uploadPendingBlobs` return at once (blobs stay queued). The vault row lives on
@@ -134,7 +136,7 @@ drawer say "This device / phone only".
   (`openWithPassphraseKey`). Recovery key = 32 random bytes, Crockford base32 + 2 check chars
   (`formatRecoveryKey` / `parseRecoveryKey`); `recovery_envelope` = seal(HKDF(recovery key,
   'noted-recovery-v1'), data key), `recovery_sealed` = seal(data key, recovery key). The old
-  passphrase still derives the data key (no rotation, no OS keyring: the user's choice).
+  passphrase still derives the data key (no rotation, no OS keyring: a deliberate choice).
 - Auth token = HKDF-SHA256(data key, `noted-auth-v1`, or `noted-auth-v1:<epoch>` for epoch > 0),
   `Authorization: Bearer`; server stores only its SHA-256. `/notes`, `/blobs`, `/account/*`,
   private `/publish/*` require it. "Log out other devices" = `POST /account/rotate-auth` with the
@@ -238,8 +240,8 @@ drawer say "This device / phone only".
   (expo-notifications exact alarms, `USE_EXACT_ALARM`; buttons run the headless task
   `noted-reminder-action` defined via `index.ts`: opens the DB, changes the reminder, reschedules,
   syncs once; scheduled / shown ids in `<documents>/reminder-notices.json`; `noted-background-sync`
-  (expo-background-task, ~15 min) syncs with the app closed). No Firebase / push: the user
-  rejected it (2026-10-17), reminders set elsewhere reach a closed phone within ~15 min. Colours `palette.ts` (CSS variable refs, custom = raw hex);
+  (expo-background-task, ~15 min) syncs with the app closed). No Firebase / push: decided
+  against (2026-10-17), reminders set elsewhere reach a closed phone within ~15 min. Colours `palette.ts` (CSS variable refs, custom = raw hex);
   shared `content.css`.
 - **Drawing** (S Pen step 1, 2026-10-17): block `drawing` {height} (`drawing.ts`) whose content is
   `drawingStroke*` atoms {points, color, size, tool} -> strokes live IN the body (merge, Yjs undo,
@@ -326,8 +328,7 @@ drawer say "This device / phone only".
 - Dialogs only via `AppDialog.tsx` (`showDialog` / `confirmDialog` / `messageDialog`); never
   `window.confirm` or plugin-dialog `ask` / `message`. Own `Select` (native one paints white).
 - Middle click does not paste (main.tsx swallows it). Window never scrolls.
-- Tray, autostart (`--autostart`; Hyprland runs it from `~/.config/hypr/autostart.lua`),
-  single instance in release. Quickshell icon maps include "noted".
+- Tray, autostart (`--autostart`), single instance in release.
 
 ## Mobile app (details in `docs/features.md`)
 
@@ -419,101 +420,13 @@ drawer say "This device / phone only".
 - Backups `sync/backup.ts` (sealed notes + blobs + vault data; merge / replace / rollback,
   `compareBackup`); export all `sync/export-all.ts`; importer `ui/src/importers.ts` (ids per
   FILE, `importNoteDocs` merges duplicates and isolates per-note errors).
-- Theme: `@noted/theme` CSS variables; desktop polls `$APPCONFIG/theme.json` (matugen).
-  **Do NOT run `matugen` to test** (post hooks); `matugen image <wall> --dry-run -j hex` is safe.
+- Theme: `@noted/theme` CSS variables; desktop polls `$APPCONFIG/theme.json` (written e.g. by matugen).
 
-## Status (2026-10-17)
+## Status
 
-Rounds up to 28 confirmed (history in docs; round 26/27 detail: `notePlaces` in
-`ui/src/note-place.ts`, archived notes out of pickers, phone file paste / drop, Markdown zip with
-attachments, phone "Clean up storage"; round 28: "[[" / "Link to note" picker shows the most
-recently edited notes first like "/goto" (`searchNotes` keeps the caller's order for an empty
-query; desktop `summaries` and phone `titles` sorted by `updated_at` desc), server moved to
-Mercury `~/docker/noted/` and added to `mercury-update`). **Caveat** (round 27): each device's
-clean-up only knows ITS OWN history, so it can delete a server file only another device's old
-version uses.
-The user imported all Notesnook notes (2026-10-16) and uses Noted daily: real data now, be careful.
-
-**Reminders done (2026-10-17)**: stages 1-3 (chips, Reminders view, notifications) plus the
-battery prompt, theme without reload (Material You as the first palette card) and the home
-screen widget, all confirmed and pushed. The phone's background sync needs Noted's battery
-"Unrestricted": with Samsung Power saving on, Android blocks the job
-(`readyNotRestrictedInBg: false` in `adb shell dumpsys jobscheduler`). Decided: no Firebase /
-push; notification icon = the app's icon; buttons Done / In 1 hour / Tomorrow (English UI).
-
-Git: private GitHub repo (details in CLAUDE.local.md). Personal data stays out of git: server
-addresses (`packages/config/server.ts`, `infra/docker/.env`), `CLAUDE.local.md`, `docs/private/`,
-`apps/api/data`. Generated files (`*.generated.ts`, `apps/mobile/android/`) are not committed:
-after a fresh clone run `build:editor`, `build:viewer` and `build:live` first. Before going public: grep the
-tracked files for addresses / names again.
-
-**Drawing steps 1-3 done (2026-10-17)**: block + rendering everywhere, phone drawing (480 Hz,
-side button eraser, pen kinds, erasers, colours incl. custom, width slider), desktop drawing
-menu (floating / at the top), configurable drawing bars, remembered tool choices; option C
-(pen on empty lines / under the note starts drawings), mouse draw mode; confirmed. Further
-drawing ideas (overlay, annotations, handwriting) are parked until the user knows drawing is
-useful, see the TODO.
-
-## TODO / ideas (not decided yet, ask before doing)
-
-- **S Pen** (plan 2026-10-13, waiting for the user's choices): block atom `drawing` {id, height, paper} in the shared schema;
-  strokes in the note's Y.Doc (`Y.Map 'drawings'` id -> Y.Array of compact strokes: logical
-  x/y, pressure, tool, palette colour name) so devices merge; SVG via `perfect-freehand`;
-  drawing on a canvas (pen only, palm rejection, side button = eraser, coalesced / predicted
-  events); later lasso, highlighter, paper, SVG export, ML Kit Digital Ink. **The user's wish
-  (2026-10-17)**: the whole note text + drawing (draw anywhere over / between text, like Samsung
-  Notes; "stage B" overlay anchored to blocks); fallback if that proves hard: pulling the S Pen
-  out inserts a drawing block under the cursor. Option C done; the overlay over text, annotations
-  and handwriting are parked (2026-10-18): the user first wants to see whether drawing as it is
-  proves useful in daily use. **Phase 0 done
-  (2026-10-17)**, probe in Vivaldi and injected over CDP into the editor WebView: pen =
-  `pointerType 'pen'`, palm / finger = `touch` (ignore it; pen strokes never cancelled by the
-  palm); pressure fine-grained but tops out ~0.47-0.59 (needs scaling); tiltX/Y + altitude /
-  azimuth yes, twist no; `desynchronized` canvas yes. The page gets NO hover and never sees the
-  side button (a stroke with it held never arrives; a click in the air = Samsung Air Command).
-  Phase 0b (native probe in MainActivity, removed again): the Activity DOES get
-  `BUTTON_STYLUS_PRIMARY` (buttonState 32) on DOWN/MOVE/UP and `ACTION_HOVER_*`; re-dispatching
-  a copy with the button bit cleared makes the WebView see a normal pen stroke -> plan: native
-  code strips the bit and tells the page "eraser" (held button = eraser like Samsung Notes).
-  WebView pointermove is ~60 Hz (7-8 historical points per event natively);
-  `window.decorView.requestUnbufferedDispatch(e)` on stylus ACTION_DOWN gives ~476 Hz in the
-  WebView (like Chrome). An https `baseUrl` makes the page a secure context (coalesced events,
-  `crypto.randomUUID`) but was not needed for the rate. Native code needs an Expo config plugin
-  (android/ is generated). The editor under an overlay grabbed focus (keyboard): drawing mode must blur it.
-- **Drawing: annotations on text** (parked 2026-10-18 until drawing proves useful): circles / underlines / arrows at
-  words, anchored to characters and stored IN the body (invisible inline anchor node holding
-  the strokes; never a separate Y.Map: locked notes, undo, copy / paste). Multi-word circles that
-  rewrap differently and arrows between words can never fit every width.
-- **Drawing: handwriting recognition** (parked 2026-10-18, same reason): ML Kit Digital Ink on the
-  phone, offline (weak for math). Exporting a drawing as an image: the user does not need it.
-- **Live notes: guests pasting images / files** (parked 2026-10-18, "maybe some day"): public
-  `PUT /p/:id/blob/:blobId` with the write token (editable only), per-file / per-note quotas +
-  rate limits, guest page compresses + seals, owner accepts blob nodes and lists them. ~1 round.
-- Claude from the phone (claude.ai app; the Claude Code MCP server is built, see above): would
-  need a public remote MCP on Mercury; idea: write-only "inbox" sealed to a public key (server
-  never reads notes). Not decided.
-- Low priority: embeds (the user called them a gimmick). Rejected (2026-10-18): attachments
-  > 30 MB, download subfolders by notebook / type.
-- **Final stage: distribution to friends** (2026-10-16; no iPhone). Blockers first: the server is
-  single-user (one `vault` row) and the server address was hard-coded (phase 1 done 2026-10-18). The user's choice:
-  NO multi-user accounts on Mercury; friends either run their own server (Docker image + server
-  address chosen at first start) or use the apps without any server (local-only mode on the
-  desktop / phone; details still to be worked out together). Then:
-  GitHub repo (clean personal data first, see "Open") + GitHub Releases built by Actions:
-  Windows `.msi` / `.exe` (Tauri, Windows runner; unsigned = SmartScreen warning), Android APK
-  (own release key, CI secrets), Linux AppImage; Tauri updater maybe. Arch: AUR `PKGBUILD`
-  (`-bin` from the release, or from source); check whether the name "noted" is taken.
-  **Plan agreed (2026-10-18)**, order: 1 runtime server address (`getServer()` in config, server
-  reports its public URL, build default only for the user's own devices, MCP setup asks) -> 3
-  self-hosting (setup token for creating the vault, GHCR image amd64+arm64, generic compose,
-  SELF-HOSTING.md) -> 2 first-start screen + local-only mode (vault data stored locally,
-  "connect to server" later via `PUT /vault` with envelopes) -> 5 repo + Actions releases -> 4
-  Windows -> 6 updates. Decided: make THIS repo public (history checked: only the author name),
-  name stays "Noted", updates YES (Tauri updater + phone checks GitHub releases), Windows tested
-  by the user on an external Windows disk. License **AGPL-3.0**. CLAUDE.md stays in the public
-  repo, cleaned: personal data and the user's private working rules move to CLAUDE.local.md.
-  Identifiers change to **`io.github.juliuszjk.noted`** (desktop + Android) before friends
-  install: desktop migrates the old data folder once, the phone gets a new app (data from sync).
+Feature-complete for daily use (desktop Linux, Android, self-hosted server, MCP). In progress:
+distribution to friends (releases, Windows, updates). Project status, decisions and open ideas:
+`CLAUDE.local.md` (not in git).
 
 ## Incidents and gotchas
 
@@ -550,4 +463,3 @@ useful, see the TODO.
 - react-native-webview types clash with React 19: `@ts-expect-error` on `<WebView>` is intentional.
 - Node 25+ has a global `localStorage` without `getItem`; guard with
   `typeof localStorage.getItem === 'function'`.
-- Old diagnostic script `/tmp/noted-diag.mts` sends no auth token. Old profiles: `~/noted-backup`.

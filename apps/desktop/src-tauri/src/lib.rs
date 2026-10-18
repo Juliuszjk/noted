@@ -118,8 +118,8 @@ fn set_custom_words(languages: Vec<String>, words: Vec<String>) -> Result<(), St
 }
 
 // A desktop notification through the system's notification daemon (notify-send), so it looks
-// like the user's other notifications. `kind` picks the icon: the user's own notification icon
-// set when there is one (~/.config/quickshell/assets/icons/notifications), else a theme icon.
+// like the other notifications. `kind` picks the icon: a Quickshell notification icon set when
+// there is one (~/.config/quickshell/assets/icons/notifications), else a theme icon.
 #[tauri::command]
 fn notify(summary: String, body: String, kind: String) -> Result<(), String> {
     let custom = std::env::var("HOME").ok().map(|home| {

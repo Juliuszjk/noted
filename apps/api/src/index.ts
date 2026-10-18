@@ -120,8 +120,8 @@ attachRealtime(server as Server);
 startDailyBackups();
 
 // Published notes, readable by anyone with the link. A separate server on its own port that
-// only serves the viewer and sealed bytes; Docker binds it to 127.0.0.1 on Mercury and
-// Tailscale Funnel exposes just this port over HTTPS. The API above stays Tailscale only.
+// only serves the viewer and sealed bytes; Docker binds it to 127.0.0.1 and a proxy or tunnel
+// exposes just this port over HTTPS. The API above stays private (VPN or its own proxy).
 const publicPort = process.env.PUBLIC_PORT ? parseInt(process.env.PUBLIC_PORT) : 3001;
 const publicServer = serve({ fetch: publicApp.fetch, port: publicPort, hostname: '0.0.0.0' });
 // Live published notes: guests' WebSocket (/p/:id/ws).

@@ -1,0 +1,109 @@
+# Builds the apps for a version tag (v1.2.3, made with scripts/set-version.mjs) into a draft
+# GitHub release: Linux AppImage + .deb, Windows installer (.exe) + .msi, Android APK.
+# The server image is built by server-image.yml on the same tag. Publish the draft by hand
+# once the files look right.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches the app version
+        run: |
+          app=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          [ "v$app" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME, app version $app: run scripts/set-version.mjs"; exit 1; }
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --title "Noted ${GITHUB_REF_NAME#v}" --notes "Install: see README.md. Server: SELF-HOSTING.md."
+          echo "id=$(gh release view "$GITHUB_REF_NAME" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
+
+  desktop:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22.04: an AppImage built on an older glibc also runs on newer systems.
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev patchelf
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - run: pnpm install --frozen-lockfile --filter "desktop..."
+      # No built-in server address: the apps ask on the first screen.
+      - run: cp packages/config/server.example.ts packages/config/server.ts
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          projectPath: apps/desktop
+          releaseId: ${{ needs.draft.outputs.id }}
+
+  android:
+    needs: draft
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      # Java 24+ breaks the native CMake step.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: pnpm install --frozen-lockfile --filter "mobile..."
+      - run: cp packages/config/server.example.ts packages/config/server.ts
+      - run: pnpm --filter mobile run build:editor
+      - run: npx expo prebuild --platform android --no-install
+        working-directory: apps/mobile
+      # The release key (plugins/with-release-signing.js reads ~/.config/noted-android).
+      - env:
+          KEYSTORE: ${{ secrets.NOTED_ANDROID_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.NOTED_ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.NOTED_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.NOTED_ANDROID_KEY_PASSWORD }}
+        run: |
+          [ -n "$KEYSTORE" ] || { echo "Missing the NOTED_ANDROID_* secrets"; exit 1; }
+          dir="$HOME/.config/noted-android"
+          mkdir -p "$dir"
+          echo "$KEYSTORE" | base64 -d > "$dir/release.keystore"
+          printf 'NOTED_RELEASE_STORE_FILE=%s\nNOTED_RELEASE_STORE_PASSWORD=%s\nNOTED_RELEASE_KEY_ALIAS=%s\nNOTED_RELEASE_KEY_PASSWORD=%s\n' \
+            "$dir/release.keystore" "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > "$dir/signing.properties"
+      - run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --console=plain -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+        working-directory: apps/mobile/android
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk="Noted-${GITHUB_REF_NAME#v}-android-arm64.apk"
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk "$apk"
+          gh release upload "$GITHUB_REF_NAME" "$apk"

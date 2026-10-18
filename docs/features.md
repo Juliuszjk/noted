@@ -37,7 +37,7 @@ changing a feature. Full pre-trim CLAUDE.md: `docs/claude-md-full-2026-10-15.md`
   `inline-center`, `inline-right` = side by side; `ImageRowLayout`, `imageRowAt`,
   `matchImageRowHeights`), `x` (0..1 = free horizontal place in the column after dragging,
   CSS `left: x*100%` + `translateX(-x*100%)`; the align buttons clear it; `imageX`). Text wrap
-  around images was built and REMOVED on the user's wish (no float). Moving: `image-drag.ts`
+  around images was built and REMOVED again (no float). Moving: `image-drag.ts`
   (`ImageDragging` extension, both platforms; the browser's image drag and drop is off, it made
   copies): mouse press + move / touch hold 400 ms then drag; a see-through copy follows the
   pointer; it lands right AFTER the last line block (paragraph / heading / code / picture)
@@ -147,17 +147,13 @@ changing a feature. Full pre-trim CLAUDE.md: `docs/claude-md-full-2026-10-15.md`
   `window.confirm` or plugin-dialog `ask` / `message` (file pickers stay). Own `Select` (native
   <select> paints white in WebKitGTK).
 - Integration: tray (Show / Quit, close / minimize to tray), autostart (plugin writes
-  `~/.config/autostart/Noted.desktop` with `--autostart`; the user's Hyprland session does not run
-  XDG autostart, so `~/.config/hypr/autostart.lua` runs `noted --autostart` while that file
-  exists), window `visible: false` and shown unless `--autostart`, single instance in release.
+  `~/.config/autostart/Noted.desktop` with `--autostart`; sessions without XDG autostart, e.g.
+  Hyprland, can run `noted --autostart` themselves while that file exists), window `visible: false` and shown unless `--autostart`, single instance in release.
   Rust commands: `open_folder` (terminal file manager in a terminal), `notify` (notify-send with
-  the user's quickshell icons), spell-check languages + Enchant word lists.
+  Quickshell notification icons when present), spell-check languages + Enchant word lists.
 - Memory: WebKit cache model DocumentViewer, inspector off in release, `M_ARENA_MAX` 2.
   Measured ~720 MB PSS after 36 min (Notesnook ~400 MB).
 - Window never scrolls (overflow hidden + scroll reset in main.tsx).
-- The user's Quickshell bar shows workspace / notification glyphs from
-  `~/.config/quickshell/utils/Icons.qml` and `services/NotificationService.qml` iconMaps (by
-  window class / app name); "noted" was added there (backups `*.bak-noted-2026-10-13`).
 
 ## Mobile app
 
@@ -230,8 +226,7 @@ changing a feature. Full pre-trim CLAUDE.md: `docs/claude-md-full-2026-10-15.md`
 - Material 3 roles from `@noted/theme` as CSS variables (`--bg-base`, `--bg-surface-*`,
   `--text-main/muted`, `--primary`, `--border`, ...). Presets `THEME_PRESETS` (Catppuccin, Nord,
   Gruvbox, Dracula, Tokyo Night, Rosé Pine, Solarized Light); `resolveTheme(mode, file, systemDark)`.
-- Desktop polls `$APPCONFIG/theme.json` (~/.config/com.apollo.desktop) every 3 s; matugen writes
-  it (template `~/.config/matugen/templates/noted-theme.json`). **Do NOT run `matugen` to test**
-  (other templates have post hooks); `matugen image <wall> --dry-run -j hex --prefer <x>` is safe.
+- Desktop polls `$APPCONFIG/theme.json` (the app config dir) every 3 s; matugen can write it
+  (a template producing the theme.json format).
 - Icons: Material Design Icons (`@mdi/js`).
 

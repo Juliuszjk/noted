@@ -2,7 +2,7 @@
   "expo": {
     "name": "Noted",
     "slug": "noted",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -16,8 +16,8 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.apollo.noted",
-      "versionCode": 1,
+      "package": "io.github.juliuszjk.noted",
+      "versionCode": 1000,
       "allowBackup": false,
       "permissions": [
         "USE_EXACT_ALARM",

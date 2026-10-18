@@ -3,13 +3,13 @@ import { generateKey, encryptBlob, decryptBlob } from './index';
 
 test('encrypts and decrypts successfully', () => {
   const key = generateKey();
-  const message = new TextEncoder().encode('Hello Apollo');
+  const message = new TextEncoder().encode('Hello Noted');
 
   const { ciphertext, nonce } = encryptBlob(key, message);
   expect(ciphertext).not.toEqual(message);
 
   const decrypted = decryptBlob(key, nonce, ciphertext);
-  expect(new TextDecoder().decode(decrypted)).toBe('Hello Apollo');
+  expect(new TextDecoder().decode(decrypted)).toBe('Hello Noted');
 });
 
 test('fails to decrypt with wrong key', () => {
