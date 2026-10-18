@@ -29,7 +29,7 @@ import { setReminderTimes } from '@noted/editor/reminder';
 import type { ReminderEditRequest } from '@noted/editor/reminder';
 import { createToolbar } from './toolbar';
 import { createDrawingBar } from './drawing-bar';
-import { restoreDrawingTools } from '@noted/editor/drawing';
+import { restoreDrawingTools, showPenHover } from '@noted/editor/drawing';
 import { createFindBar } from './find';
 import { showHistoryView } from './history-view';
 import { exportNote, exportFileName } from '@noted/editor/export';
@@ -530,6 +530,10 @@ const startEditor = () => {
   drawingBar = createDrawingBar(editor, { pickColor: toolbar.pickColor, saveTools: (text) => post({ type: 'drawingTools', text }) });
   drawingBar.setConfig(drawingToolbarConfig);
   if (drawingToolsText) restoreDrawingTools(editor, drawingToolsText);
+  // The S Pen above the screen, from the native side (plugins/with-stylus.js): eraser ring.
+  (window as unknown as { __notedPenHover?: (x: number | null, y: number, sideButton: boolean) => void }).__notedPenHover = (x, y, sideButton) => {
+    if (editor) showPenHover(editor, x, y, sideButton);
+  };
   toolbar.setToolbarConfig(toolbarConfig, tableToolbarConfig);
   openMathEditor = toolbar.openMathEditor;
   openReminderPicker = toolbar.openReminderPicker;

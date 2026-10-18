@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 import { createSchemaExtensions } from './extensions';
 import { decodePoints, encodePoints } from './drawing-codec';
 import { exportNote } from './export';
-import { restoreDrawingTools, serializeDrawingTools, setDrawingActive, setDrawingTool, setMouseDraws, setPenSettings } from './drawing';
+import { restoreDrawingTools, serializeDrawingTools, setDrawingActive, setDrawingTool, setMouseDraws, setPenSettings, showPenHover } from './drawing';
 
 const makeEditor = (ydoc = new Y.Doc()) => new Editor({ extensions: createSchemaExtensions({ ydoc, placeholder: '' }) });
 
@@ -328,6 +328,31 @@ describe('drawing block', () => {
         expect(decodePoints(json[json.length - 1].content![0].attrs!.points)[0]).toMatchObject({ x: 20, y: 20 });
         editor.destroy();
       });
+    });
+
+    it('shows the eraser ring under a pen in the air or the mouse', () => {
+      const { editor, svg } = setup();
+      const ring = editor.view.dom.querySelector('.drawing-eraser') as SVGElement;
+      const at = vi.spyOn(document, 'elementFromPoint').mockReturnValue(svg);
+      try {
+        showPenHover(editor, 120, 80, false);
+        expect(ring.style.display).toBe('');
+        showPenHover(editor, 120, 80, true);
+        expect(ring.style.display).toBe('block');
+        expect(ring.getAttribute('cx')).toBe('120');
+        showPenHover(editor, null, 0, false);
+        expect(ring.style.display).toBe('');
+        setDrawingTool(editor, { mode: 'eraser' });
+        showPenHover(editor, 50, 60, false);
+        expect(ring.getAttribute('cy')).toBe('60');
+      } finally {
+        at.mockRestore();
+      }
+      showPenHover(editor, null, 0, false);
+      fire(svg, 'pointermove', 30, 40, { buttons: 0 });
+      expect(ring.style.display).toBe('block');
+      fire(svg, 'pointerleave', 30, 40, { buttons: 0 });
+      expect(ring.style.display).toBe('');
     });
 
     it('ignores fingers', () => {

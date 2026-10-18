@@ -8,6 +8,9 @@
 // - The system back gesture: a stroke to the screen edge (a cut across a drawing) was taken
 //   for "back". While the pen is near the screen, the edges at its height are left out of the
 //   gesture (Android allows 200 dp per edge); fingers keep it everywhere else.
+// - Hover: a WebView never passes the pen above the screen on to its page. Its position (in
+//   the page's CSS pixels) and the side button go straight to the visible WebViews
+//   (window.__notedPenHover), about 60 times a second, so a drawing can show the eraser ring.
 const { withMainActivity } = require('expo/config-plugins');
 
 const MARKER = 'Noted stylus input (plugins/with-stylus.js)';
@@ -46,6 +49,43 @@ const METHODS = `
   private fun notedReleaseEdges() {
     notedHandler.removeCallbacks(notedClearEdges)
     notedHandler.postDelayed(notedClearEdges, 1500)
+  }
+
+  private var notedHoverAt = 0L
+  private var notedHovering = false
+
+  private fun notedWebViews(view: android.view.View, out: MutableList<android.webkit.WebView>) {
+    if (view is android.webkit.WebView) {
+      if (view.isShown) out.add(view)
+      return
+    }
+    if (view is android.view.ViewGroup) for (i in 0 until view.childCount) notedWebViews(view.getChildAt(i), out)
+  }
+
+  // The pen above the screen (null = gone) to the pages.
+  private fun notedSendHover(e: MotionEvent?) {
+    val now = android.os.SystemClock.uptimeMillis()
+    if (e != null && now - notedHoverAt < 16) return
+    if (e == null && !notedHovering) return
+    notedHoverAt = now
+    notedHovering = e != null
+    val views = mutableListOf<android.webkit.WebView>()
+    notedWebViews(window.decorView, views)
+    val density = resources.displayMetrics.density
+    val at = IntArray(2)
+    for (w in views) {
+      val js = if (e == null) {
+        "window.__notedPenHover&&window.__notedPenHover(null,0,false)"
+      } else {
+        w.getLocationInWindow(at)
+        var x = e.x
+        var y = e.y
+        for (i in 0 until e.pointerCount) if (e.getToolType(i) == MotionEvent.TOOL_TYPE_STYLUS) { x = e.getX(i); y = e.getY(i) }
+        val button = (e.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY) != 0
+        "window.__notedPenHover&&window.__notedPenHover(\${(x - at[0]) / density},\${(y - at[1]) / density},$button)"
+      }
+      w.evaluateJavascript(js, null)
+    }
   }
 
   private fun notedStylusY(e: MotionEvent): Float {
@@ -97,8 +137,13 @@ const METHODS = `
   override fun dispatchGenericMotionEvent(e: MotionEvent): Boolean {
     val a = e.actionMasked
     if (notedHasStylus(e)) {
-      if (a == MotionEvent.ACTION_HOVER_ENTER || a == MotionEvent.ACTION_HOVER_MOVE) notedExcludeEdges(notedStylusY(e))
-      else if (a == MotionEvent.ACTION_HOVER_EXIT) notedReleaseEdges()
+      if (a == MotionEvent.ACTION_HOVER_ENTER || a == MotionEvent.ACTION_HOVER_MOVE) {
+        notedExcludeEdges(notedStylusY(e))
+        notedSendHover(e)
+      } else if (a == MotionEvent.ACTION_HOVER_EXIT) {
+        notedReleaseEdges()
+        notedSendHover(null)
+      }
     }
     if ((a == MotionEvent.ACTION_BUTTON_PRESS || a == MotionEvent.ACTION_BUTTON_RELEASE) && notedHasStylus(e)) return true
     return super.dispatchGenericMotionEvent(e)

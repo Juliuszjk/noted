@@ -98,7 +98,7 @@ interface DrawingStorage {
   mouseDraws: boolean;
   // Live drawing blocks by their DOM: a pen stroke started outside a block (DrawingStarter)
   // is handed to the block made for it.
-  views: Map<HTMLElement, { begin: (e: PointerEvent, earlier: PointLike[]) => void }>;
+  views: Map<HTMLElement, { begin: (e: PointerEvent, earlier: PointLike[]) => void; hover: (at: PointLike | null) => void }>;
 }
 
 // What a stroke needs from a pointer event (also kept from events that already passed).
@@ -185,6 +185,19 @@ export const restoreDrawingTools = (editor: Editor, text: string | null): void =
 export const setMouseDraws = (editor: Editor, on: boolean): void => {
   editor.storage.drawing.mouseDraws = on;
   notify(editor);
+};
+
+// The pen above the screen (the phone's native code passes it on; the page gets no hover
+// events): the drawing under it shows the eraser ring when the eraser or the side button
+// would erase there. x = null: the pen went away.
+export const showPenHover = (editor: Editor, x: number | null, y: number, sideButton: boolean): void => {
+  if (editor.isDestroyed) return;
+  const storage = editor.storage.drawing;
+  let target: Element | null = null;
+  if (x !== null && editor.isEditable && (sideButton || storage.current.mode === 'eraser')) {
+    target = document.elementFromPoint(x, y)?.closest('[data-type="drawing"]') ?? null;
+  }
+  for (const [dom, view] of storage.views) view.hover(dom === target && x !== null ? { clientX: x, clientY: y, pressure: 0 } : null);
 };
 
 // Called when the tool or the active state changes; returns the unsubscribe function.
@@ -889,7 +902,24 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         restartHold();
         drawLive();
       };
-      editor.storage.drawing.views.set(dom, { begin });
+      // The eraser ring under a pen in the air or the mouse (not while erasing: that moves it).
+      const hover = (at: PointLike | null) => {
+        if (erasing) return;
+        if (!at) {
+          eraserRing.style.display = '';
+          return;
+        }
+        const { x, y } = toPoint(at, false);
+        moveEraserRing(x, y);
+      };
+      editor.storage.drawing.views.set(dom, { begin, hover });
+      const onHoverMove = (e: PointerEvent) => {
+        if (e.pointerType !== 'mouse' || e.buttons || active || erasing || lassoing) return;
+        hover(editor.isEditable && editor.storage.drawing.current.mode === 'eraser' ? e : null);
+      };
+      const onHoverLeave = () => hover(null);
+      svg.addEventListener('pointermove', onHoverMove);
+      svg.addEventListener('pointerleave', onHoverLeave);
 
       const onPointerDown = (e: PointerEvent) => {
         if (!editor.isEditable || active || erasing) return;
@@ -1092,6 +1122,8 @@ export const Drawing = Node.create<Record<string, never>, DrawingStorage>({
         ignoreMutation: () => true,
         destroy: () => {
           clearLive();
+          svg.removeEventListener('pointermove', onHoverMove);
+          svg.removeEventListener('pointerleave', onHoverLeave);
           offSelection();
           document.removeEventListener('keydown', onKey, true);
           offPaper();
