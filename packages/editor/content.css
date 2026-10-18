@@ -426,8 +426,10 @@ body.table-resizing-row, body.table-resizing-row * { cursor: row-resize !importa
 .ProseMirror .all-selected-text { background-color: rgba(110, 150, 255, 0.32); background-color: color-mix(in srgb, var(--primary) 32%, transparent); }
 .ProseMirror .all-selected-node { outline: 2px solid var(--primary); outline-offset: -1px; }
 /* WebKit fills the gaps beside selected blocks with the container's selection colour (bars at
-   the left of lists / task lists while selecting); containers paint none, only their text. */
-.ProseMirror :is(ul, ol, li, li > div, li > label, blockquote, div[data-type="callout"])::selection { background: transparent; }
+   the left of lists / task lists while selecting); containers paint none, only their text.
+   Desktop only (class on <html>): Chromium passes ::selection on to the children, so there
+   the text in lists, quotes and callouts would show no selection at all. */
+.webkitgtk .ProseMirror :is(ul, ol, li, li > div, li > label, blockquote, div[data-type="callout"])::selection { background: transparent; }
 
 /* Dragging an image (image-drag.ts): the see-through copy under the pointer and the line
    between the blocks where it lands. Both live in <body>. */

@@ -1422,10 +1422,12 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   // Focus coming back with the keyboard: the keyboard's arrival (onViewport) centres the line.
   editor.on('focus', () => { if (keyboardUp()) centerCaretSoon(); });
 
-  // Making a selection: dragging a handle to the top or the bottom edge scrolls the text, the
-  // longer (and the deeper into the edge) the faster, like on any web page. The handles are
-  // native, so the selection's moving end (its head) tells where the finger is.
-  const SELECT_EDGE = 56;
+  // Making a selection: dragging a handle near the top or the bottom edge (above the bar)
+  // scrolls the text gently, faster the deeper into the edge and the longer it stays there.
+  // Chromium's own scrolling only starts at the very edge of the page (under the bar) and
+  // races, so this one takes over before the finger gets there. The handles are native, so
+  // the selection's moving end (its head) tells where the finger is.
+  const SELECT_EDGE = 90;
   let selectFrame = 0;
   let selectSince = 0;
   const selectionScroll = () => {
@@ -1439,10 +1441,10 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     if (!depth) { selectSince = 0; return; }
     const now = performance.now();
     if (!selectSince) selectSince = now;
-    // Starts slowly (a few lines), speeds up the longer the handle stays at the edge.
-    const elapsed = now - selectSince;
-    const speed = Math.min(36, 2 + elapsed / 60 + Math.min(Math.abs(depth), SELECT_EDGE) / 8);
-    window.scrollBy({ top: Math.sign(depth) * speed, behavior: 'auto' });
+    // About a line a second at the zone's edge, at most ~10 px a frame.
+    const into = Math.min(Math.abs(depth), SELECT_EDGE) / SELECT_EDGE;
+    const speed = Math.min(10, 0.5 + into * 4 + (now - selectSince) / 500);
+    window.scrollBy({ top: Math.sign(depth) * speed, behavior: 'instant' as ScrollBehavior });
     selectFrame = requestAnimationFrame(selectionScroll);
   };
   editor.on('selectionUpdate', () => { if (!editor.state.selection.empty) selectionScroll(); });
@@ -1618,49 +1620,19 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       }
       return;
     }
-    const hit = editor.view.posAtCoords({ left: t.clientX, top: t.clientY });
-    if (!hit) return;
-    // A second tap on the same spot selects the word.
-    const now = Date.now();
-    const double = lastTap && now - lastTap.at < 400 && Math.hypot(t.clientX - lastTap.x, t.clientY - lastTap.y) < 30;
-    lastTap = double ? null : { x: t.clientX, y: t.clientY, at: now };
-    if (double) {
-      e.preventDefault();
-      closePanels();
-      selectWordAt(hit.pos);
-      return;
-    }
-    // While typing, Chromium handles the tap itself: it moves the caret and shows Android's
-    // spelling suggestions for an underlined word (taking the tap away hid them).
+    // While typing, Chromium handles the tap itself: it moves the caret, shows Android's
+    // spelling suggestions for an underlined word (taking the tap away hid them) and turns a
+    // double tap into a selection with handles (one set by code gets none).
     if (editor.isFocused) {
       closePanels();
       return;
     }
+    const hit = editor.view.posAtCoords({ left: t.clientX, top: t.clientY });
+    if (!hit) return;
     e.preventDefault();
     closePanels();
     focusAt(hit.pos);
   }, { passive: false, capture: true });
-  let lastTap: { x: number; y: number; at: number } | null = null;
-  // The word (letters, digits, ' and -) at `pos`; no word there = just the caret.
-  function selectWordAt(pos: number) {
-    const $pos = editor.state.doc.resolve(Math.min(pos, editor.state.doc.content.size));
-    const parent = $pos.parent;
-    if (!parent.isTextblock) return focusAt(pos);
-    // One character per inline node, so offsets in the text are offsets in the block.
-    const text = parent.textBetween(0, parent.content.size, undefined, '\ufffc');
-    const word = /[\p{L}\p{N}_'’-]/u;
-    let from = $pos.parentOffset;
-    let to = from;
-    while (from > 0 && word.test(text[from - 1])) from--;
-    while (to < text.length && word.test(text[to])) to++;
-    if (from === to) return focusAt(pos);
-    if (!editor.isFocused) {
-      if (!keyboardUp()) ctx.expectKeyboard();
-      (editor.view.dom as HTMLElement).focus({ preventScroll: true });
-    }
-    const start = $pos.start();
-    editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, start + from, start + to)));
-  }
   // Focus taken right inside the tap (synchronously, not a frame later), so Android brings up
   // the keyboard and connects it to the editor; `pos` null = the end of the note.
   function focusAt(pos: number | null) {

@@ -305,6 +305,11 @@ compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
 - Keyboard: `react-native-keyboard-controller`; modals call `keyboardGone()`. ProseMirror's own
   scrolling is off; `centerCaret` only keeps the caret visible.
 - Dialogs: `src/Dialog.tsx` `appAlert`, never `Alert.alert`.
+- Text selection (2026-10-18): double taps go to Chromium (a selection set by code gets no
+  handles); `selectionScroll` in toolbar.ts scrolls gently above the bar before Chromium's own
+  fast edge scrolling; WebView haptics are off (`with-stylus.js`, handle ticks buzzed). The
+  transparent `::selection` on list / quote containers in content.css is desktop only
+  (`html.webkitgtk`): Chromium passes it on to the text.
 - Theme (`src/ui.tsx`): palette (`material-you` | `noted` | preset id, SecureStore
   `noted_theme_palette`) + brightness (auto / light / dark, `noted_theme_mode`). No reload:
   `T` is changed in place by `refreshTheme()`, every module style sheet is

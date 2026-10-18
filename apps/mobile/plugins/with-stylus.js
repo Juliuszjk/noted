@@ -11,6 +11,8 @@
 // - Hover: a WebView never passes the pen above the screen on to its page. Its position (in
 //   the page's CSS pixels) and the side button go straight to the visible WebViews
 //   (window.__notedPenHover), about 60 times a second, so a drawing can show the eraser ring.
+// - No haptics in the WebViews: Chromium ticks the vibration motor each time a selection
+//   handle moves on by a character, a buzz under the finger while the text scrolls.
 const { withMainActivity } = require('expo/config-plugins');
 
 const MARKER = 'Noted stylus input (plugins/with-stylus.js)';
@@ -98,7 +100,16 @@ const METHODS = `
     return false
   }
 
+  // The WebViews' haptics off (selection handles ticking); checked at each first touch, as the
+  // editor's WebView comes later than the Activity.
+  private fun notedQuietWebViews() {
+    val views = mutableListOf<android.webkit.WebView>()
+    notedWebViews(window.decorView, views)
+    for (w in views) if (w.isHapticFeedbackEnabled) w.isHapticFeedbackEnabled = false
+  }
+
   override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+    if (e.actionMasked == MotionEvent.ACTION_DOWN) notedQuietWebViews()
     if (!notedHasStylus(e)) return super.dispatchTouchEvent(e)
     val action = e.actionMasked
     val actionTool = e.getToolType(e.actionIndex)
