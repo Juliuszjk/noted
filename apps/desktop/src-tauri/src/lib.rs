@@ -120,6 +120,18 @@ fn set_custom_words(languages: Vec<String>, words: Vec<String>) -> Result<(), St
 // A desktop notification through the system's notification daemon (notify-send), so it looks
 // like the other notifications. `kind` picks the icon: a Quickshell notification icon set when
 // there is one (~/.config/quickshell/assets/icons/notifications), else a theme icon.
+// Windows shows toasts under the app's AppUserModelID (the installer's shortcut carries it).
+#[cfg(windows)]
+pub(crate) const WINDOWS_APP_ID: &str = "io.github.juliuszjk.noted";
+
+#[cfg(windows)]
+#[tauri::command]
+fn notify(summary: String, body: String, kind: String) -> Result<(), String> {
+    let _ = kind;
+    notify_rust::Notification::new().app_id(WINDOWS_APP_ID).summary(&summary).body(&body).show().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(not(windows))]
 #[tauri::command]
 fn notify(summary: String, body: String, kind: String) -> Result<(), String> {
     let custom = std::env::var("HOME").ok().map(|home| {

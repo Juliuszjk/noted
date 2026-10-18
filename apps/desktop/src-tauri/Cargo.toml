@@ -39,6 +39,9 @@ gdk = "0.18"
 libc = "0.2"
 notify-rust = "4.18.2"
 
+[target.'cfg(windows)'.dependencies]
+notify-rust = "4.18.2"
+
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

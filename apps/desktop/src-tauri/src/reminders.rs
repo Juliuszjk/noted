@@ -80,6 +80,13 @@ pub fn start(app: AppHandle, reminders: Reminders) {
                 if let Some(handle) = show(&app, &reminders, &notice) {
                     inner.open.insert(notice.id.clone(), handle);
                 }
+                // Windows toasts carry no buttons here: Done / snooze stay in the app.
+                #[cfg(windows)]
+                let _ = notify_rust::Notification::new()
+                    .app_id(crate::WINDOWS_APP_ID)
+                    .summary(&notice.title)
+                    .body(&notice.body)
+                    .show();
             }
             let next = inner.notices.iter().filter(|n| !inner.fired.contains(&n.id)).map(|n| n.due).min();
             // At most a minute: the clock jumps after a suspend.
