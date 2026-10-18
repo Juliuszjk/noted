@@ -68,6 +68,14 @@ describe('exportNote', () => {
     expect(exportNote('', { type: 'doc', content: [p(t('a '), t(' b ', 'italic'), t('*c*'))] }, 'markdown')).toBe('a  *b* \\*c\\*\n');
   });
 
+  it('nests task items under the text of their parent, not after its checkbox', () => {
+    const task = (checked: boolean, ...content: any[]) => ({ type: 'taskItem', attrs: { checked }, content });
+    const nested = { type: 'doc', content: [{ type: 'taskList', content: [
+      task(false, p(t('parent')), { type: 'taskList', content: [task(true, p(t('child')))] }),
+    ] }] };
+    expect(exportNote('', nested, 'markdown')).toBe('- [ ] parent\n  - [x] child\n');
+  });
+
   it('makes safe file names', () => {
     expect(exportFileName(' a/b: c? ', 'md')).toBe('a b c.md');
     expect(exportFileName('', 'pdf')).toBe('Untitled.pdf');

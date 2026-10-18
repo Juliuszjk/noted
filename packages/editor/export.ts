@@ -81,10 +81,12 @@ const indentLines = (text: string, first: string, rest: string) =>
 const blocks = (nodes: JSONContent[] | undefined, ctx: Ctx, tight = false): string =>
   (nodes ?? []).map((n) => block(n, ctx)).filter((b) => b !== null).join(tight || ctx.tight ? '\n' : '\n\n');
 
-const listItems = (node: JSONContent, ctx: Ctx, marker: (i: number, item: JSONContent) => string): string =>
+// Following lines of an item are indented by the marker's width; `restWidth` overrides it
+// (a task item's content starts after "- ", not after "- [ ] ": deeper is a code block).
+const listItems = (node: JSONContent, ctx: Ctx, marker: (i: number, item: JSONContent) => string, restWidth?: number): string =>
   (node.content ?? []).map((item, i) => {
     const m = marker(i, item);
-    return indentLines(blocks(item.content, ctx, true), m, ' '.repeat(m.length));
+    return indentLines(blocks(item.content, ctx, true), m, ' '.repeat(restWidth ?? m.length));
   }).join('\n');
 
 const cellText = (cell: JSONContent, ctx: Ctx) =>
@@ -114,7 +116,7 @@ const block = (node: JSONContent, ctx: Ctx): string => {
       return listItems(node, ctx, (i) => `${start + i}. `);
     }
     case 'taskList':
-      return listItems(node, ctx, (_, item) => (md ? (item.attrs?.checked ? '- [x] ' : '- [ ] ') : item.attrs?.checked ? '☑ ' : '☐ '));
+      return listItems(node, ctx, (_, item) => (md ? (item.attrs?.checked ? '- [x] ' : '- [ ] ') : item.attrs?.checked ? '☑ ' : '☐ '), md ? 2 : undefined);
     case 'codeBlock': {
       const code = (node.content ?? []).map((t) => t.text ?? '').join('');
       if (!md) return code;
