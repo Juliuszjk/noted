@@ -133,6 +133,8 @@ const NUMBERS: { style: string; label: string; markers: string[] }[] = [
   { style: 'lower-greek', label: 'α, β, γ', markers: ['α.', 'β.', 'γ.'] },
 ];
 const BASE_FONT_PX = 16;
+// Transaction meta: centerCaret leaves the page where it is.
+const KEEP_SCROLL = 'notedKeepScroll';
 const TABLE_COLS = 10;
 const TABLE_ROWS = 6;
 const PIN_KEY = 'noted_toolbar_pinned';
@@ -1423,7 +1425,8 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     setTimeout(() => centerCaret(), 400);
   }
   editor.on('selectionUpdate', () => centerCaret());
-  editor.on('update', () => centerCaret());
+  // A ticked checkbox elsewhere in the note must not bring the caret's line into view.
+  editor.on('update', ({ transaction }) => { if (!transaction.getMeta(KEEP_SCROLL)) centerCaret(); });
   // Focus coming back with the keyboard: the keyboard's arrival (onViewport) centres the line.
   editor.on('focus', () => { if (keyboardUp()) centerCaretSoon(); });
 
@@ -1595,6 +1598,35 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     // The image's / file's own buttons live in the bar: it shows without a keyboard too.
     else if (atomWithoutKeyboard() && editor.isFocused) show(true);
   });
+  // A checkbox ticked by Tiptap's node view focuses the editor: the keyboard came up and the
+  // page scrolled to the caret. A short, still tap on it toggles the item here instead.
+  let checkTap: { x: number; y: number; at: number; item: HTMLElement } | null = null;
+  document.addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    const item = (e.target as El).closest?.('ul[data-type="taskList"] > li > label')?.parentElement as HTMLElement | null | undefined;
+    checkTap = t && e.touches.length === 1 && item && editorDom.contains(item) ? { x: t.clientX, y: t.clientY, at: Date.now(), item } : null;
+  }, { passive: true, capture: true });
+  document.addEventListener('touchmove', (e) => {
+    const t = e.touches[0];
+    if (checkTap && t && Math.hypot(t.clientX - checkTap.x, t.clientY - checkTap.y) > 8) checkTap = null;
+  }, { passive: true, capture: true });
+  document.addEventListener('touchend', (e) => {
+    const start = checkTap;
+    checkTap = null;
+    if (!start || Date.now() - start.at > 500) return;
+    e.preventDefault();
+    if (!editor.isEditable) return;
+    const $pos = editor.state.doc.resolve(editor.view.posAtDOM(start.item, 0));
+    for (let d = $pos.depth; d > 0; d--) {
+      const node = $pos.node(d);
+      if (node.type.name !== 'taskItem') continue;
+      const y = window.scrollY;
+      editor.view.dispatch(editor.state.tr.setNodeMarkup($pos.before(d), undefined, { ...node.attrs, checked: !node.attrs.checked }).setMeta(KEEP_SCROLL, true));
+      // Anything else that scrolls to the caret after the change is undone.
+      requestAnimationFrame(() => { if (window.scrollY !== y) window.scrollTo(0, y); });
+      return;
+    }
+  }, { passive: false, capture: true });
   let tap: { x: number; y: number; at: number } | null = null;
   document.addEventListener('touchstart', (e) => {
     touching = true;
