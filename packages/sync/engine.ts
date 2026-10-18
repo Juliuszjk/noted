@@ -1,6 +1,6 @@
 import { NoteRecord } from '@noted/types';
 import { fetchRemoteNote, pushNote, keyMatchesVault, ensureAuthRegistered, apiFetch } from './client';
-import { API_URL } from '@noted/config';
+import { apiUrl } from '@noted/config';
 import { sealDoc, mergeRemote, docFromSealed } from './doc';
 import { buildNoteMeta, encodeNoteMeta, isNoteDeleted } from './note-meta';
 import { seal } from '@noted/crypto';
@@ -37,7 +37,7 @@ export const runSyncEngine = async (
     throw new Error('Key mismatch: restart the app');
   }
   await ensureAuthRegistered(masterKey);
-  const res = await apiFetch(`${API_URL}/notes`, masterKey);
+  const res = await apiFetch(`${apiUrl()}/notes`, masterKey);
   if (res.status === 401) throw new Error('Unauthorized');
   if (!res.ok) throw new Error('API down');
   const remoteList: { id: string; updated_at: number }[] = await res.json();

@@ -14,6 +14,10 @@ services:
       - "${NOTED_BIND_IP:-127.0.0.1}:3333:3000"
       # Published notes (viewer + sealed copies): localhost only; Tailscale Funnel exposes it.
       - "127.0.0.1:3334:3001"
+    environment:
+      # Address of published notes as people reach them (NOTED_PUBLIC_URL in .env, not in git);
+      # apps learn it from GET /info.
+      NOTED_PUBLIC_URL: ${NOTED_PUBLIC_URL:-}
     volumes:
       - noted_data:/app/apps/api/data
     restart: unless-stopped

@@ -6,10 +6,10 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
-import { API_URL, SYNC_INTERVAL_MS, WS_URL, WS_STALE_MS, KEY_STORAGE, VERIFIER_STORAGE } from '@noted/config';
+import { apiUrl, SYNC_INTERVAL_MS, wsUrl, WS_STALE_MS, KEY_STORAGE, VERIFIER_STORAGE, SERVER_STORAGE, configureServerStorage } from '@noted/config';
 import { NoteRecord } from '@noted/types';
 import {
-  runSyncEngine, uploadPendingBlobs, LocalNoteStore, mergingNoteStore, configureVerifierCache, buildNoteMeta, encodeNoteMeta,
+  runSyncEngine, uploadPendingBlobs, LocalNoteStore, mergingNoteStore, configureVerifierCache, refreshServerInfo, buildNoteMeta, encodeNoteMeta,
   decodeNoteMeta, displayTitle, setTitle, markNoteCreated, setNoteFlag, getNoteFlag, setNoteTrashed,
   deleteNoteForever, unpublishQuietly, uploadPublished, deletePublished, publishedExists, publishExpired, getNotePublish, setNotePublish, setNoteNotebook, getNoteNotebooks, setNoteTag, getNoteTags, setNoteFont, getNoteFont, CATALOG_ID, isSystemNote,
   listCatalog, getSharedEditorPrefs, refreshStaleNoteMeta, listOwnReminders, setOwnReminder, deleteOwnReminder, updateReminderInDoc, setSharedEditorPrefs, sharedPrefsChange, SHARED_EDITOR_PREFS, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, purgeExpiredTrash, getTitleText, getNoteSettings,
@@ -28,6 +28,8 @@ configureVerifierCache({
   get: () => localStorage.getItem(VERIFIER_STORAGE),
   set: (verifier) => localStorage.setItem(VERIFIER_STORAGE, verifier),
 });
+// The server this device talks to (chosen on the unlock screen), kept in localStorage too.
+configureServerStorage(() => localStorage.getItem(SERVER_STORAGE), (text) => localStorage.setItem(SERVER_STORAGE, text));
 import { bytesToBase64, base64ToBytes, seal, unseal, deriveMasterKey, generateSalt } from '@noted/crypto';
 import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
@@ -258,10 +260,12 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
       if (live?.noteId === noteId) applyAwarenessUpdate(live.awareness, update, LIVE_ORIGIN);
     },
   }), [masterKey]);
+  // The server may report a new public address for published notes.
+  useEffect(() => { refreshServerInfo(); }, []);
   useEffect(() => {
     const probe = async () => {
       try {
-        const res = await fetch(`${API_URL}/`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+        const res = await fetch(`${apiUrl()}/`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
         setOnline(res.ok);
         if (res.ok && !wsReadyRef.current) reconnectRef.current();
       } catch {
@@ -330,7 +334,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
 
     const connect = () => {
       if (stopped) return;
-      const ws = new WebSocket(WS_URL);
+      const ws = new WebSocket(wsUrl());
       socket = ws;
       lastMessageAt = Date.now();
       ws.onopen = () =>
@@ -1841,7 +1845,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
             onEpochChanged: (epoch) => { writeEpoch(epoch); reconnectRef.current?.(); },
             saveFile: saveFileDialog,
             openTextFile: openTextFileDialog,
-            serverUrl: API_URL,
+            serverUrl: apiUrl(),
             online,
             syncing,
             lastSyncAt,

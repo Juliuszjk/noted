@@ -39,7 +39,7 @@ packages/crypto   XChaCha20-Poly1305 (@noble/ciphers), Argon2id + HKDF (@noble/h
 packages/sync     Yjs merge, API client, sync engine, editor bridge, backups, import/export helpers
 packages/editor   Tiptap schema (single source of truth), slash menu, toolbar model, content.css
 packages/ui       Desktop React components (NoteEditor, menus, dialogs, settings, importers) + shared list logic
-packages/config   API_URL, timeouts, storage keys
+packages/config   server address (runtime), timeouts, storage keys
 packages/types    NoteRecord, RemoteNote, VaultMode
 packages/media    image compression (WebP)
 packages/theme    Material 3 colour roles -> CSS variables, presets
@@ -56,6 +56,8 @@ packages/db, crdt   empty
   installed app at the same time (one database). Icons: `pnpm tauri icon src-tauri/icons/icon-source-1024.png`.
 - Second desktop instance (sync testing; debug builds skip single-instance):
   `mkdir -p /tmp/noted-b && env XDG_DATA_HOME=/tmp/noted-b/data XDG_CONFIG_HOME=/tmp/noted-b/config XDG_CACHE_HOME=/tmp/noted-b/cache apps/desktop/src-tauri/target/debug/noted`
+  (needs a debug build first: `cargo build` in `src-tauri`; no debug binary exists by default). Without one:
+  close the installed Noted and run `~/.local/bin/noted` with the same `env XDG_...` (release keeps single-instance).
 - Mobile dev (Expo Go over Tailscale):
   `REACT_NATIVE_PACKAGER_HOSTNAME=$(tailscale ip -4) pnpm --filter mobile exec expo start -c`
 - **Mobile APK** (package `com.apollo.noted`): `apps/mobile/scripts/build-apk.sh` = Gradle
@@ -85,8 +87,17 @@ packages/db, crdt   empty
 Docker (`infra/docker`: `Dockerfile.api`, `docker-compose.yml`), one container `noted_api` with the
 private API (port 3000) and the public publish server (port 3001). Host, addresses, deploy
 commands, backups and Tailscale rules: **`CLAUDE.local.md`** (not in git, read it before deploying).
-Server addresses for the apps: `packages/config/server.ts` (not in git; template `server.example.ts`);
-compose bind IP: `infra/docker/.env` (`NOTED_BIND_IP`, not in git).
+Server address (2026-10-18, phase 1 of distribution): chosen at run time, `apiUrl()` / `publicUrl()` /
+`wsUrl()` in `@noted/config`, stored per app via `configureServerStorage` (desktop localStorage
+`noted_server` in App.tsx, phone SecureStore in `src/server-address.ts` imported first by index.ts for
+the headless tasks, MCP `~/.config/noted-mcp/server.json`). Never read the address at import time.
+`packages/config/server.ts` (not in git; template `server.example.ts`, empty) is only an optional build
+default, stored on first start. Unlock screens ask for the address when none is set ("Server: … ·
+change" link; `normalizeServerUrl`: IP / localhost -> http, host name -> https) and check it with
+`GET /info` (`{app:'noted', version, publicUrl}`, env `NOTED_PUBLIC_URL`; `connectServer`,
+`refreshServerInfo` at start adopts a reported public address). `putPublished` refuses without a
+public address. Caveat until phase 2: changing the server on a device that still holds another
+vault's local notes is not guarded. Compose: `infra/docker/.env` (`NOTED_BIND_IP`, `NOTED_PUBLIC_URL`, not in git).
 
 ## Security model (do not break)
 
@@ -462,7 +473,7 @@ useful, see the TODO.
 - Low priority: embeds (the user called them a gimmick). Rejected (2026-10-18): attachments
   > 30 MB, download subfolders by notebook / type.
 - **Final stage: distribution to friends** (2026-10-16; no iPhone). Blockers first: the server is
-  single-user (one `vault` row) and `API_URL` is the hard-coded Tailscale IP. The user's choice:
+  single-user (one `vault` row) and the server address was hard-coded (phase 1 done 2026-10-18). The user's choice:
   NO multi-user accounts on Mercury; friends either run their own server (Docker image + server
   address chosen at first start) or use the apps without any server (local-only mode on the
   desktop / phone; details still to be worked out together). Then:
@@ -470,6 +481,17 @@ useful, see the TODO.
   Windows `.msi` / `.exe` (Tauri, Windows runner; unsigned = SmartScreen warning), Android APK
   (own release key, CI secrets), Linux AppImage; Tauri updater maybe. Arch: AUR `PKGBUILD`
   (`-bin` from the release, or from source); check whether the name "noted" is taken.
+  **Plan agreed (2026-10-18)**, order: 1 runtime server address (`getServer()` in config, server
+  reports its public URL, build default only for the user's own devices, MCP setup asks) -> 3
+  self-hosting (setup token for creating the vault, GHCR image amd64+arm64, generic compose,
+  SELF-HOSTING.md) -> 2 first-start screen + local-only mode (vault data stored locally,
+  "connect to server" later via `PUT /vault` with envelopes) -> 5 repo + Actions releases -> 4
+  Windows -> 6 updates. Decided: make THIS repo public (history checked: only the author name),
+  name stays "Noted", updates YES (Tauri updater + phone checks GitHub releases), Windows tested
+  by the user on an external Windows disk. License **AGPL-3.0**. CLAUDE.md stays in the public
+  repo, cleaned: personal data and the user's private working rules move to CLAUDE.local.md.
+  Identifiers change to **`io.github.juliuszjk.noted`** (desktop + Android) before friends
+  install: desktop migrates the old data folder once, the phone gets a new app (data from sync).
 
 ## Incidents and gotchas
 

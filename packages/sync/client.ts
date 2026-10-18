@@ -1,4 +1,4 @@
-import { API_URL, REQUEST_TIMEOUT_MS } from '@noted/config';
+import { apiUrl, REQUEST_TIMEOUT_MS } from '@noted/config';
 import { deriveAuthToken, checkVerifier, base64ToBytes, bytesToBase64 } from '@noted/crypto';
 import { RemoteNote } from '@noted/types';
 
@@ -21,13 +21,13 @@ export const apiFetch = (url: string, masterKey: Uint8Array, init: RequestInit =
   });
 
 export const fetchRemoteNote = async (id: string, masterKey: Uint8Array): Promise<RemoteNote> => {
-  const res = await apiFetch(`${API_URL}/notes/${id}`, masterKey);
+  const res = await apiFetch(`${apiUrl()}/notes/${id}`, masterKey);
   if (!res.ok) throw new Error(`Pull failed for ${id} (HTTP ${res.status})`);
   return res.json();
 };
 
 export const pushNote = async (id: string, content: string, yjsState: string, updatedAt: number, masterKey: Uint8Array) => {
-  const res = await apiFetch(`${API_URL}/notes/${id}`, masterKey, {
+  const res = await apiFetch(`${apiUrl()}/notes/${id}`, masterKey, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ encrypted_html: content, encrypted_yjs: yjsState, updated_at: updatedAt }),
@@ -53,7 +53,7 @@ export const configureVerifierCache = (cache: VerifierCache) => {
 export const keyMatchesVault = async (masterKey: Uint8Array): Promise<boolean> => {
   let verifier = cachedVerifier;
   if (!verifier) {
-    const res = await apiFetch(`${API_URL}/vault`, masterKey);
+    const res = await apiFetch(`${apiUrl()}/vault`, masterKey);
     if (!res.ok) throw new Error(`Vault fetch failed (HTTP ${res.status})`);
     verifier = (await res.json()).verifier as string;
     cachedVerifier = verifier;
@@ -66,7 +66,7 @@ export const keyMatchesVault = async (masterKey: Uint8Array): Promise<boolean> =
 let authRegistered = false;
 export const ensureAuthRegistered = async (masterKey: Uint8Array) => {
   if (authRegistered) return;
-  const res = await apiFetch(`${API_URL}/vault/auth`, masterKey, {
+  const res = await apiFetch(`${apiUrl()}/vault/auth`, masterKey, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ auth_token: bytesToBase64(deriveAuthToken(masterKey)) }),

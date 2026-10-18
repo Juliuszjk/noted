@@ -1,4 +1,4 @@
-import { API_URL } from '@noted/config';
+import { apiUrl } from '@noted/config';
 import {
   base64ToBytes, bytesToBase64, checkVerifier, deriveAuthToken, generateKey, recoveryWrappingKey, seal, unseal,
   unwrapKey, wrapKey,
@@ -22,7 +22,7 @@ export interface VaultInfo {
 const NO_KEY = new Uint8Array(32);
 
 export const fetchVault = async (): Promise<VaultInfo | null> => {
-  const res = await apiFetch(`${API_URL}/vault`, NO_KEY);
+  const res = await apiFetch(`${apiUrl()}/vault`, NO_KEY);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const v = await res.json();
@@ -58,7 +58,7 @@ const check = async (res: Response, what: string) => {
 
 // New passphrase: `newSalt` and `newPassphraseKey` = Argon2id(new passphrase, newSalt).
 export const changePassphrase = async (dataKey: Uint8Array, newSalt: Uint8Array, newPassphraseKey: Uint8Array): Promise<void> => {
-  const res = await apiFetch(`${API_URL}/account/password`, dataKey, {
+  const res = await apiFetch(`${apiUrl()}/account/password`, dataKey, {
     method: 'PUT', ...json({ salt: bytesToBase64(newSalt), key_envelope: wrapKey(newPassphraseKey, dataKey) }),
   });
   await check(res, 'Changing the passphrase');
@@ -68,7 +68,7 @@ export const changePassphrase = async (dataKey: Uint8Array, newSalt: Uint8Array,
 // replaces it on the server.
 export const getRecoveryKey = async (dataKey: Uint8Array, renew = false): Promise<Uint8Array> => {
   if (!renew) {
-    const res = await apiFetch(`${API_URL}/account/recovery`, dataKey);
+    const res = await apiFetch(`${apiUrl()}/account/recovery`, dataKey);
     await check(res, 'Reading the recovery key');
     const { recovery_sealed } = await res.json();
     if (recovery_sealed) {
@@ -77,7 +77,7 @@ export const getRecoveryKey = async (dataKey: Uint8Array, renew = false): Promis
     }
   }
   const recoveryKey = generateKey();
-  const res = await apiFetch(`${API_URL}/account/recovery`, dataKey, {
+  const res = await apiFetch(`${apiUrl()}/account/recovery`, dataKey, {
     method: 'PUT', ...json({ recovery_envelope: wrapKey(recoveryWrappingKey(recoveryKey), dataKey), recovery_sealed: seal(dataKey, recoveryKey) }),
   });
   await check(res, 'Saving the recovery key');
@@ -88,7 +88,7 @@ export const getRecoveryKey = async (dataKey: Uint8Array, renew = false): Promis
 // data key and could compute the next token itself; that needs a new data key, not this).
 export const logoutOtherDevices = async (dataKey: Uint8Array): Promise<number> => {
   const epoch = getAuthEpoch() + 1;
-  const res = await apiFetch(`${API_URL}/account/rotate-auth`, dataKey, {
+  const res = await apiFetch(`${apiUrl()}/account/rotate-auth`, dataKey, {
     method: 'POST', ...json({ auth_token: bytesToBase64(deriveAuthToken(dataKey, epoch)), epoch }),
   });
   await check(res, 'Logging out the other devices');
@@ -116,7 +116,7 @@ export interface AccountStats {
 }
 
 export const fetchAccountStats = async (dataKey: Uint8Array): Promise<AccountStats> => {
-  const res = await apiFetch(`${API_URL}/account/stats`, dataKey);
+  const res = await apiFetch(`${apiUrl()}/account/stats`, dataKey);
   await check(res, 'Reading the storage numbers');
   return res.json();
 };
@@ -147,7 +147,7 @@ export const fetchBackupVault = async (dataKey: Uint8Array): Promise<BackupVault
   if (!info) return null;
   let recoverySealed: string | null = null;
   try {
-    const res = await apiFetch(`${API_URL}/account/recovery`, dataKey);
+    const res = await apiFetch(`${apiUrl()}/account/recovery`, dataKey);
     if (res.ok) recoverySealed = (await res.json()).recovery_sealed ?? null;
   } catch {
     // Without it the vault still works; the recovery key can be renewed later.
@@ -163,7 +163,7 @@ export const vaultInfoOf = (v: BackupVault): VaultInfo => ({
 // passphrase, recovery key and data key work again. `epoch` = this device's auth epoch.
 export const restoreServerVault = async (dataKey: Uint8Array, v: BackupVault, epoch = 0): Promise<void> => {
   if (!verifies(vaultInfoOf(v), dataKey)) throw new Error('This backup belongs to another vault (a different key).');
-  const res = await apiFetch(`${API_URL}/vault`, dataKey, {
+  const res = await apiFetch(`${apiUrl()}/vault`, dataKey, {
     method: 'PUT',
     ...json({
       salt: v.salt, verifier: v.verifier, auth_token: bytesToBase64(deriveAuthToken(dataKey, epoch)), auth_epoch: epoch,

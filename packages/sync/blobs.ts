@@ -1,4 +1,4 @@
-import { API_URL } from '@noted/config';
+import { apiUrl } from '@noted/config';
 import { base64ToBytes, bytesToBase64, generateKey, sealBytes, unsealBytes } from '@noted/crypto';
 import { apiFetch } from './client';
 
@@ -35,7 +35,7 @@ export const createBlob = async (store: LocalBlobStore, plaintext: Uint8Array, n
 };
 
 export const uploadBlob = async (masterKey: Uint8Array, id: string, sealed: Uint8Array): Promise<void> => {
-  const res = await apiFetch(`${API_URL}/blobs/${id}`, masterKey, {
+  const res = await apiFetch(`${apiUrl()}/blobs/${id}`, masterKey, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/octet-stream' },
     body: sealed as BodyInit,
@@ -65,7 +65,7 @@ export const uploadPendingBlobs = async (masterKey: Uint8Array, store: LocalBlob
 export const fetchSealedBlob = async (masterKey: Uint8Array, store: LocalBlobStore, id: string): Promise<Uint8Array | null> => {
   const local = await store.get(id);
   if (local) return local;
-  const res = await apiFetch(`${API_URL}/blobs/${id}`, masterKey, {}, BLOB_TIMEOUT_MS);
+  const res = await apiFetch(`${apiUrl()}/blobs/${id}`, masterKey, {}, BLOB_TIMEOUT_MS);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Blob download failed for ${id} (HTTP ${res.status})`);
   const sealed = new Uint8Array(await res.arrayBuffer());

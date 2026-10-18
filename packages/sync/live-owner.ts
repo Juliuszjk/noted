@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { API_URL } from '@noted/config';
+import { apiUrl } from '@noted/config';
 import { apiFetch } from './client';
 import { fromBase64Url, nextPublishInfo, publishExpired, toBase64Url } from './publish';
 import type { PublishOptions } from './publish';
@@ -67,7 +67,7 @@ const liveBlobIds = (doc: Y.Doc): Set<string> => new Set(noteBlobIds(noteBodyJso
 // to `snapshotSeq`.
 export const putLiveNote = async (masterKey: Uint8Array, info: NotePublish, keys: LiveKeys, doc: Y.Doc, snapshotSeq: number): Promise<void> => {
   if (publishExpired(info)) throw new Error('The link has expired: choose a new expiry date.');
-  const res = await apiFetch(`${API_URL}/live/${info.id}`, masterKey, {
+  const res = await apiFetch(`${apiUrl()}/live/${info.id}`, masterKey, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -85,7 +85,7 @@ export const putLiveNote = async (masterKey: Uint8Array, info: NotePublish, keys
 };
 
 const fetchLiveUpdates = async (masterKey: Uint8Array, id: string, after: number) => {
-  const res = await apiFetch(`${API_URL}/live/${id}?after=${after}`, masterKey);
+  const res = await apiFetch(`${apiUrl()}/live/${id}?after=${after}`, masterKey);
   if (!res.ok) throw new Error(`Live note fetch failed (HTTP ${res.status})`);
   return res.json() as Promise<{ exists: boolean; snapshotSeq?: number; updates?: { seq: number; data: string; guest: boolean }[] }>;
 };

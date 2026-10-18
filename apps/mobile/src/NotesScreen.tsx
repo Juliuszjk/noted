@@ -47,7 +47,7 @@ import {
 import { SettingsScreen } from './SettingsScreen';
 import type { NoteMeta, CatalogKind, CatalogEntry, SharedEditorPrefs, OwnReminder } from '@noted/sync';
 import { NoteRecord } from '@noted/types';
-import { WS_URL, SYNC_INTERVAL_MS, WS_STALE_MS } from '@noted/config';
+import { wsUrl, SYNC_INTERVAL_MS, WS_STALE_MS } from '@noted/config';
 import { EditorScreen } from './EditorScreen';
 import { startLiveOwner, getLiveOwner } from './live';
 import { getNotePublish } from '@noted/sync';
@@ -167,7 +167,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
 
     const connect = () => {
       if (stopped) return;
-      const ws = new WebSocket(WS_URL);
+      const ws = new WebSocket(wsUrl());
       socket = ws;
       lastMessageAt = Date.now();
       

@@ -1,4 +1,4 @@
-import { API_URL } from '@noted/config';
+import { apiUrl } from '@noted/config';
 import { apiFetch } from './client';
 import { docFromSealed } from './doc';
 import { noteBodyJson, noteBlobIds } from './doc-json';
@@ -26,7 +26,7 @@ export interface UnusedBlobs {
 }
 
 export const listServerBlobs = async (masterKey: Uint8Array): Promise<ServerBlob[]> => {
-  const res = await apiFetch(`${API_URL}/blobs`, masterKey);
+  const res = await apiFetch(`${apiUrl()}/blobs`, masterKey);
   if (!res.ok) throw new Error(`Listing the files failed (HTTP ${res.status})`);
   return res.json();
 };
@@ -60,7 +60,7 @@ export const findUnusedBlobs = async (
 export const deleteServerBlobs = async (masterKey: Uint8Array, ids: string[]): Promise<number> => {
   let deleted = 0;
   for (const id of ids) {
-    const res = await apiFetch(`${API_URL}/blobs/${id}`, masterKey, { method: 'DELETE' });
+    const res = await apiFetch(`${apiUrl()}/blobs/${id}`, masterKey, { method: 'DELETE' });
     if (res.ok) deleted++;
   }
   return deleted;
@@ -86,7 +86,7 @@ export const deletedNoteIds = async (masterKey: Uint8Array, store: LocalNoteStor
 export const purgeDeletedNotes = async (masterKey: Uint8Array, store: LocalNoteStore, ids: string[]): Promise<number> => {
   let purged = 0;
   for (const id of ids) {
-    const res = await apiFetch(`${API_URL}/notes/${encodeURIComponent(id)}`, masterKey, { method: 'DELETE' });
+    const res = await apiFetch(`${apiUrl()}/notes/${encodeURIComponent(id)}`, masterKey, { method: 'DELETE' });
     if (!res.ok) continue;
     await store.remove?.(id);
     purged++;

@@ -9,7 +9,7 @@ import * as SystemUI from 'expo-system-ui';
 import { generateSalt, createVerifier, deriveAuthToken, bytesToBase64, parseRecoveryKey } from '@noted/crypto';
 import { saveMasterKey, getMasterKey, clearMasterKey, getAuthEpochStored, saveAuthEpoch } from './src/storage';
 import { createExpoStore } from './src/store';
-import { apiFetch, fetchVault, openWithPassphraseKey, openWithRecoveryKey, changePassphrase, setAuthEpoch, mergingNoteStore } from '@noted/sync';
+import { apiFetch, fetchVault, openWithPassphraseKey, openWithRecoveryKey, changePassphrase, setAuthEpoch, mergingNoteStore, connectServer, refreshServerInfo } from '@noted/sync';
 import type { LocalNoteStore, LocalBlobStore, VaultInfo } from '@noted/sync';
 import { isLightColor } from '@noted/theme';
 import { registerKdf } from './src/kdf';
@@ -20,7 +20,7 @@ import { NotesScreen } from './src/NotesScreen';
 import { T, PasswordField, refreshTheme, useThemeVersion, themed } from './src/ui';
 import { KdfRunner, KdfHandle } from './src/KdfRunner';
 import { DialogHost } from './src/Dialog';
-import { API_URL, MIN_PASSPHRASE_LENGTH } from '@noted/config';
+import { apiUrl, hasServer, normalizeServerUrl, MIN_PASSPHRASE_LENGTH } from '@noted/config';
 import { backgroundWasIntended } from './src/away';
 
 // Status bar icons (clock, battery) contrast with the app background: light on a dark theme,
@@ -31,6 +31,8 @@ const packBlob = (b: { nonce: Uint8Array; ciphertext: Uint8Array }): string =>
   `${bytesToBase64(b.nonce)}.${bytesToBase64(b.ciphertext)}`;
 
 type Mode =
+  // No server chosen yet (or changing it): the vault lives on the server.
+  | { kind: 'server' }
   | { kind: 'loading' }
   | { kind: 'create' }
   | { kind: 'unlock'; info: VaultInfo }
@@ -46,7 +48,8 @@ function App() {
   const dbStore = useMemo(() => (rawStore && masterKey ? mergingNoteStore(masterKey, rawStore) : null), [rawStore, masterKey]);
   const [blobStore, setBlobStore] = useState<LocalBlobStore | null>(null);
 
-  const [mode, setMode] = useState<Mode>({ kind: 'loading' });
+  const [mode, setMode] = useState<Mode>(() => (hasServer() ? { kind: 'loading' } : { kind: 'server' }));
+  const [serverText, setServerText] = useState(() => apiUrl());
   const [passphrase, setPassphrase] = useState('');
   const [confirm, setConfirm] = useState('');
   const [recoveryText, setRecoveryText] = useState('');
@@ -99,7 +102,7 @@ function App() {
       setMode(info ? { kind: 'unlock', info } : { kind: 'create' });
       setError('');
     } catch {
-      setError('Cannot reach the server. Is Tailscale on?');
+      setError(`Cannot reach the server ${apiUrl().replace(/^https?:\/\//, '')}.`);
     } finally {
       setBusy(false);
     }
@@ -115,8 +118,11 @@ function App() {
         const key = await getMasterKey();
         if (key) {
           setMasterKey(key);
-        } else {
+          refreshServerInfo();
+        } else if (hasServer()) {
           await loadVault();
+        } else {
+          setBusy(false);
         }
       } catch (err) {
         setError('Failed to initialize storage or DB.');
@@ -150,11 +156,17 @@ function App() {
     await new Promise(r => setTimeout(r, 100));
 
     try {
-      if (mode.kind === 'create') {
+      if (mode.kind === 'server') {
+        const base = normalizeServerUrl(serverText);
+        if (!base) throw new Error('Enter the server address, e.g. https://notes.example.com or 100.64.0.1:3333.');
+        await connectServer(base);
+        setMode({ kind: 'loading' });
+        await loadVault();
+      } else if (mode.kind === 'create') {
         newPassphraseOk();
         const salt = generateSalt();
         const key = await kdfRef.current!.derive(passphrase, bytesToBase64(salt));
-        const res = await apiFetch(`${API_URL}/vault`, dummyKey, {
+        const res = await apiFetch(`${apiUrl()}/vault`, dummyKey, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -199,8 +211,18 @@ function App() {
     await clearMasterKey();
     setMasterKey(null);
     setNotice(reason ?? '');
-    setMode({ kind: 'loading' });
-    loadVault();
+    if (hasServer()) {
+      setMode({ kind: 'loading' });
+      loadVault();
+    } else {
+      setMode({ kind: 'server' });
+    }
+  };
+
+  const changeServer = () => {
+    setError('');
+    setServerText(apiUrl());
+    setMode({ kind: 'server' });
   };
 
   const choosing = mode.kind === 'create' || mode.kind === 'newPassphrase';
@@ -226,8 +248,13 @@ function App() {
                 : mode.kind === 'unlock' ? 'Enter passphrase:'
                 : mode.kind === 'recover' ? 'Enter your recovery key:'
                 : mode.kind === 'newPassphrase' ? 'Recovery key accepted. Choose a new passphrase:'
+                : mode.kind === 'server' ? 'Address of your Noted server (it only ever stores encrypted data):'
                 : 'Connecting to server...'}
             </Text>
+            {mode.kind === 'server' ? (
+              <TextInput style={styles.input} value={serverText} onChangeText={setServerText} autoCapitalize="none" autoCorrect={false}
+                keyboardType="url" placeholder="https://notes.example.com" placeholderTextColor={T.on_surface_variant} />
+            ) : null}
             {mode.kind === 'unlock' || choosing ? (
               <PasswordField style={styles.input} value={passphrase} onChangeText={setPassphrase}
                 placeholder={mode.kind === 'newPassphrase' ? 'New passphrase' : 'Passphrase'} />
@@ -249,7 +276,7 @@ function App() {
               <TouchableOpacity style={styles.button} onPress={handleUnlock} disabled={busy}>
                 {busy ? <ActivityIndicator color={T.on_primary} /> : (
                   <Text style={styles.buttonText}>
-                    {mode.kind === 'create' ? 'Create Vault' : mode.kind === 'recover' ? 'Check recovery key' : mode.kind === 'newPassphrase' ? 'Set passphrase and unlock' : 'Unlock'}
+                    {mode.kind === 'server' ? 'Connect' : mode.kind === 'create' ? 'Create Vault' : mode.kind === 'recover' ? 'Check recovery key' : mode.kind === 'newPassphrase' ? 'Set passphrase and unlock' : 'Unlock'}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -264,6 +291,16 @@ function App() {
             {mode.kind === 'recover' ? (
               <TouchableOpacity onPress={() => { setError(''); setMode({ kind: 'unlock', info: mode.info }); }} style={styles.link}>
                 <Text style={styles.linkText}>Back to the passphrase</Text>
+              </TouchableOpacity>
+            ) : null}
+            {mode.kind === 'server' && hasServer() ? (
+              <TouchableOpacity onPress={() => { setError(''); setMode({ kind: 'loading' }); loadVault(); }} style={styles.link}>
+                <Text style={styles.linkText}>Back: keep {apiUrl().replace(/^https?:\/\//, '')}</Text>
+              </TouchableOpacity>
+            ) : null}
+            {mode.kind !== 'server' ? (
+              <TouchableOpacity onPress={changeServer} style={styles.link}>
+                <Text style={styles.linkText}>Server: {apiUrl().replace(/^https?:\/\//, '')} · change</Text>
               </TouchableOpacity>
             ) : null}
           </View>

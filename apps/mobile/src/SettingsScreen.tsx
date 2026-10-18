@@ -17,7 +17,7 @@ import { readBackupSettings, writeBackupSettings, chooseBackupFolder, writeBacku
 import type { MobileBackupSettings } from './backups';
 import type { EditorPrefs } from '@noted/editor/editor-prefs-lite';
 import { getEditorPrefs, setEditorPrefs, getToolbarConfig, setToolbarConfig, getTableToolbarConfig, setTableToolbarConfig, getDrawingToolbarConfig, setDrawingToolbarConfig } from './prefs';
-import { MIN_PASSPHRASE_LENGTH, API_URL } from '@noted/config';
+import { MIN_PASSPHRASE_LENGTH, apiUrl } from '@noted/config';
 import { bytesToBase64, formatRecoveryKey, generateSalt } from '@noted/crypto';
 import {
   fetchVault, openWithPassphraseKey, changePassphrase, getRecoveryKey, logoutOtherDevices, fetchAccountStats,
@@ -554,7 +554,7 @@ export function SettingsScreen(p: Props) {
 
           {page === 'sync' && (
             <>
-              <Row title="Server" description={API_URL} right={
+              <Row title="Server" description={apiUrl()} right={
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: p.online ? '#3fb950' : T.error }} />
                   <Text style={{ color: T.on_surface_variant }}>{p.online ? 'Connected' : 'Offline'}</Text>

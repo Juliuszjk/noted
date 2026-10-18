@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { API_URL, MIN_PASSPHRASE_LENGTH } from '@noted/config';
+import { apiUrl, hasServer, normalizeServerUrl, MIN_PASSPHRASE_LENGTH } from '@noted/config';
 import {
   apiFetch, fetchVault, openWithPassphraseKey, openWithRecoveryKey, changePassphrase, setAuthEpoch, backupVault, vaultInfoOf, openBackup,
-  restoreServerVault,
+  restoreServerVault, connectServer,
 } from '@noted/sync';
 import type { VaultInfo } from '@noted/sync';
 import { PasswordInput } from './PasswordInput';
@@ -12,6 +12,8 @@ const packBlob = (b: { nonce: Uint8Array; ciphertext: Uint8Array }): string =>
   `${bytesToBase64(b.nonce)}.${bytesToBase64(b.ciphertext)}`;
 
 type Mode =
+  // No server chosen yet (or changing it): the vault lives on the server.
+  | { kind: 'server' }
   | { kind: 'loading' }
   | { kind: 'create' }
   | { kind: 'unlock'; info: VaultInfo }
@@ -25,7 +27,8 @@ type Mode =
 // from a backup. `onUnlock` gets the data key and the auth token epoch of the vault (and the
 // backup, whose notes the app then restores).
 export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: number, restoreBackupText?: string) => void }) {
-  const [mode, setMode] = useState<Mode>({ kind: 'loading' });
+  const [mode, setMode] = useState<Mode>(() => (hasServer() ? { kind: 'loading' } : { kind: 'server' }));
+  const [serverText, setServerText] = useState(() => apiUrl());
   const [passphrase, setPassphrase] = useState('');
   const [confirm, setConfirm] = useState('');
   const [recoveryText, setRecoveryText] = useState('');
@@ -43,13 +46,19 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
       setMode(info ? { kind: 'unlock', info } : { kind: 'create' });
       setError('');
     } catch {
-      setError('Cannot reach the server. Is Tailscale on?');
+      setError(`Cannot reach the server ${apiUrl().replace(/^https?:\/\//, '')}.`);
     }
   };
 
   useEffect(() => {
-    loadVault();
+    if (hasServer()) loadVault();
   }, []);
+
+  const changeServer = () => {
+    setError('');
+    setServerText(apiUrl());
+    setMode({ kind: 'server' });
+  };
 
   const newPassphraseOk = () => {
     if (passphrase.length < MIN_PASSPHRASE_LENGTH) throw new Error(`Use at least ${MIN_PASSPHRASE_LENGTH} characters.`);
@@ -61,11 +70,17 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
     setBusy(true);
     await new Promise((r) => setTimeout(r, 50));
     try {
-      if (mode.kind === 'create') {
+      if (mode.kind === 'server') {
+        const base = normalizeServerUrl(serverText);
+        if (!base) throw new Error('Enter the server address, e.g. https://notes.example.com or 100.64.0.1:3333.');
+        await connectServer(base);
+        setMode({ kind: 'loading' });
+        await loadVault();
+      } else if (mode.kind === 'create') {
         newPassphraseOk();
         const salt = generateSalt();
         const key = deriveMasterKey(passphrase, salt);
-        const res = await apiFetch(`${API_URL}/vault`, dummyKey, {
+        const res = await apiFetch(`${apiUrl()}/vault`, dummyKey, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -154,8 +169,13 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
           {mode.kind === 'recover' && 'Enter your recovery key (the groups of letters and digits you saved).'}
           {mode.kind === 'newPassphrase' && 'Recovery key accepted. Choose a new passphrase for every device.'}
           {mode.kind === 'loading' && 'Connecting to server...'}
+          {mode.kind === 'server' && 'Enter the address of your Noted server. Your notes are encrypted on this device: the server only ever stores sealed data.'}
           {mode.kind === 'restore' && 'The server has no vault yet. Pick a Noted backup (.nbackup) and enter the passphrase it was made with: the vault comes back with the same passphrase and recovery key, then your notes are restored and uploaded.'}
         </div>
+        {mode.kind === 'server' && (
+          <input autoFocus placeholder="https://notes.example.com" value={serverText} spellCheck={false}
+            onChange={(e) => setServerText(e.target.value)} style={inputStyle} />
+        )}
         {mode.kind === 'restore' && (
           <>
             <input type="file" accept=".nbackup,.json" onChange={(e) => setBackupFile(e.target.files?.[0] ?? null)} style={{ ...inputStyle, padding: '8px' }} />
@@ -188,7 +208,7 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
         {mode.kind !== 'loading' && (
           <button type="submit" disabled={busy}
             style={{ width: '100%', padding: '10px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', backgroundColor: 'var(--primary)', color: 'var(--primary-fg)' }}>
-            {busy ? 'Working...' : mode.kind === 'restore' ? 'Set up the vault and restore' : mode.kind === 'create' ? 'Create vault' : mode.kind === 'recover' ? 'Check recovery key' : mode.kind === 'newPassphrase' ? 'Set passphrase and unlock' : 'Unlock'}
+            {busy ? 'Working...' : mode.kind === 'server' ? 'Connect' : mode.kind === 'restore' ? 'Set up the vault and restore' : mode.kind === 'create' ? 'Create vault' : mode.kind === 'recover' ? 'Check recovery key' : mode.kind === 'newPassphrase' ? 'Set passphrase and unlock' : 'Unlock'}
           </button>
         )}
         {mode.kind === 'unlock' && mode.info.recoveryEnvelope && (
@@ -204,6 +224,16 @@ export function UnlockScreen({ onUnlock }: { onUnlock: (key: Uint8Array, epoch: 
         {mode.kind === 'create' && (
           <button type="button" style={{ ...linkStyle, display: 'block' }} onClick={() => { setError(''); setPassphrase(''); setMode({ kind: 'restore' }); }}>
             New or replaced server? Set it up from a backup
+          </button>
+        )}
+        {mode.kind === 'server' && hasServer() && (
+          <button type="button" style={{ ...linkStyle, display: 'block' }} onClick={() => { setError(''); setMode({ kind: 'loading' }); loadVault(); }}>
+            Back: keep {apiUrl().replace(/^https?:\/\//, '')}
+          </button>
+        )}
+        {mode.kind !== 'server' && (
+          <button type="button" style={{ ...linkStyle, display: 'block' }} onClick={changeServer}>
+            Server: {apiUrl().replace(/^https?:\/\//, '')} · change
           </button>
         )}
         {mode.kind === 'restore' && (

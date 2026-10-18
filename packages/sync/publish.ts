@@ -1,4 +1,4 @@
-import { API_URL, PUBLIC_URL } from '@noted/config';
+import { apiUrl, publicUrl } from '@noted/config';
 import { sealBytes, publishPasswordKey } from '@noted/crypto';
 import { apiFetch } from './client';
 import { getNotePublish } from './note-meta';
@@ -48,7 +48,7 @@ export const fromBase64Url = (text: string): Uint8Array => {
 };
 const random = (n: number) => globalThis.crypto.getRandomValues(new Uint8Array(n));
 
-export const publishedUrl = (info: Pick<NotePublish, 'id' | 'key'>): string => `${PUBLIC_URL}/p/${info.id}#${info.key}`;
+export const publishedUrl = (info: Pick<NotePublish, 'id' | 'key'>): string => `${publicUrl()}/p/${info.id}#${info.key}`;
 
 // Id and key of a new publish, or those of the earlier one (the link stays the same).
 export const nextPublishInfo = (earlier: NotePublish | null, options: PublishOptions): NotePublish => ({
@@ -80,7 +80,9 @@ export const sealPublished = (note: Omit<PublishedNote, 'v' | 'publishedAt'>, in
 export const putPublished = async (masterKey: Uint8Array, info: NotePublish, bytes: Uint8Array): Promise<void> => {
   // The server would keep a copy with a past expiry forever: choose a new expiry instead.
   if (publishExpired(info)) throw new Error('The link has expired: choose a new expiry date.');
-  const res = await apiFetch(`${API_URL}/publish/${info.id}`, masterKey, {
+  // Without a public address there would be no link to share.
+  if (!publicUrl()) throw new Error('This server has no public address for published notes (NOTED_PUBLIC_URL on the server).');
+  const res = await apiFetch(`${apiUrl()}/publish/${info.id}`, masterKey, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/octet-stream',
@@ -103,7 +105,7 @@ export const uploadPublished = async (
 // Is the published copy still on the server? null = could not ask (offline).
 export const publishedExists = async (masterKey: Uint8Array, info: NotePublish): Promise<boolean | null> => {
   try {
-    const res = await apiFetch(`${API_URL}/publish/${info.id}`, masterKey);
+    const res = await apiFetch(`${apiUrl()}/publish/${info.id}`, masterKey);
     if (!res.ok) return null;
     return (await res.json()).exists === true;
   } catch {
@@ -112,7 +114,7 @@ export const publishedExists = async (masterKey: Uint8Array, info: NotePublish):
 };
 
 export const deletePublished = async (masterKey: Uint8Array, info: NotePublish): Promise<void> => {
-  const res = await apiFetch(`${API_URL}/publish/${info.id}`, masterKey, { method: 'DELETE' });
+  const res = await apiFetch(`${apiUrl()}/publish/${info.id}`, masterKey, { method: 'DELETE' });
   if (!res.ok && res.status !== 404) throw new Error(`Unpublishing failed (HTTP ${res.status})`);
 };
 

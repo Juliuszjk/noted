@@ -36,6 +36,10 @@ app.get('/', (c) => {
   return c.text('Noted Zero-Knowledge API is running!');
 });
 
+// Lets an app check that an address is a Noted server, and learn where published notes are
+// read (the public server's address as people reach it, e.g. behind a proxy or a tunnel).
+app.get('/info', (c) => c.json({ app: 'noted', version: 1, publicUrl: process.env.NOTED_PUBLIC_URL ?? '' }));
+
 // GET /notes - Returns only metadata (IDs and timestamps) for sync comparison
 app.get('/notes', (c) => {
   try {

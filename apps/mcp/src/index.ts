@@ -2,9 +2,10 @@ import './dom';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { base64ToBytes, bytesToBase64, deriveMasterKey } from '@noted/crypto';
-import { fetchVault, openWithPassphraseKey, setAuthEpoch } from '@noted/sync';
+import { apiUrl, normalizeServerUrl } from '@noted/config';
+import { connectServer, fetchVault, openWithPassphraseKey, refreshServerInfo, setAuthEpoch } from '@noted/sync';
 import { createNotes } from './notes';
-import { blobCache, openStore, readKey, writeKey } from './store';
+import { blobCache, configureServer, openStore, readKey, writeKey } from './store';
 import { INSTRUCTIONS, registerTools } from './tools';
 
 // Noted for Claude Code: an MCP server on stdio that is one more device of the vault.
@@ -39,7 +40,21 @@ const askHidden = (prompt: string): Promise<string> => new Promise((resolve) => 
   stdin.on('data', onData);
 });
 
+const ask = (prompt: string): Promise<string> => new Promise((resolve) => {
+  process.stderr.write(prompt);
+  process.stdin.resume();
+  process.stdin.setEncoding('utf8');
+  process.stdin.once('data', (chunk: string) => {
+    process.stdin.pause();
+    resolve(chunk.split(/\r?\n/)[0]);
+  });
+});
+
 const setup = async () => {
+  const typed = await ask(`Noted server address${apiUrl() ? ` [${apiUrl()}]` : ''}: `);
+  const base = normalizeServerUrl(typed || apiUrl());
+  if (!base) throw new Error('No server address.');
+  await connectServer(base);
   const info = await fetchVault();
   if (!info) throw new Error('The server has no vault yet: set Noted up in the app first.');
   const passphrase = await askHidden('Noted passphrase: ');
@@ -56,6 +71,7 @@ const setup = async () => {
 
 const serve = async () => {
   const stored = readKey();
+  refreshServerInfo();
   if (!stored) throw new Error('No key yet: run "noted-mcp setup" in a terminal first.');
   setAuthEpoch(stored.epoch);
   const key = base64ToBytes(stored.key);
@@ -67,6 +83,7 @@ const serve = async () => {
   notes.sync(true).catch(() => {});
 };
 
+configureServer();
 (process.argv[2] === 'setup' ? setup().then(() => process.exit(0)) : serve()).catch((e) => {
   console.error(e instanceof Error ? e.message : e);
   process.exit(1);

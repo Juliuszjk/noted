@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { NoteRecord } from '@noted/types';
+import { configureServerStorage } from '@noted/config';
 import type { LocalBlobStore, LocalNoteStore } from '@noted/sync';
 
 // Where the MCP server keeps its data: the data key (like the desktop app's localStorage, a
@@ -37,6 +38,13 @@ export const writeKey = (value: StoredKey): string => {
   chmodSync(KEY_FILE, 0o600);
   return KEY_FILE;
 };
+
+// The server address (see @noted/config), next to the key.
+const SERVER_FILE = join(CONFIG_DIR, 'server.json');
+export const configureServer = (): void => configureServerStorage(
+  () => { try { return readFileSync(SERVER_FILE, 'utf8'); } catch { return null; } },
+  (text) => { mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 }); writeFileSync(SERVER_FILE, text, { mode: 0o600 }); },
+);
 
 export interface HistoryEntry {
   id: number;
