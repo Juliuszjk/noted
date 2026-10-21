@@ -353,6 +353,13 @@ drawer say "This device / phone only".
   fast edge scrolling; WebView haptics are off (`with-stylus.js`, handle ticks buzzed). The
   transparent `::selection` on list / quote containers in content.css is desktop only
   (`html.webkitgtk`): Chromium passes it on to the text.
+- Keyboard corrections (2026-10-21, `editor/autocorrect.ts`): a word the keyboard changed within the
+  key that committed it (compositionupdate data at keydown != compositionend data) is remembered
+  with its position (mapped per transaction, this session only); a caret in it shows the bar
+  "↶ typed instead of corrected" above the keyboard. The undo types through `execCommand('insertText')`
+  (a ProseMirror-made change dropped the keyboard's underlines on every corrected word); the swapped-back
+  word is offered again only until the caret leaves it. While focused, single taps (until Chromium's
+  long press / `contextmenu`) move the caret by code: Chromium's tap opened Android's spelling popup.
 - Theme (`src/ui.tsx`): palette (`material-you` | `noted` | preset id, SecureStore
   `noted_theme_palette`) + brightness (auto / light / dark, `noted_theme_mode`). No reload:
   `T` is changed in place by `refreshTheme()`, every module style sheet is
@@ -459,6 +466,9 @@ distribution to friends (releases, Windows, updates). Project status, decisions 
   in `packages/*` (outside apps/mobile), so `build-apk.sh` installed old code; the script now
   deletes the generated bundle first. Check a fix is in the APK: `grep -a -c <string>
   apps/mobile/android/app/build/generated/assets/react/release/index.android.bundle`.
+- `apps/mobile/android/` keeps the versionCode / versionName of the last prebuild: after
+  `set-version.mjs` a local build installed as 0.1.0 (INSTALL_FAILED_VERSION_DOWNGRADE); re-run prebuild
+  or fix `android/app/build.gradle`. CI generates it fresh.
 - Phone page rewrite once cut `askReactNative` / `uuid`; check the bundle for helpers you removed.
 - `build-editor.mjs` once shipped a page without content.css / KaTeX fonts (marker check added).
 - Task item labels rewritten by Tiptap restarted Android IMEs (random capitals) -> `QuietTaskItem`.

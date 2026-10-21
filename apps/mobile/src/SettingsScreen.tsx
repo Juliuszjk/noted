@@ -6,7 +6,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
 import {
-  mdiArrowLeft, mdiAccountOutline, mdiSync, mdiPaletteOutline, mdiBackupRestore, mdiChevronRight, mdiShieldKeyOutline,
+  mdiArrowLeft, mdiAccountOutline, mdiSync, mdiPaletteOutline, mdiBackupRestore, mdiChevronRight, mdiShieldKeyOutline, mdiUpdate,
   mdiFormatText, mdiDockBottom, mdiDotsVertical, mdiLockOutline, mdiShieldLockOutline, mdiCheck, mdiCallMerge, mdiHistory,
 } from '@mdi/js';
 import { ToolbarEditor } from './ToolbarEditor';
@@ -181,6 +181,29 @@ function SyncButton({ syncing, onPress }: { syncing: boolean; onPress: () => voi
       style={[styles.button, { flexDirection: 'row', gap: 6, paddingVertical: 8, minWidth: 116, justifyContent: 'center' }, phase === 'done' && styles.primary, phase === 'done' && { marginTop: 0 }]}>
       {busy ? <ActivityIndicator size="small" color={T.primary} /> : <Icon path={phase === 'done' ? mdiCheck : mdiSync} size={18} color={phase === 'done' ? T.on_primary : T.on_surface} />}
       <Text style={[styles.buttonText, phase === 'done' && { color: T.on_primary }]}>{busy ? 'Syncing…' : phase === 'done' ? 'Synced' : 'Sync now'}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// Settings list, the version row: asks GitHub for a newer release (the answer is a dialog).
+function UpdateButton() {
+  const [busy, setBusy] = useState(false);
+  const check = async () => {
+    setBusy(true);
+    const startedAt = Date.now();
+    try {
+      await checkForUpdates(true);
+    } finally {
+      // A quick answer still shows the spinner for a moment.
+      setTimeout(() => setBusy(false), Math.max(0, 500 - (Date.now() - startedAt)));
+    }
+  };
+  // A fixed width: "Checking…" must not squeeze the description into another line.
+  return (
+    <TouchableOpacity disabled={busy} onPress={() => { void check(); }}
+      style={[styles.button, { flexDirection: 'row', gap: 6, paddingVertical: 8, paddingHorizontal: 0, width: 132, justifyContent: 'center' }]}>
+      {busy ? <ActivityIndicator size="small" color={T.primary} /> : <Icon path={mdiUpdate} size={18} color={T.on_surface} />}
+      <Text style={styles.buttonText}>{busy ? 'Checking…' : 'Check'}</Text>
     </TouchableOpacity>
   );
 }
@@ -487,8 +510,7 @@ export function SettingsScreen(p: Props) {
                 </TouchableOpacity>
               ))}
               <Row title={`Noted ${APP_VERSION}`} description={UPDATES_ON ? 'Noted looks for a new version at start and twice a day.' : 'Built from source: updates come with the next build.'}
-                onPress={UPDATES_ON ? () => { void checkForUpdates(true); } : undefined}
-                right={UPDATES_ON ? <Text style={{ color: T.primary, fontWeight: '600' }}>Check</Text> : undefined} />
+                right={UPDATES_ON ? <UpdateButton /> : undefined} />
             </>
           )}
 

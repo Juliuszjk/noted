@@ -9,8 +9,10 @@ import {
   mdiFunctionVariant, mdiPin, mdiPinOutline, mdiInvertColorsOff, mdiClose, mdiTable, mdiVectorLink, mdiOpenInNew, mdiLinkVariantOff,
   mdiContentCopy, mdiPencilOutline, mdiBookOutline, mdiPound, mdiCheck, mdiTabPlus, mdiLanguageMarkdownOutline, mdiTextBoxOutline,
   mdiFilePdfBox, mdiShareVariantOutline, mdiTableCog, mdiTableEdit, mdiPaletteOutline, mdiEyeOutline, mdiDownload, mdiImageSizeSelectLarge,
-  mdiGesture,
+  mdiGesture, mdiUndoVariant,
 } from '@mdi/js';
+import { trackCorrections } from './autocorrect';
+import type { Correction } from './autocorrect';
 import { onDrawingChange, setMouseDraws } from '@noted/editor/drawing';
 import {
   moveTableRowBy, moveTableColumnBy, selectTablePart, equalColumnWidths, equalRowHeights, resetRowHeights, TABLE_MOVE_MERGED,
@@ -173,10 +175,12 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   let tableOpen: number | null = null;
   // Shown while the cursor is inside a link: address, open, edit, remove, copy.
   const linkBar = h('div', 'tb-float tb-linkbar');
+  // Shown while the cursor is in a word the keyboard corrected: the word as typed, put back on a tap.
+  const fixBar = h('div', 'tb-float tb-linkbar');
   // Results of "/" typed in the text (the insert menu, searched).
   const slashPanel = h('div', 'tb-float tb-slash');
   const main = h('div', 'tb-main');
-  root.append(sheet, slashPanel, linkBar, colorRow, float, alignRow, tableRow, imageRow, main);
+  root.append(sheet, slashPanel, linkBar, fixBar, colorRow, float, alignRow, tableRow, imageRow, main);
   document.body.appendChild(root);
   // Long press on a note link: open it in a new tab or next to this note.
   const noteLinkBar = h('div', 'tb-float tb-notelink');
@@ -639,6 +643,22 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       button(mdiLinkVariantOff, 'Remove link', () => chain().extendMarkRange('link').unsetLink().run()),
       button(mdiContentCopy, 'Copy link', () => ctx.copy(href)),
     );
+  };
+
+  const corrections = trackCorrections(editor, () => refresh());
+  let fixShown: Correction | null = null;
+  const renderFixBar = () => {
+    const c = openSheet ? null : corrections.at();
+    fixBar.classList.toggle('open', !!c);
+    if (c === fixShown) return;
+    fixShown = c;
+    if (!c) return fixBar.replaceChildren();
+    const typed = h('button', 'tb-fix');
+    typed.type = 'button';
+    typed.innerHTML = svg(mdiUndoVariant, 20);
+    typed.append(h('span', 'tb-fix-word', c.typed), h('span', 'tb-fix-note', `instead of ${c.word}`));
+    typed.addEventListener('click', () => corrections.undo(c));
+    fixBar.replaceChildren(typed);
   };
 
   // Slash / insert menu "Image from URL": React Native downloads it (no CORS limits there).
@@ -1287,6 +1307,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     tableRow.classList.toggle('open', shown !== null);
     if (colorKind === 'cell' && !inTable) colorKind = null;
     renderLinkBar();
+    renderFixBar();
     for (const r of refreshers) r();
   }
 
@@ -1628,6 +1649,8 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     }
   }, { passive: false, capture: true });
   let tap: { x: number; y: number; at: number } | null = null;
+  // The last tap that moved the caret (a second one close by is a double tap).
+  let lastTap: { x: number; y: number; at: number } | null = null;
   document.addEventListener('touchstart', (e) => {
     touching = true;
     const t = e.touches[0];
@@ -1639,11 +1662,18 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     if (tap && Math.hypot(t.clientX - tap.x, t.clientY - tap.y) > 8) tap = null;
   }, { passive: true, capture: true });
   document.addEventListener('touchcancel', () => { touching = false; tap = null; }, { capture: true });
+  // Chromium's long press (selection or the link menu) arrives while the finger is still down.
+  let pressedLong = false;
+  document.addEventListener('touchstart', () => { pressedLong = false; }, { passive: true, capture: true });
+  document.addEventListener('contextmenu', () => { pressedLong = true; }, true);
   document.addEventListener('touchend', (e) => {
     touching = e.touches.length > 0;
     const start = tap;
     tap = null;
-    if (!start || Date.now() - start.at > 350 || openSheet) return;
+    if (!start || openSheet) return;
+    // While typing, a longer press is still a tap until Chromium makes it a long press (its
+    // own tap on an underlined word opened Android's spelling popup).
+    if (Date.now() - start.at > 350 && (!editor.isFocused || pressedLong || !(getSelection()?.isCollapsed ?? true))) return;
     const t = e.changedTouches[0];
     const inEditor = editor.view.dom.contains(e.target as Node);
     // The empty page (beside or below the note): nothing moves. Unfocused, it starts typing
@@ -1657,10 +1687,13 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       }
       return;
     }
-    // While typing, Chromium handles the tap itself: it moves the caret, shows Android's
-    // spelling suggestions for an underlined word (taking the tap away hid them) and turns a
-    // double tap into a selection with handles (one set by code gets none).
-    if (editor.isFocused) {
+    // While typing, the second tap of a double tap goes to Chromium: it turns it into a
+    // selection with handles (one set by code gets none). A single tap moves the caret here:
+    // Chromium's own tap opened Android's spelling suggestions box on an underlined word,
+    // while a caret set by code lets the keyboard show its suggestions for the word instead.
+    const second = !!lastTap && start.at - lastTap.at < 400 && Math.hypot(t.clientX - lastTap.x, t.clientY - lastTap.y) < 30;
+    lastTap = second ? null : { x: t.clientX, y: t.clientY, at: start.at };
+    if (editor.isFocused && second) {
       closePanels();
       return;
     }
