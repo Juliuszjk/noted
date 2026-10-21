@@ -31,7 +31,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "category": "Productivity",
+    "shortDescription": "End-to-end encrypted, local-first notes",
+    "longDescription": "Noted is a local-first, end-to-end encrypted notes app with a rich editor, reminders, drawing and optional self-hosted sync."
   },
   "plugins": {
     "updater": {
