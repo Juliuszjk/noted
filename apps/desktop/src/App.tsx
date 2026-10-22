@@ -40,7 +40,7 @@ import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { mdiDotsVertical, mdiBookOutline, mdiDockLeft, mdiFormatListText } from '@mdi/js';
 import {
   SettingsDialog, LockScreen, VaultDialog, LockedNote, NotePicker, NoteEditor, UnlockScreen, NoteList, TabBar, StatusBar, NavPanel, NoteProperties, CatalogPicker, HistoryPreview,
-  IconBtn, Icon, confirmDialog, messageDialog, showDialog, linkDescendants, matchesShortcut, setShortcutOverrides, getShortcutOverrides, notesInView, Resizer, RESIZE_SNAP, LinkTree, RemindersList, reminderEntries, dueReminderCount, reminderNotices, parseNoticeId, MISSED_WITHIN_MS, NAV_MIN_WIDTH, NAV_RAIL_WIDTH,
+  IconBtn, Icon, tabDropIndex, placeTab, confirmDialog, messageDialog, showDialog, linkDescendants, matchesShortcut, setShortcutOverrides, getShortcutOverrides, notesInView, Resizer, RESIZE_SNAP, LinkTree, RemindersList, reminderEntries, dueReminderCount, reminderNotices, parseNoticeId, MISSED_WITHIN_MS, NAV_MIN_WIDTH, NAV_RAIL_WIDTH,
 } from '@noted/ui';
 import type { NoteSummary, NoteListItem, TextStats, NoteAction, NoteView, PropertyFlags, HistoryEntry, ImportedNote, AttachmentEntry, ReminderEntry } from '@noted/ui';
 import { notePlaces, parseImport, IMPORT_SOURCES, expandZips, noteFilesFor } from '@noted/ui';
@@ -170,7 +170,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   const [split, setSplit] = useState<{ id: string; ydoc: Y.Doc; mode: SplitMode; docked: SplitSide; ratio: number; float: FloatBox } | null>(null);
   const splitAppliedRef = useRef<string | null>(null);
   const [noteArea, setNoteArea] = useState<HTMLDivElement | null>(null);
-  const [noteDrag, setNoteDrag] = useState<{ id: string; x: number; y: number; zone: SplitMode | null } | null>(null);
+  const [noteDrag, setNoteDrag] = useState<{ id: string; x: number; y: number; zone: SplitMode | null; tabAt: number | null } | null>(null);
   const [shortcutOverrides, setShortcutState] = useState(getShortcutOverrides);
   const changeShortcuts = (next: Record<string, string[]>) => {
     setShortcutOverrides(next);
@@ -1321,7 +1321,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     }
   }, [notes, split, activeNote?.id]);
   // Pressing a note in the list or a tab and moving: dragging it onto the note area opens it
-  // in the split view (edges = beside, middle = small window). A plain click stays a click.
+  // in the split view (edges = beside, middle = small window), onto the tabs moves its tab
+  // there (or opens it in a new tab there). A plain click stays a click.
   const beginNoteDrag = (id: string, e: React.MouseEvent) => {
     const start = { x: e.clientX, y: e.clientY };
     let started = false;
@@ -1333,7 +1334,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
         document.body.style.userSelect = 'none';
       }
       ev.preventDefault();
-      setNoteDrag({ id, x: ev.clientX, y: ev.clientY, zone: zone(ev.clientX, ev.clientY) });
+      setNoteDrag({ id, x: ev.clientX, y: ev.clientY, zone: zone(ev.clientX, ev.clientY), tabAt: tabDropIndex(ev.clientX, ev.clientY) });
     };
     const up = (ev: MouseEvent) => {
       window.removeEventListener('mousemove', move, true);
@@ -1345,6 +1346,15 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
       const swallow = (c: MouseEvent) => { c.preventDefault(); c.stopPropagation(); };
       window.addEventListener('click', swallow, { capture: true, once: true });
       setTimeout(() => window.removeEventListener('click', swallow, true), 300);
+      const tabAt = tabDropIndex(ev.clientX, ev.clientY);
+      if (tabAt !== null) {
+        const known = tabsRef.current.includes(id);
+        const next = placeTab(tabsRef.current, id, tabAt);
+        tabsRef.current = next;
+        setTabs(next);
+        if (!known) openNote(id);
+        return;
+      }
       const z = zone(ev.clientX, ev.clientY);
       if (z) openSplit(id, z);
     };
@@ -1612,6 +1622,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
             onSelect={(id) => openNote(id)}
             onClose={closeTab}
             onDragNote={beginNoteDrag}
+            dropAt={noteDrag?.tabAt ?? null}
             // Hidden columns come back from here (each column hides itself from its own header).
             left={!prefs.focusMode && (prefs.navHidden || prefs.listHidden) && (
               <>
