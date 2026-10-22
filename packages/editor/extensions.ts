@@ -6,6 +6,7 @@ import { Table } from '@tiptap/extension-table';
 import { ColoredTableCell, ColoredTableHeader, SizedTableRow } from './table-cells';
 import { TableResize, FreshColumnsTableView } from './table-tools';
 import { SelectAllKeys } from './select-all';
+import { ListSelect } from './list-select';
 import { MarkdownPaste } from './markdown-paste';
 import { ClipboardText } from './clipboard-text';
 import { ListConvert } from './list-convert';
@@ -96,6 +97,8 @@ export const createSchemaExtensions = ({ ydoc, placeholder, onEditMath, onEditRe
   TableResize,
   // Ctrl+A (code block first, then the whole note).
   SelectAllKeys,
+  // Mouse selections over list markers reach the line start (list-select.ts, content.css).
+  ListSelect,
   // Text written in Markdown pastes formatted.
   MarkdownPaste,
   // Copied text as plain text: one line per block (no blank lines between list items).
