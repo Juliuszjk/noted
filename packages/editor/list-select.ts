@@ -3,9 +3,10 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
 
 // A mouse selection dragged over a task's checkbox (or the space after it) ends at the start
-// of that line. WebKitGTK placed it inconsistently there (a letter off, or nowhere), so while
-// the pointer is left of a task's text the end of the native selection is moved by hand.
-// Bullets and numbers need no help: their text reaches over the marker (content.css).
+// of that line, and one dragged beside the note's text column ends at that edge of the line
+// at the pointer's height. WebKitGTK placed both inconsistently (a letter off, or nowhere), so
+// there the end of the native selection is moved by hand. Bullets and numbers need no help:
+// their text reaches over the marker (content.css).
 
 // Where the selection should end for a pointer at (x, y), or null when the browser's own
 // placement is fine (not left of a task item's text).
@@ -21,6 +22,17 @@ const taskLineStart = (view: EditorView, x: number, y: number): number | null =>
   return view.posAtCoords({ left: left + 1, top })?.pos ?? null;
 };
 
+// For a pointer left or right of the editor's text column (but beside it): the position at
+// that edge of the line at the pointer's height.
+const columnEdge = (view: EditorView, x: number, y: number): number | null => {
+  const box = view.dom.getBoundingClientRect();
+  const style = getComputedStyle(view.dom);
+  const left = box.left + parseFloat(style.paddingLeft || '0');
+  const right = box.right - parseFloat(style.paddingRight || '0');
+  if ((x >= left && x <= right) || y < box.top || y > box.bottom) return null;
+  return view.posAtCoords({ left: x < left ? left + 1 : right - 1, top: y })?.pos ?? null;
+};
+
 export const ListSelect = Extension.create({
   name: 'listSelect',
   addProseMirrorPlugins() {
@@ -31,7 +43,7 @@ export const ListSelect = Extension.create({
         let target: number | null = null;
         const move = (e: MouseEvent) => {
           if (!dragging || !(e.buttons & 1)) return;
-          target = taskLineStart(view, e.clientX, e.clientY);
+          target = taskLineStart(view, e.clientX, e.clientY) ?? columnEdge(view, e.clientX, e.clientY);
           fix();
         };
         const up = () => { dragging = false; target = null; };
