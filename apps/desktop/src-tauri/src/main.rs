@@ -14,6 +14,8 @@ fn main() {
     }
     #[cfg(target_os = "linux")]
     move_old_data();
+    #[cfg(windows)]
+    desktop_lib::prepare_spellcheck_profile();
     desktop_lib::run()
 }
 

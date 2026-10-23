@@ -2675,6 +2675,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-winrt-notification",
  "webkit2gtk",
+ "winreg",
 ]
 
 [[package]]

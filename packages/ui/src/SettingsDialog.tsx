@@ -94,7 +94,8 @@ export interface SettingsHost {
   onChooseDownloadFolder?: (reset?: boolean) => void;
   // Installed spell checker dictionaries (empty: none, or not on this platform).
   spellLanguages: string[];
-  // The system's spell checker picks the languages (Windows): nothing to choose here.
+  // The system's spell checker (Windows): `spellLanguages` are the languages of the system, ONE
+  // is chosen (WebView2 checks one), it applies after a restart and there is no word list of our own.
   spellSystem?: boolean;
   getCustomWords: () => Promise<string[]>;
   setCustomWords: (words: string[]) => Promise<void>;
@@ -573,6 +574,16 @@ function AppearanceSection({ host }: { host: SettingsHost }) {
 const LANGUAGE_NAMES: Record<string, string> = {
   pl_PL: 'Polish', en_US: 'English (US)', en_GB: 'English (UK)', de_DE: 'German', fr_FR: 'French', es_ES: 'Spanish', it_IT: 'Italian',
 };
+// "pl_PL" (Hunspell) or "pl-PL" (Windows) -> "Polish"; others by the browser's own names.
+const languageName = (lang: string): string => {
+  const known = LANGUAGE_NAMES[lang.replace('-', '_')];
+  if (known) return known;
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(lang.replace('_', '-')) ?? lang;
+  } catch {
+    return lang;
+  }
+};
 
 // "HH:MM" field saved on Enter / leaving it; anything that is not a time goes back.
 function ClockField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -598,7 +609,7 @@ function EditorSection({ host }: { host: SettingsHost }) {
   const [words, setWords] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   useEffect(() => {
-    if (host.spellLanguages.length) host.getCustomWords().then((w) => setWords(w.join('\n')), () => setWords(''));
+    if (host.spellLanguages.length && !host.spellSystem) host.getCustomWords().then((w) => setWords(w.join('\n')), () => setWords(''));
   }, []);
   return (
     <>
@@ -662,31 +673,35 @@ function EditorSection({ host }: { host: SettingsHost }) {
       <Row title="Spell check" description="Underlines misspelled words (each note can still turn it off in its properties).">
         <Switch on={p.spellcheck} onChange={(spellcheck) => set({ spellcheck })} />
       </Row>
-      {host.spellSystem ? (
-        <Row title="Languages" description="Windows' spell checker is used. It checks the languages added in Windows Settings > Time & language > Language & region; add the languages you write in there, then restart Noted." />
-      ) : host.spellLanguages.length === 0 ? (
-        <Row title="Languages" description="No dictionaries are installed. On Arch: sudo pacman -S hunspell-pl hunspell-en_us, then restart Noted." />
+      {host.spellLanguages.length === 0 ? (
+        <Row title="Languages" description={host.spellSystem
+          ? 'No languages found. Add the languages you write in to Windows Settings > Time & language > Language & region, then restart Noted.'
+          : 'No dictionaries are installed. On Arch: sudo pacman -S hunspell-pl hunspell-en_us, then restart Noted.'} />
       ) : (
         <>
-          <Row title="Languages" description="Words are checked against every language ticked here.">
+          <Row title="Languages" description={host.spellSystem
+            ? 'Windows’ spell checker in Noted checks one language at a time: the one chosen here. These are the languages added in Windows Settings > Time & language > Language & region. A change applies after restarting Noted.'
+            : 'Words are checked against every language ticked here.'}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end', maxWidth: 360 }}>
               {host.spellLanguages.map((lang) => {
-                const on = p.spellLanguages.includes(lang);
+                // Windows: one language (WebView2 checks only one), the first one stored.
+                const on = host.spellSystem ? p.spellLanguages[0] === lang : p.spellLanguages.includes(lang);
+                const next = host.spellSystem ? [lang] : on ? p.spellLanguages.filter((l) => l !== lang) : [...p.spellLanguages, lang];
                 return (
-                  <button key={lang} type="button" onClick={() => set({ spellLanguages: on ? p.spellLanguages.filter((l) => l !== lang) : [...p.spellLanguages, lang] })} style={{
+                  <button key={lang} type="button" onClick={() => set({ spellLanguages: next })} style={{
                     ...btn(), backgroundColor: on ? 'var(--secondary-container)' : 'transparent', color: on ? 'var(--on-secondary-container)' : 'var(--text-main)',
-                  }}>{LANGUAGE_NAMES[lang] ?? lang}</button>
+                  }}>{languageName(lang)}</button>
                 );
               })}
             </div>
           </Row>
-          <div style={{ padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
+          {!host.spellSystem && <div style={{ padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>Custom dictionary words</div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', margin: '4px 0 8px' }}>One word per line; never marked as misspelled.</div>
             <textarea value={words ?? ''} disabled={words === null} rows={6} onChange={(e) => { setWords(e.target.value); setSaved(false); }}
               style={{ ...field, fontFamily: 'monospace', resize: 'vertical' }} />
             <button type="button" style={btn()} onClick={() => host.setCustomWords((words ?? '').split('\n')).then(() => setSaved(true))}>{saved ? 'Saved' : 'Save words'}</button>
-          </div>
+          </div>}
         </>
       )}
     </>

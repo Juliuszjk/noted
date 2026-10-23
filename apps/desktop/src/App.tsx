@@ -1995,7 +1995,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
               if (shared) changeCatalog((doc) => setSharedEditorPrefs(doc, shared));
             },
             spellLanguages,
-            // WebView2 checks with Windows' own spell checker (no Hunspell dictionaries to list).
+            // WebView2 checks with Windows' own spell checker: the languages of Windows, chosen
+            // ones apply after a restart (lib.rs windows_spell), no word list of our own.
             spellSystem: navigator.userAgent.includes('Windows'),
             getCustomWords: () => getCustomWords(editorPrefs.spellLanguages.length ? editorPrefs.spellLanguages : spellLanguages),
             setCustomWords: (words) => setCustomWords(editorPrefs.spellLanguages.length ? editorPrefs.spellLanguages : spellLanguages, words),

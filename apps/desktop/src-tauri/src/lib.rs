@@ -39,9 +39,13 @@ fn dictionary_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-// Languages with an installed dictionary, e.g. ["en_US", "pl_PL"].
+// Languages with an installed dictionary, e.g. ["en_US", "pl_PL"]; on Windows the languages
+// added to Windows, e.g. ["pl-PL", "en-US"].
 #[tauri::command]
 fn spellcheck_languages_available() -> Vec<String> {
+    #[cfg(windows)]
+    return windows_spell::windows_languages();
+    #[allow(unreachable_code)]
     let mut langs: Vec<String> = dictionary_dirs()
         .iter()
         .filter_map(|dir| std::fs::read_dir(dir).ok())
@@ -73,11 +77,131 @@ fn set_spellcheck(window: tauri::WebviewWindow, enabled: bool, languages: Vec<St
             })
             .map_err(|e| e.to_string())?;
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        let _ = (window, enabled);
+        windows_spell::save_chosen(&languages)?;
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = (window, enabled, languages);
     }
     Ok(())
+}
+
+// ---- spell checking on Windows ----
+// WebView2 checks with Windows' spell checker, in ONE language: at start it sets the profile's
+// dictionary to the first of its accept languages (these follow the Windows display language),
+// whatever else is stored: Polish added to Windows stayed unchecked under an English display
+// language, and two dictionaries came back as the first one alone. The chosen language is put
+// first into the profile before the webview starts (`prepare_spellcheck_profile`, called by
+// main), so a change applies after a restart.
+#[cfg(windows)]
+pub fn prepare_spellcheck_profile() {
+    windows_spell::prepare_profile();
+}
+
+#[cfg(windows)]
+mod windows_spell {
+    use serde_json::{json, Value};
+    use std::path::PathBuf;
+
+    fn app_dir() -> Option<PathBuf> {
+        std::env::var_os("LOCALAPPDATA").map(|dir| PathBuf::from(dir).join(super::WINDOWS_APP_ID))
+    }
+
+    fn chosen_file() -> Option<PathBuf> {
+        app_dir().map(|dir| dir.join("spellcheck-languages.json"))
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn ResolveLocaleName(name: *const u16, locale: *mut u16, len: i32) -> i32;
+    }
+
+    // "pl" -> "pl-PL": the spell checker wants a region.
+    fn resolve(tag: &str) -> String {
+        let wide: Vec<u16> = tag.encode_utf16().chain(Some(0)).collect();
+        let mut out = [0u16; 85];
+        let n = unsafe { ResolveLocaleName(wide.as_ptr(), out.as_mut_ptr(), out.len() as i32) };
+        if n > 1 {
+            return String::from_utf16_lossy(&out[..n as usize - 1]);
+        }
+        tag.to_string()
+    }
+
+    // The languages added in Windows Settings > Time & language > Language & region.
+    pub fn windows_languages() -> Vec<String> {
+        let user = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
+        let list: Vec<String> = user
+            .open_subkey("Control Panel\\International\\User Profile")
+            .and_then(|key| key.get_value("Languages"))
+            .unwrap_or_default();
+        let mut langs: Vec<String> = Vec::new();
+        for tag in list.iter().map(|t| resolve(t)) {
+            if !tag.is_empty() && !langs.contains(&tag) {
+                langs.push(tag);
+            }
+        }
+        langs
+    }
+
+    pub fn save_chosen(languages: &[String]) -> Result<(), String> {
+        let file = chosen_file().ok_or("No LOCALAPPDATA")?;
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&file, json!(languages).to_string()).map_err(|e| e.to_string())
+    }
+
+    pub fn prepare_profile() {
+        let Some(dir) = app_dir() else { return };
+        let all = windows_languages();
+        // The first chosen language; nothing chosen yet (first start): the first one of Windows.
+        let chosen: Vec<String> = chosen_file()
+            .and_then(|file| std::fs::read_to_string(file).ok())
+            .and_then(|text| serde_json::from_str::<Vec<String>>(&text).ok())
+            .unwrap_or_else(|| all.clone())
+            .into_iter()
+            .take(1)
+            .collect();
+        let mut accept: Vec<String> = Vec::new();
+        for tag in chosen.iter().chain(all.iter()) {
+            for t in [tag.as_str(), tag.split('-').next().unwrap_or(tag)] {
+                if !t.is_empty() && !accept.iter().any(|a| a == t) {
+                    accept.push(t.to_string());
+                }
+            }
+        }
+        if accept.is_empty() {
+            return;
+        }
+        let file = dir.join("EBWebView").join("Default").join("Preferences");
+        // A profile that is not there yet starts with these settings; one that cannot be read
+        // is left alone.
+        let mut prefs: Value = match std::fs::read_to_string(&file) {
+            Ok(text) => match serde_json::from_str(&text) {
+                Ok(v) => v,
+                Err(_) => return,
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => json!({}),
+            Err(_) => return,
+        };
+        let is_object_or_absent = |key: &str| prefs.get(key).map_or(true, Value::is_object);
+        if !prefs.is_object() || !is_object_or_absent("intl") || !is_object_or_absent("spellcheck") {
+            return;
+        }
+        let accept = accept.join(",");
+        prefs["intl"]["accept_languages"] = json!(accept);
+        prefs["intl"]["selected_languages"] = json!(accept);
+        prefs["spellcheck"]["dictionaries"] = json!(chosen);
+        if let Some(parent) = file.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(e) = std::fs::write(&file, prefs.to_string()) {
+            eprintln!("Could not write the spell check languages: {e}");
+        }
+    }
 }
 
 // Own words the spell checker accepts: Enchant's personal word list of each language
