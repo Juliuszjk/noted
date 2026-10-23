@@ -4,7 +4,8 @@ import { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import * as Y from 'yjs';
 import { createSchemaExtensions } from './extensions';
-import { setImageAlign, setImageWidth, currentImageAlign, currentImageSideBySide, setImageSideBySide, imageRowAt, matchImageRowHeights, moveBlockTo } from './image-tools';
+import { setImageAlign, setImageWidth, currentImageAlign, currentImageSideBySide, setImageSideBySide, imageRowAt, matchImageRowHeights, moveBlockTo, blockDropTarget } from './image-tools';
+import { imagePosOf } from './image-drag';
 
 it('aligns and resizes the selected image', () => {
   const editor = new Editor({ extensions: createSchemaExtensions({ ydoc: new Y.Doc(), placeholder: '' }).filter((e) => e.name !== 'collaboration') });
@@ -98,6 +99,40 @@ it('moves an image out of a list item start where it may not stand', () => {
   expect(json).toContain('"image"');
   expect(editor.state.doc.check()).toBeUndefined();
   editor.destroy();
+});
+
+it('finds the image held, also right under another image', () => {
+  const editor = makeEditor('<ul><li><p>one</p><img data-blob="a:k"><img data-blob="b:k"></li></ul><img data-blob="c:k"><img data-blob="d:k">');
+  const positions: number[] = [];
+  editor.state.doc.descendants((n, p) => { if (n.type.name === 'image') positions.push(p); });
+  const doms = [...editor.view.dom.querySelectorAll<HTMLElement>('.image-node')];
+  expect(doms.map((el) => imagePosOf(editor.view, el))).toEqual(positions);
+  editor.destroy();
+});
+
+it('measures the side of an image dropped under another image in the whole column', () => {
+  const editor = makeEditor('<p>a</p><img data-blob="a:k" data-x="0.5"><img data-blob="b:k">');
+  const [upper, lower] = [...editor.view.dom.querySelectorAll<HTMLElement>('.image-node')];
+  // Layout (happy-dom has none): an 800 px column, two 200 px pictures, the upper one moved.
+  const boxes = new Map<Element, [number, number, number, number]>([
+    [editor.view.dom, [0, 0, 800, 400]],
+    [editor.view.dom.querySelector('p')!, [0, 0, 800, 20]],
+    [upper, [300, 30, 200, 100]],
+    [lower, [0, 140, 200, 100]],
+  ]);
+  const original = Element.prototype.getBoundingClientRect;
+  Element.prototype.getBoundingClientRect = function (this: Element) {
+    const [left, top, width, height] = boxes.get(this) ?? [0, 0, 0, 0];
+    return { left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) } as DOMRect;
+  };
+  try {
+    const lowerPos = imagePosOf(editor.view, lower)!;
+    // The lower picture held at its own place: after the upper one, in the 800 px column.
+    expect(blockDropTarget(editor.view, 100, 144, lowerPos)).toMatchObject({ pos: lowerPos, left: 0, width: 800 });
+  } finally {
+    Element.prototype.getBoundingClientRect = original;
+    editor.destroy();
+  }
 });
 
 it('moves an image under the text of a list item (into that item)', () => {

@@ -48,12 +48,14 @@ const scrollerOf = (el: HTMLElement): HTMLElement => {
   return (document.scrollingElement as HTMLElement) ?? document.documentElement;
 };
 
-// The image node at a wrapper element (its position in the document), or null.
-const imagePosOf = (view: EditorView, el: HTMLElement): number | null => {
+// The image node at a wrapper element (its position in the document), or null. Only the node
+// drawn by this element counts: for an image right under another one `at - 1` is the upper
+// image, and holding the lower one moved the upper one.
+export const imagePosOf = (view: EditorView, el: HTMLElement): number | null => {
   try {
     const at = view.posAtDOM(el, 0);
-    for (const pos of [at - 1, at]) {
-      if (pos >= 0 && view.state.doc.nodeAt(pos)?.type.name === 'image') return pos;
+    for (const pos of [at, at - 1]) {
+      if (pos >= 0 && view.state.doc.nodeAt(pos)?.type.name === 'image' && view.nodeDOM(pos) === el) return pos;
     }
   } catch { /* not in this editor */ }
   return null;

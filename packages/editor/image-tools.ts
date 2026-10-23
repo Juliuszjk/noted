@@ -174,7 +174,8 @@ export const moveBlockTo = (state: EditorState, from: number, target: number): T
 // container (so under a list item's text it goes into that list item); above the first
 // block when y is above everything. No aiming at gaps between blocks. `skip` = the dragged
 // node's position (it does not count). `pos` = the boundary (document before the move),
-// `y` / `left` / `width` = where to draw the line (the block's bottom edge and width).
+// `y` = where to draw the line (the block's bottom edge), `left` / `width` = the column the
+// block stands in (the line, and where a dropped image's side is measured).
 export const blockDropTarget = (view: EditorView, _x: number, y: number, skip = -1): { pos: number; y: number; left: number; width: number } | null => {
   const { doc } = view.state;
   let best: { pos: number; y: number; left: number; width: number } | null = null;
@@ -186,11 +187,27 @@ export const blockDropTarget = (view: EditorView, _x: number, y: number, skip = 
     const dom = view.nodeDOM(pos) as HTMLElement | null;
     const rect = dom?.getBoundingClientRect?.();
     if (!rect || (!rect.width && !rect.height)) return false;
-    if (!first) first = { pos, y: rect.top, left: rect.left, width: rect.width };
-    if (rect.top <= y) best = { pos: pos + node.nodeSize, y: rect.bottom, left: rect.left, width: rect.width };
+    // A picture is only as wide as itself (and may sit moved sideways): its column is its
+    // container's. Measured on the picture, an image dropped under another one of the same
+    // width had no room and jumped back to the left edge.
+    const column = node.isTextblock ? rect : columnOf(dom!) ?? rect;
+    if (!first) first = { pos, y: rect.top, left: column.left, width: column.width };
+    if (rect.top <= y) best = { pos: pos + node.nodeSize, y: rect.bottom, left: column.left, width: column.width };
     return false;
   });
   return best ?? first;
+};
+
+// The content box of the element's container (without its padding and borders).
+const columnOf = (dom: HTMLElement): { left: number; width: number } | null => {
+  const parent = dom.parentElement;
+  const rect = parent?.getBoundingClientRect();
+  if (!parent || !rect?.width) return null;
+  const style = getComputedStyle(parent);
+  const px = (v: string) => parseFloat(v) || 0;
+  const left = rect.left + px(style.borderLeftWidth) + px(style.paddingLeft);
+  const width = rect.width - px(style.borderLeftWidth) - px(style.paddingLeft) - px(style.paddingRight) - px(style.borderRightWidth);
+  return width > 0 ? { left, width } : null;
 };
 
 // Moves the selected image to the drop target of the point (x, y).
