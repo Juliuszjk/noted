@@ -1,6 +1,8 @@
 import { Extension } from '@tiptap/core';
 import type { Editor, Extensions } from '@tiptap/core';
 import { InlineMath, BlockMath } from '@tiptap/extension-mathematics';
+import { AllSelection, Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
 // Math nodes: inlineMath and blockMath, both with a single `latex` attribute, rendered with
 // KaTeX. Typing $$x$$ creates inline math and $$$x$$$ on its own line creates a block.
@@ -17,10 +19,32 @@ export type MathEditRequest =
 export type MathEditHandler = (request: MathEditRequest) => void;
 
 // Holds the platform's edit handler so slash commands can reach it through the editor.
+// Formulas inside a text selection are painted as selected (the browser paints nothing on
+// the KaTeX output, so they looked left out of a copy; copied text has them as $…$).
 const MathEditing = Extension.create<{ onEdit: MathEditHandler | null }>({
   name: 'mathEditing',
   addOptions() {
     return { onEdit: null };
+  },
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: new PluginKey('mathInSelection'),
+      props: {
+        decorations: (state) => {
+          const { selection } = state;
+          // A whole-note selection is painted by select-all.ts.
+          if (selection.empty || selection instanceof AllSelection) return null;
+          const decorations: Decoration[] = [];
+          state.doc.nodesBetween(selection.from, selection.to, (node, pos) => {
+            if ((node.type.name === 'inlineMath' || node.type.name === 'blockMath') && pos >= selection.from && pos + node.nodeSize <= selection.to) {
+              decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: 'math-in-selection' }));
+            }
+            return !node.isAtom;
+          });
+          return decorations.length ? DecorationSet.create(state.doc, decorations) : null;
+        },
+      },
+    })];
   },
 });
 

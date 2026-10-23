@@ -20,6 +20,7 @@ import Superscript from '@tiptap/extension-superscript';
 import TextAlign from '@tiptap/extension-text-align';
 import type * as Y from 'yjs';
 import { ListStyles } from './list-extensions';
+import { HeadingFold } from './heading-fold';
 import { CodeBlockIndent } from './code-extensions';
 import { Callout } from './callout';
 import { NoteLink } from './note-link';
@@ -27,7 +28,7 @@ import { BlobImage } from './blob-image';
 import { ImageDragging } from './image-drag';
 import { Attachment } from './attachment';
 import { TextFont } from './fonts';
-import { TextIndent } from './indent';
+import { TextIndent, IndentBackspace } from './indent';
 import { NoteSearch } from './search';
 import { SymbolLigatures } from './editor-prefs';
 import { createMathExtensions } from './math';
@@ -71,8 +72,11 @@ export const createSchemaExtensions = ({ ydoc, placeholder, onEditMath, onEditRe
   TaskList,
   QuietTaskItem.configure({ nested: true }),
   ListStyles,
+  // Collapsible headings (heading-fold.ts).
+  HeadingFold,
   CodeBlockIndent,
   TextIndent,
+  IndentBackspace,
   Collaboration.configure({ document: ydoc }),
   Placeholder.configure({ placeholder }),
   // Encrypted blob images; base64 `src` is still read for images added before blobs.

@@ -472,10 +472,18 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
 
   const paragraphSheet = () => toggleSheet('type', 'Text type', (body) => {
     body.append(row('Paragraph', () => runInEditor(() => chain().setParagraph().run()), { active: editor.isActive('paragraph') }));
+    const foldable = !!editor.getAttributes('heading').foldable;
     ([1, 2, 3, 4, 5, 6] as const).forEach((level) => {
-      body.append(row(`Heading ${level}`, () => runInEditor(() => chain().setHeading({ level }).run()), {
-        icon: HEADING_ICONS[level - 1], active: editor.isActive('heading', { level }),
+      body.append(row(`Heading ${level}`, () => runInEditor(() => chain().setNode('heading', { level, foldable: false, collapsed: false }).run()), {
+        icon: HEADING_ICONS[level - 1], active: editor.isActive('heading', { level }) && !foldable,
         style: { fontSize: `${[22, 20, 18, 17, 16, 14][level - 1]}px`, fontWeight: '700' },
+      }));
+    });
+    // Headings that fold the text below them (heading-fold.ts).
+    ([1, 2, 3] as const).forEach((level) => {
+      body.append(row(`▾ Collapsible ${level}`, () => runInEditor(() => chain().setNode('heading', { level, foldable: true, collapsed: false }).run()), {
+        icon: HEADING_ICONS[level - 1], active: editor.isActive('heading', { level }) && foldable,
+        style: { fontSize: `${[22, 20, 18][level - 1]}px`, fontWeight: '700' },
       }));
     });
   });
@@ -1094,7 +1102,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     textColor: [colorText, button(mdiChevronUp, 'Text colours', () => showColors('text'), () => colorKind === 'text', 'tb-caret', 18)],
     math: [button(mdiFunctionVariant, 'Inline math', () => requestMathEdit(editor, { mode: 'insert', kind: 'inline', pos: editor.state.selection.from }))],
     fontSize: [button(mdiMinus, 'Smaller text', () => setPx(px() - 1)), sizeLabel, button(mdiPlus, 'Bigger text', () => setPx(px() + 1))],
-    headings: [textButton('Text type', () => (level() ? `Heading ${level()}` : 'Paragraph'), paragraphSheet)],
+    headings: [textButton('Text type', () => (level() ? `${editor.getAttributes('heading').foldable ? 'Collapsible' : 'Heading'} ${level()}` : 'Paragraph'), paragraphSheet)],
     font: [textButton('Font', () => EDITOR_FONTS.find((f) => f.name === (editor.state.selection.empty ? ctx.noteFont() : selectionFont() ?? ctx.noteFont()))?.label ?? 'Sans', fontSheet)],
     bullets: [
       button(mdiFormatListBulleted, 'Bullet list', () => chain().toggleBulletList().run(), () => editor.isActive('bulletList')),
@@ -1592,7 +1600,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     const last = editor.view.dom.lastElementChild;
     return !!last && y > last.getBoundingClientRect().bottom + 8;
   };
-  const NATIVE_TAP = 'a, input, textarea, label, button, select, img, .image-node, [data-note-link], [data-type="inline-math"], .outline-toggle, [data-type="drawing"], .db, '
+  const NATIVE_TAP = 'a, input, textarea, label, button, select, img, .image-node, [data-note-link], [data-type="inline-math"], .outline-toggle, .heading-toggle, [data-type="drawing"], .db, '
     + '[data-type="block-math"], .tableWrapper, .attachment-card, .tb, .tb-notelink, .find-bar, .history-view, #chips, #title, #wordcount';
   // A tap on an image or a file card selects it without the keyboard (it pushed the image off
   // screen); a tap on the text brings the keyboard back.

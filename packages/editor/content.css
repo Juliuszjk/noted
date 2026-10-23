@@ -183,6 +183,31 @@
 .ProseMirror li[data-collapsed="true"] > ul,
 .ProseMirror li[data-collapsed="true"] > ol { display: none; }
 
+/* Collapsible headings (heading-fold.ts): the arrow sits left of the heading, in the margin. */
+.ProseMirror [data-foldable="true"] { position: relative; }
+.ProseMirror .heading-toggle {
+  position: absolute;
+  /* em of its own (smaller) font, 0.7 of the heading's. */
+  font-size: 0.7em;
+  left: -1.15em;
+  top: 0;
+  width: 1em;
+  line-height: calc(1.25em / 0.7);
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  color: var(--text-muted);
+  font-weight: normal;
+}
+.ProseMirror .heading-toggle:hover { color: var(--text-main); }
+@media (pointer: coarse) {
+  .ProseMirror .heading-toggle { left: -1.25em; width: 1.25em; }
+}
+.ProseMirror .heading-toggle::before { content: "\25BE"; }
+.ProseMirror .heading-toggle[data-collapsed="true"]::before { content: "\25B8"; }
+.ProseMirror .heading-folded { display: none; }
+
 .ProseMirror img { max-width: 100%; height: auto; border-radius: 6px; }
 .ProseMirror .ProseMirror-selectednode { outline: 2px solid var(--primary); }
 
@@ -249,6 +274,7 @@ body.table-resizing-row, body.table-resizing-row * { cursor: row-resize !importa
 .ProseMirror .tiptap-mathematics-render--editable { cursor: pointer; border-radius: 4px; }
 .ProseMirror .tiptap-mathematics-render--editable:hover { background-color: var(--bg-surface-high); }
 .ProseMirror span[data-type="inline-math"] { padding: 0 2px; }
+.ProseMirror .math-in-selection { background-color: rgba(110, 150, 255, 0.32); background-color: color-mix(in srgb, var(--primary) 32%, transparent); border-radius: 3px; }
 .ProseMirror div[data-type="block-math"] { margin: 0.75rem 0; padding: 0.25rem 0; overflow-x: auto; }
 .ProseMirror .inline-math-error, .ProseMirror .block-math-error {
   font-family: monospace;

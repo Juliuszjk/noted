@@ -224,8 +224,10 @@ drawer say "This device / phone only".
   between list items) + `image-tools.ts` / `image-viewer.ts`; `attachment.ts`; tables
   `table-tools.ts` + `TableResize`; `code-block.ts` / `code-themes.ts`; `callout.ts`; math
   (KaTeX); `note-link.ts` (atom `noteLink` {noteId}, `[[` suggestion, ranking `note-search.ts`);
-  `list-convert.ts` (skips `y-sync$` transactions); `indent.ts`; `search.ts`; `select-all.ts`;
-  `clipboard-text.ts`; `markdown-paste.ts`; `export.ts`; `slash-items.ts` / `slash-nav.ts`;
+  `list-convert.ts` (skips `y-sync$` transactions); `indent.ts` (block attr `indent` on paragraphs /
+  headings); `heading-fold.ts` (collapsible headings, attrs `foldable` / `collapsed`); `search.ts`; `select-all.ts`;
+  `clipboard-text.ts` (formulas copied as `$…$`); `markdown-paste.ts` (`markdownMath`: formulas
+  before marked, also used by MCP); `export.ts`; `slash-items.ts` / `slash-nav.ts`;
   `toolbar-items.ts` (tested); reminders: inline atom `reminder` {id, at (ms), repeat
   (null|daily|weekly|monthly|yearly), done} in `reminder.ts` (pasted copies get new ids),
   dates in `reminder-time.ts` (pure, local-time repeats, tested), picker `reminder-picker.ts`
@@ -466,6 +468,8 @@ distribution to friends (releases, Windows, updates). Project status, decisions 
   in `packages/*` (outside apps/mobile), so `build-apk.sh` installed old code; the script now
   deletes the generated bundle first. Check a fix is in the APK: `grep -a -c <string>
   apps/mobile/android/app/build/generated/assets/react/release/index.android.bundle`.
+  Strings of the editor page (non-Latin text inside) are UTF-16 in the Hermes bundle: grep them as
+  `grep -a -c -P "h\x00e\x00a\x00d"`.
 - `apps/mobile/android/` keeps the versionCode / versionName of the last prebuild: after
   `set-version.mjs` a local build installed as 0.1.0 (INSTALL_FAILED_VERSION_DOWNGRADE); re-run prebuild
   or fix `android/app/build.gradle`. CI generates it fresh.

@@ -195,6 +195,7 @@ export function TopToolbar({ editor, linkEditRequest = 0, align = 'center', note
   useEffect(() => setSizeText(String(px)), [px]);
 
   const level = ([1, 2, 3, 4, 5, 6] as const).find((l) => editor.isActive('heading', { level: l }));
+  const foldable = !!level && !!editor.getAttributes('heading').foldable;
   const alignment = (['center', 'right', 'justify'] as const).find((k) => editor.isActive({ textAlign: k })) ?? 'left';
   const textColor = editor.getAttributes('textStyle').color as string | undefined;
   const hasSelection = !editor.state.selection.empty;
@@ -328,12 +329,18 @@ export function TopToolbar({ editor, linkEditRequest = 0, align = 'center', note
     headings: (
       <>
       <div style={rel}>
-        <IconBtn title="Text type" label={<>{level ? `Heading ${level}` : 'Paragraph'}{chevron(menu === 'type')}</>} active={menu === 'type'} onClick={() => toggle('type')} />
+        <IconBtn title="Text type" label={<>{level ? `${foldable ? 'Collapsible' : 'Heading'} ${level}` : 'Paragraph'}{chevron(menu === 'type')}</>} active={menu === 'type'} onClick={() => toggle('type')} />
         <Drop open={menu === 'type'}>
           <MenuButton active={!level} onPick={pick(() => chain().setParagraph().run())}>Paragraph</MenuButton>
           {([1, 2, 3, 4, 5, 6] as const).map((l) => (
-            <MenuButton key={l} active={level === l} onPick={pick(() => chain().setHeading({ level: l }).run())} style={{ fontSize: [20, 18, 16, 15, 14, 12][l - 1], fontWeight: 700 }}>
+            <MenuButton key={l} active={level === l && !foldable} onPick={pick(() => chain().setNode('heading', { level: l, foldable: false, collapsed: false }).run())} style={{ fontSize: [20, 18, 16, 15, 14, 12][l - 1], fontWeight: 700 }}>
               Heading {l}
+            </MenuButton>
+          ))}
+          {/* Headings that fold the text below them (heading-fold.ts). */}
+          {([1, 2, 3] as const).map((l) => (
+            <MenuButton key={`c${l}`} active={level === l && foldable} onPick={pick(() => chain().setNode('heading', { level: l, foldable: true, collapsed: false }).run())} style={{ fontSize: [20, 18, 16][l - 1], fontWeight: 700 }}>
+              ▾ Collapsible {l}
             </MenuButton>
           ))}
         </Drop>

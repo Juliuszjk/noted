@@ -4,7 +4,7 @@ import { marked } from 'marked';
 import * as Y from 'yjs';
 import { exportNote } from '@noted/editor/export';
 import { createSchemaExtensions } from '@noted/editor/extensions';
-import { normalizeTaskListHtml } from '@noted/editor/markdown-paste';
+import { markdownToHtml } from '@noted/editor/markdown-paste';
 import { isReminderRepeat, reminderPlainText } from '@noted/editor/reminder-time';
 
 // A note body as Markdown for Claude, and Markdown from Claude back into the body, without
@@ -85,75 +85,13 @@ export const renderBody = (body: JSONContent, linkTitle: LinkTitle): NoteView =>
 
 // ---- Markdown -> nodes ----
 
-const CALLOUT_VARIANTS: Record<string, string> = { NOTE: 'info', INFO: 'info', TIP: 'tip', IMPORTANT: 'info', WARNING: 'warning', CAUTION: 'danger', DANGER: 'danger' };
-
-const escapeAttr = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
-
-// Outside code: $$…$$ blocks and $…$ / ==…== inline become the HTML the editor reads.
-const preprocess = (md: string): string => {
-  const out: string[] = [];
-  const lines = md.split('\n');
-  let fence: string | null = null;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const open = /^\s*(```|~~~)/.exec(line);
-    if (fence) {
-      out.push(line);
-      if (open && line.trim().startsWith(fence)) fence = null;
-      continue;
-    }
-    if (open) {
-      fence = open[1];
-      out.push(line);
-      continue;
-    }
-    if (line.trim() === '$$') {
-      const end = lines.findIndex((l, j) => j > i && l.trim() === '$$');
-      if (end > i) {
-        out.push(`<div data-type="block-math" data-latex="${escapeAttr(lines.slice(i + 1, end).join('\n'))}"></div>`);
-        i = end;
-        continue;
-      }
-    }
-    const single = /^\s*\$\$(.+)\$\$\s*$/.exec(line);
-    if (single) {
-      out.push(`<div data-type="block-math" data-latex="${escapeAttr(single[1].trim())}"></div>`);
-      continue;
-    }
-    // Inline code keeps its dollars and equals signs.
-    out.push(line.split(/(`[^`]*`)/).map((part, k) => (k % 2 ? part : part
-      .replace(/(^|[^\\$])\$(?![\s$])([^$\n]+?)(?<![\s\\])\$(?!\d)/g, (_, pre, latex) => `${pre}<span data-type="inline-math" data-latex="${escapeAttr(latex)}"></span>`)
-      .replace(/==(?=\S)([^=\n]+?)(?<=\S)==/g, '<mark>$1</mark>'))).join(''));
-  }
-  return out.join('\n');
-};
-
-// GitHub alerts ("> [!NOTE]") as callouts.
-const callouts = (html: string): string => {
-  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-  for (const quote of [...doc.querySelectorAll('blockquote')]) {
-    const first = quote.firstElementChild;
-    const m = first?.tagName === 'P' ? /^\s*\[!(\w+)\]\s*/.exec(first.innerHTML) : null;
-    if (!m || !CALLOUT_VARIANTS[m[1].toUpperCase()]) continue;
-    first!.innerHTML = first!.innerHTML.slice(m[0].length);
-    if (!first!.textContent?.trim() && !first!.querySelector('*')) first!.remove();
-    const box = doc.createElement('div');
-    box.setAttribute('data-type', 'callout');
-    box.setAttribute('data-variant', CALLOUT_VARIANTS[m[1].toUpperCase()]);
-    box.innerHTML = quote.innerHTML;
-    quote.replaceWith(box);
-  }
-  return doc.body.innerHTML;
-};
-
 let schemaExtensions: ReturnType<typeof createSchemaExtensions> | null = null;
 const extensions = () => (schemaExtensions ??= createSchemaExtensions({ ydoc: new Y.Doc(), placeholder: '' }));
 
 // Markdown -> block nodes (plain Markdown, tokens stay text).
 export const markdownBlocks = (md: string): JSONContent[] => {
   if (!md.trim()) return [];
-  const html = normalizeTaskListHtml(marked.parse(preprocess(md), { gfm: true, breaks: false, async: false }) as string);
-  return (generateJSON(callouts(html), extensions()).content ?? []) as JSONContent[];
+  return (generateJSON(markdownToHtml(md), extensions()).content ?? []) as JSONContent[];
 };
 
 export interface Restore {

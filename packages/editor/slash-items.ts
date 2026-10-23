@@ -27,6 +27,15 @@ const headingItems: SlashItem[] = ([1, 2, 3, 4, 5, 6] as const).map((level) => (
   command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode('heading', { level }).run(),
 }));
 
+// Headings that fold the text below them (heading-fold.ts), like an outline list.
+const collapsibleHeadingItems: SlashItem[] = ([1, 2, 3] as const).map((level) => ({
+  title: `Collapsible heading ${level}`,
+  icon: HEADING_ICONS[level - 1],
+  keywords: ['toggle', 'fold', 'collapse', 'section'],
+  preview: { kind: 'heading', level },
+  command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode('heading', { level, foldable: true, collapsed: false }).run(),
+}));
+
 const numberedTile = (title: string, style: string, markers: string[], keywords: string[]): SlashItem => ({
   title,
   keywords,
@@ -277,7 +286,7 @@ const linkToItem: SlashItem = {
 };
 
 export const slashItems: SlashItem[] = [
-  { title: 'Heading', icon: mdiFormatHeaderPound, keywords: ['title', 'header'], submenu: { kind: 'list', items: headingItems } },
+  { title: 'Heading', icon: mdiFormatHeaderPound, keywords: ['title', 'header', 'collapsible', 'toggle'], submenu: { kind: 'list', items: [...headingItems, ...collapsibleHeadingItems] } },
   {
     title: 'Quote',
     icon: mdiFormatQuoteClose,

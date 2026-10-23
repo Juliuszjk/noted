@@ -332,7 +332,7 @@ export function NoteEditor({
       if (!ed || e.button !== 0 || !ed.view.editable || !ed.view.dom.contains(e.target as Node)) return;
       const target = e.target as HTMLElement;
       if (e.detail !== 1 || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey
-        || target.closest('table, [contenteditable="false"], a, img, .image-node, .attachment-card, .code-block > :not(pre), .outline-toggle, label, input')) {
+        || target.closest('table, [contenteditable="false"], a, img, .image-node, .attachment-card, .code-block > :not(pre), .outline-toggle, .heading-toggle, label, input')) {
         return;
       }
       const hit = ed.view.posAtCoords({ left: e.clientX, top: e.clientY });

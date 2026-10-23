@@ -1,6 +1,15 @@
 import { Extension } from '@tiptap/core';
-import { AllSelection, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
+import { AllSelection, Plugin, PluginKey, Selection, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import type { EditorView } from '@tiptap/pm/view';
+
+const collapseAll = (view: EditorView, dir: -1 | 1): boolean => {
+  const { state } = view;
+  if (!(state.selection instanceof AllSelection)) return false;
+  const target = dir < 0 ? Selection.atStart(state.doc) : Selection.atEnd(state.doc);
+  view.dispatch(state.tr.setSelection(target).scrollIntoView());
+  return true;
+};
 
 // Ctrl+A: inside a code block it first selects just that block's code (like code editors),
 // pressed again it selects the whole note. Everywhere else the whole note at once (also from
@@ -25,6 +34,12 @@ export const SelectAllKeys = Extension.create({
         view.dispatch(state.tr.setSelection(new AllSelection(state.doc)));
         return true;
       },
+      // After Ctrl+A the arrows go to the start / end of the note (ProseMirror has nowhere to
+      // move a whole-note selection and the browser's own move went astray).
+      ArrowLeft: () => collapseAll(this.editor.view, -1),
+      ArrowUp: () => collapseAll(this.editor.view, -1),
+      ArrowRight: () => collapseAll(this.editor.view, 1),
+      ArrowDown: () => collapseAll(this.editor.view, 1),
     };
   },
   // The browser paints a whole-note selection badly (dark boxes around task lists, nothing on

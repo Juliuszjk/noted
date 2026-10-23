@@ -118,12 +118,12 @@ describe('slash search', () => {
   });
 
   it('shows all headings for "head"', () => {
-    expect(titlesOf(search('head')[0])).toHaveLength(6);
+    expect(titlesOf(search('head')[0])).toHaveLength(9);
   });
 
   it('lists several category matches in one panel, matching inside words', () => {
     const model = search('bl');
-    expect(titlesOf(model[0])).toEqual(['Code block', 'Table', 'Publish', 'Math › Math block']);
+    expect(titlesOf(model[0])).toEqual(['Code block', 'Table', 'Publish', 'Heading › Collapsible heading 1', 'Heading › Collapsible heading 2', 'Heading › Collapsible heading 3', 'Math › Math block']);
     expect(model[0]).toMatchObject({ divider: 3 });
   });
 

@@ -53,7 +53,9 @@ const inlineNode = (node: JSONContent, ctx: Ctx): string => {
     case 'hardBreak':
       return md ? '  \n' : '\n';
     case 'inlineMath':
-      return md ? `$${node.attrs?.latex ?? ''}$` : String(node.attrs?.latex ?? '');
+      // Copied text keeps the dollars: pasted into a chat, a Markdown file or back into a note
+      // it is a formula again.
+      return md || ctx.tight ? `$${node.attrs?.latex ?? ''}$` : String(node.attrs?.latex ?? '');
     case 'noteLink': {
       const title = ctx.titles[String(node.attrs?.noteId ?? '')] ?? 'Missing note';
       return md ? `[[${title}]]` : title;
@@ -126,7 +128,7 @@ const block = (node: JSONContent, ctx: Ctx): string => {
     case 'horizontalRule':
       return md ? '---' : '────────';
     case 'blockMath':
-      return md ? `$$\n${node.attrs?.latex ?? ''}\n$$` : String(node.attrs?.latex ?? '');
+      return md || ctx.tight ? `$$\n${node.attrs?.latex ?? ''}\n$$` : String(node.attrs?.latex ?? '');
     case 'image':
       return inlineNode(node, ctx);
     case 'attachment': {

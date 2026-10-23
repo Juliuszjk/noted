@@ -72,11 +72,22 @@ changing a feature. Full pre-trim CLAUDE.md: `docs/claude-md-full-2026-10-15.md`
   / `commitMathEdit`.
 - Lists: `ListConvert` (`list-convert.ts`) rebuilds a list when switching kinds and joins
   adjacent lists of the same kind (skips `y-sync$` transactions).
-- Indent (`indent.ts`): list = sink / lift, code = 2 spaces, other text = `\t`.
+- Indent (`indent.ts`): list = sink / lift, code = 2 spaces, paragraphs / headings = attribute
+  `indent` (0-8 levels of 2em, `data-indent` + inline `margin-left`, the whole block moves). Tab
+  inside a line (cursor not at its start, nothing selected) still types `\t`; Shift+Tab removes
+  a tab before the cursor first, then a level, then an old leading tab. Backspace at the start
+  of an indented block takes a level off (`IndentBackspace`, before the core keymap).
+- Collapsible headings (`heading-fold.ts`): heading attrs `foldable` / `collapsed` (slash
+  "Heading > Collapsible heading 1-3"); arrow `.heading-toggle` in the left margin folds the
+  following siblings up to a heading of the same or higher level (node decorations
+  `.heading-folded`, display none). Enter at the end of a folded heading opens it.
 - Find / replace: `NoteSearch` (`search.ts`, decorations). Select all (`select-all.ts`): code
   block first, then the note; paints AllSelection itself. Copy (`clipboard-text.ts`): text/plain
-  one line per block with list markers. Markdown paste (`markdown-paste.ts`, `marked`) for
-  plain-text pastes that `looksLikeMarkdown`. `SymbolLigatures` (-> → etc.).
+  one line per block with list markers, formulas as `$…$` / `$$…$$` (painted selected:
+  `.math-in-selection`, math.ts). Markdown paste (`markdown-paste.ts`, `marked`) for
+  plain-text pastes that `looksLikeMarkdown`; `markdownMath` turns `$…$`, `$$…$$`, `\(…\)`, `\[…\]`
+  and `==…==` into editor HTML before marked (it ate LaTeX backslashes), `> [!NOTE]` = callout
+  (shared with the MCP server's `markdownBlocks`). `SymbolLigatures` (-> → etc.).
 - Export (`export.ts`): Markdown / text; `exportAttachments` (sync/export-files.ts) writes
   `attachments/<16 chars of blob id>-<name>` linked from the Markdown (what the importer reads).
 - Toolbar model (`toolbar-items.ts`, tested): `ToolbarConfig = {preset, groups}` (subgroups
