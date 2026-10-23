@@ -94,6 +94,8 @@ export interface SettingsHost {
   onChooseDownloadFolder?: (reset?: boolean) => void;
   // Installed spell checker dictionaries (empty: none, or not on this platform).
   spellLanguages: string[];
+  // The system's spell checker picks the languages (Windows): nothing to choose here.
+  spellSystem?: boolean;
   getCustomWords: () => Promise<string[]>;
   setCustomWords: (words: string[]) => Promise<void>;
   // Toolbar
@@ -660,7 +662,9 @@ function EditorSection({ host }: { host: SettingsHost }) {
       <Row title="Spell check" description="Underlines misspelled words (each note can still turn it off in its properties).">
         <Switch on={p.spellcheck} onChange={(spellcheck) => set({ spellcheck })} />
       </Row>
-      {host.spellLanguages.length === 0 ? (
+      {host.spellSystem ? (
+        <Row title="Languages" description="Windows' spell checker is used. It checks the languages added in Windows Settings > Time & language > Language & region; add the languages you write in there, then restart Noted." />
+      ) : host.spellLanguages.length === 0 ? (
         <Row title="Languages" description="No dictionaries are installed. On Arch: sudo pacman -S hunspell-pl hunspell-en_us, then restart Noted." />
       ) : (
         <>

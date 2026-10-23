@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { readTextFile, BaseDirectory } from '@tauri-apps/plugin-fs';
 import { resolveTheme, themeToCssVars, THEME_PRESETS } from '@noted/theme';
 import type { ThemeColors, ThemeMode } from '@noted/theme';
@@ -14,6 +15,10 @@ const MODE_KEY = 'noted_theme_mode';
 export const applyTheme = (theme: ThemeColors): void => {
   const root = document.documentElement;
   for (const [name, value] of Object.entries(themeToCssVars(theme))) root.style.setProperty(name, value);
+  // Windows draws its own title bar above the page: same colour as the panels under it.
+  if (navigator.userAgent.includes('Windows')) {
+    invoke('set_title_bar_colors', { background: theme.surface_container_low, text: theme.on_surface, border: theme.outline_variant }).catch(() => {});
+  }
 };
 
 export const getThemeMode = (): ThemeMode => {

@@ -133,9 +133,18 @@ pub(crate) const WINDOWS_APP_ID: &str = "io.github.juliuszjk.noted";
 
 #[cfg(windows)]
 #[tauri::command]
-fn notify(summary: String, body: String, kind: String) -> Result<(), String> {
+fn notify(app: tauri::AppHandle, summary: String, body: String, kind: String) -> Result<(), String> {
     let _ = kind;
-    notify_rust::Notification::new().app_id(WINDOWS_APP_ID).summary(&summary).body(&body).show().map(|_| ()).map_err(|e| e.to_string())
+    // A click on the toast opens the window.
+    tauri_winrt_notification::Toast::new(WINDOWS_APP_ID)
+        .title(&summary)
+        .text1(&body)
+        .on_activated(move |_| {
+            show_main(&app);
+            Ok(())
+        })
+        .show()
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(not(windows))]
@@ -236,6 +245,45 @@ fn terminal_file_manager(path: &str) -> Option<std::process::Command> {
     }
     command.args(&args).current_dir(path);
     Some(command)
+}
+
+// Windows 11 paints the native title bar in the app's colours (DWM caption / text / border
+// colour, `#rrggbb` from the theme); older Windows ignores the attributes. Elsewhere the window
+// manager draws the frame.
+#[cfg(windows)]
+#[link(name = "dwmapi")]
+extern "system" {
+    fn DwmSetWindowAttribute(hwnd: *mut std::ffi::c_void, attribute: u32, value: *const std::ffi::c_void, size: u32) -> i32;
+}
+
+#[cfg(windows)]
+fn colorref(hex: &str) -> Option<u32> {
+    let hex = hex.strip_prefix('#')?;
+    if hex.len() != 6 {
+        return None;
+    }
+    let rgb = u32::from_str_radix(hex, 16).ok()?;
+    // COLORREF is 0x00BBGGRR.
+    Some(((rgb & 0xff) << 16) | (rgb & 0xff00) | ((rgb >> 16) & 0xff))
+}
+
+#[tauri::command]
+fn set_title_bar_colors(window: tauri::WebviewWindow, background: String, text: String, border: String) {
+    #[cfg(windows)]
+    if let Ok(hwnd) = window.hwnd() {
+        const DWMWA_BORDER_COLOR: u32 = 34;
+        const DWMWA_CAPTION_COLOR: u32 = 35;
+        const DWMWA_TEXT_COLOR: u32 = 36;
+        for (attribute, hex) in [(DWMWA_CAPTION_COLOR, &background), (DWMWA_TEXT_COLOR, &text), (DWMWA_BORDER_COLOR, &border)] {
+            if let Some(color) = colorref(hex) {
+                unsafe {
+                    DwmSetWindowAttribute(hwnd.0 as *mut _, attribute, &color as *const u32 as *const _, 4);
+                }
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (window, background, text, border);
 }
 
 const AUTOSTART_ARG: &str = "--autostart";
@@ -434,6 +482,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             set_tray_behaviour,
             can_self_update,
+            set_title_bar_colors,
             spellcheck_languages_available,
             set_spellcheck,
             get_custom_words,

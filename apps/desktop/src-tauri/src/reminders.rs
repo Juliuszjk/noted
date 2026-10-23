@@ -80,13 +80,8 @@ pub fn start(app: AppHandle, reminders: Reminders) {
                 if let Some(handle) = show(&app, &reminders, &notice) {
                     inner.open.insert(notice.id.clone(), handle);
                 }
-                // Windows toasts carry no buttons here: Done / snooze stay in the app.
                 #[cfg(windows)]
-                let _ = notify_rust::Notification::new()
-                    .app_id(crate::WINDOWS_APP_ID)
-                    .summary(&notice.title)
-                    .body(&notice.body)
-                    .show();
+                show(&app, &notice);
             }
             let next = inner.notices.iter().filter(|n| !inner.fired.contains(&n.id)).map(|n| n.due).min();
             // At most a minute: the clock jumps after a suspend.
@@ -130,4 +125,30 @@ fn show(app: &AppHandle, reminders: &Reminders, notice: &Notice) -> Option<notif
         reminders.inner.0.lock().unwrap().open.remove(&id);
     });
     Some(handle)
+}
+
+// notify-rust's Windows toasts have no buttons, so the toast is built here. The `reminder`
+// scenario keeps it on screen until it is answered; a click on the toast itself (no button)
+// opens the window like Linux's "default" action.
+#[cfg(windows)]
+fn show(app: &AppHandle, notice: &Notice) {
+    use tauri_winrt_notification::{Scenario, Toast};
+    let id = notice.id.clone();
+    let app = app.clone();
+    let _ = Toast::new(crate::WINDOWS_APP_ID)
+        .title(&notice.title)
+        .text1(&notice.body)
+        .scenario(Scenario::Reminder)
+        .add_button("Done", "done")
+        .add_button("In 1 hour", "hour")
+        .add_button("Tomorrow", "tomorrow")
+        .on_activated(move |action| {
+            let action = action.unwrap_or_else(|| "default".to_string());
+            if action == "default" {
+                crate::show_main(&app);
+            }
+            let _ = app.emit("noted:reminder-action", ActionEvent { id: id.clone(), action });
+            Ok(())
+        })
+        .show();
 }

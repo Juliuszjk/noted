@@ -1439,7 +1439,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                 drawingTools={drawingToolsStore}
                 fullWidth={prefs.fullWidth}
                 readOnly={getNoteFlag(split.ydoc, 'readOnly')}
-                spellcheck={!getNoteFlag(split.ydoc, 'noSpellcheck')}
+                spellcheck={editorPrefs.spellcheck && !getNoteFlag(split.ydoc, 'noSpellcheck')}
                 onNoteAction={(request, x, y) => { if (request.kind === 'goto') setNotePicker({ mode: 'goto', at: { x, y } }); }}
                 onSaveExport={saveExport}
               />
@@ -1717,7 +1717,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                   onStats={setStats}
                   fullWidth={prefs.fullWidth}
                   readOnly={activeFlags.readOnly}
-                  spellcheck={activeFlags.spellcheck}
+                  spellcheck={editorPrefs.spellcheck && activeFlags.spellcheck}
                   onNoteAction={(request, x, y) => {
                     if (request.kind === 'goto' || request.kind === 'linkto') setNotePicker({ mode: request.kind, at: { x, y } });
                     else setPicker({ kind: request.kind === 'notebook' ? 'notebooks' : 'tags', x, y });
@@ -1995,6 +1995,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
               if (shared) changeCatalog((doc) => setSharedEditorPrefs(doc, shared));
             },
             spellLanguages,
+            // WebView2 checks with Windows' own spell checker (no Hunspell dictionaries to list).
+            spellSystem: navigator.userAgent.includes('Windows'),
             getCustomWords: () => getCustomWords(editorPrefs.spellLanguages.length ? editorPrefs.spellLanguages : spellLanguages),
             setCustomWords: (words) => setCustomWords(editorPrefs.spellLanguages.length ? editorPrefs.spellLanguages : spellLanguages, words),
             onFileDrop,
