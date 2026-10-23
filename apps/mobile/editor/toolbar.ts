@@ -19,6 +19,7 @@ import {
 } from '@noted/editor/table-tools';
 import type { TableMoveResult } from '@noted/editor/table-tools';
 import { insertImageFromUrl } from '@noted/editor/blob-image';
+import { IMAGE_DRAG_START } from '@noted/editor/image-drag';
 import { toolbarGroups, toolbarItem, CELL_TOOLBAR_ITEMS } from '@noted/editor/toolbar-items';
 import type { ToolbarConfig } from '@noted/editor/toolbar-items';
 import { slashItems as allSlashItems, slashItemsWithoutPublish, HEADING_ICONS } from '@noted/editor/slash-items';
@@ -1608,7 +1609,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   // Moving an image (hold, then drag) is image-drag.ts in the shared editor.
   const editorDom = editor.view.dom as HTMLElement;
   // Only a tap counts (a finger scrolling over an image must not hide the keyboard).
-  let imageTap: { x: number; y: number } | null = null;
+  let imageTap: { x: number; y: number; dragged?: boolean } | null = null;
   document.addEventListener('touchstart', (e) => {
     const t = e.touches[0];
     imageTap = t && (e.target as El).closest?.(NO_KEYBOARD_TAP) ? { x: t.clientX, y: t.clientY } : null;
@@ -1616,8 +1617,16 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   }, { passive: true, capture: true });
   document.addEventListener('touchmove', (e) => {
     const t = e.touches[0];
-    if (imageTap && t && Math.hypot(t.clientX - imageTap.x, t.clientY - imageTap.y) > 8) imageTap = null;
+    if (imageTap && !imageTap.dragged && t && Math.hypot(t.clientX - imageTap.x, t.clientY - imageTap.y) > 8) imageTap = null;
   }, { passive: true, capture: true });
+  // Moving a held image counts as a tap on it: the hold focuses the editor (Chromium's long
+  // press) and the keyboard came up on letting go, scrolling the note up to the selection. An
+  // open keyboard stays (hiding it would resize the page under the finger).
+  editorDom.addEventListener(IMAGE_DRAG_START, () => {
+    if (!imageTap || keyboardUp()) return;
+    imageTap.dragged = true;
+    editorDom.inputMode = 'none';
+  });
   document.addEventListener('touchend', () => {
     if (imageTap && editorDom.inputMode !== 'none') editorDom.inputMode = 'none';
     imageTap = null;

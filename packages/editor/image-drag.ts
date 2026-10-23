@@ -19,6 +19,9 @@ const EDGE = 56;
 const SNAP_PX = 6;
 
 const key = new PluginKey('imageDrag');
+// Fired on the editor element when a held image starts moving (the phone page keeps the
+// keyboard away: the hold focused the editor and the keyboard came up on letting go).
+export const IMAGE_DRAG_START = 'noted-image-drag-start';
 
 type Drag = {
   pos: number;
@@ -71,6 +74,7 @@ const startDrag = (view: EditorView, drag: Drag) => {
     const saved = targets.map((t) => t.style.overflow);
     targets.forEach((t) => { t.style.overflow = 'hidden'; });
     drag.unlock = () => targets.forEach((t, i) => { t.style.overflow = saved[i]; });
+    view.dom.dispatchEvent(new CustomEvent(IMAGE_DRAG_START));
   }
   view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, drag.pos)));
   const img = drag.source.querySelector('img');

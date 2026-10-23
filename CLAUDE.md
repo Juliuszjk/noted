@@ -18,6 +18,8 @@ maintainer's private notes (working rules, server, status, ideas) live in `CLAUD
   "Running") and test them. Make a backup copy of files you rewrite heavily.
 - Never weaken the encryption or the zero-knowledge server to "make something work".
 - Never commit personal data (server addresses, names, e-mail): grep the staged files first.
+- Commit messages carry no `Co-Authored-By` (or any other attribution) trailers: the maintainer
+  is the only author, on every machine.
 
 ## Stack and layout
 
