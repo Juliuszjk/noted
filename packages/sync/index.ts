@@ -21,4 +21,5 @@ export * from './merging-store';
 export * from './reminders';
 export * from './live';
 export * from './live-owner';
+export * from './guest-files';
 export * from './server-info';

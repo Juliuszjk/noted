@@ -3,7 +3,8 @@ import { bodyLimit } from 'hono/body-limit';
 import { db } from './db.js';
 import { VIEWER_JS } from './viewer.generated.js';
 import { LIVE_JS } from './live.generated.js';
-import { liveBlob, liveInitial, liveNeedsPassword, liveShareExists, removeLiveShare } from './live.js';
+import { guestUpdatesAfter, liveBlob, liveGuestUpload, liveInitial, liveNeedsPassword, liveShareExists, removeLiveShare } from './live.js';
+import { MAX_BLOB_BYTES } from './blobs.js';
 
 // Published notes ("monographs"): the client seals a rendered copy of a note with a random
 // key that exists only in the link's #fragment, so this server stores opaque bytes and never
@@ -51,12 +52,22 @@ const liveRow = <T,>(columns: string, id: string): T | undefined => {
 // Mounted at /publish behind requireAuth.
 export const publishPrivate = new Hono();
 
+// `?after=<seq>` (the newest live update the owner's device merged): a live note whose guests
+// sent edits after that is not replaced or removed (its queue would go with it); the app
+// merges them and tries again. Without it (older apps) the note goes at once.
+const guestEditsWaiting = (after: string | undefined, id: string): boolean => {
+  if (after === undefined) return false;
+  const seq = Number(after);
+  return Number.isInteger(seq) && seq >= 0 && guestUpdatesAfter(id, seq) > 0;
+};
+
 publishPrivate.put(
   '/:id',
   bodyLimit({ maxSize: MAX_PUBLISHED_BYTES, onError: (c) => c.json({ error: 'Too large' }, 413) }),
   async (c) => {
     const id = c.req.param('id');
     if (!ID_PATTERN.test(id)) return c.json({ error: 'Bad id' }, 400);
+    if (guestEditsWaiting(c.req.query('after'), id)) return c.json({ error: 'Guest edits not merged yet' }, 409);
     const data = Buffer.from(await c.req.arrayBuffer());
     // Format header (3) + nonce (24) + tag (16) is the smallest valid copy.
     if (data.length <= 43) return c.json({ error: 'Empty' }, 400);
@@ -86,6 +97,7 @@ publishPrivate.get('/:id', (c) => {
 publishPrivate.delete('/:id', (c) => {
   const id = c.req.param('id');
   if (!ID_PATTERN.test(id)) return c.json({ error: 'Bad id' }, 400);
+  if (guestEditsWaiting(c.req.query('after'), id)) return c.json({ error: 'Guest edits not merged yet' }, 409);
   const removed = db.prepare('DELETE FROM published WHERE id = ?').run(id).changes + (removeLiveShare(id) ? 1 : 0);
   console.log(`publish: unpublished ${id.slice(0, 4)}…${removed ? '' : ' (was not there)'}`);
   return c.json({ success: true });
@@ -247,5 +259,18 @@ publicApp.get('/p/:id/blob/:blob', (c) => {
   if ('status' in result) return c.text('Not allowed', result.status, COMMON_HEADERS);
   return c.body(new Uint8Array(result.data), 200, { ...COMMON_HEADERS, 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store' });
 });
+
+// A file a guest adds to an editable live note (sealed in the page; tokens in headers).
+publicApp.put(
+  '/p/:id/blob/:blob',
+  bodyLimit({ maxSize: MAX_BLOB_BYTES, onError: (c) => c.json({ error: 'The file is larger than 30 MB' }, 413, COMMON_HEADERS) }),
+  async (c) => {
+    const id = c.req.param('id');
+    if (!ID_PATTERN.test(id)) return c.text('Not found', 404, COMMON_HEADERS);
+    const data = Buffer.from(await c.req.arrayBuffer());
+    const result = liveGuestUpload(id, c.req.param('blob'), c.req.header('X-Live-Read'), c.req.header('X-Live-Write'), data);
+    return c.json('error' in result ? { error: result.error } : { success: true }, result.status, { ...COMMON_HEADERS, 'Cache-Control': 'no-store' });
+  },
+);
 
 publicApp.notFound((c) => c.text('Not found', 404, COMMON_HEADERS));

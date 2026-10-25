@@ -33,7 +33,7 @@ import { notePlaces } from '@noted/ui/src/note-place';
 import { seal, unseal, decryptBlob, base64ToBytes, bytesToBase64, deriveAuthToken, generateSalt } from '@noted/crypto';
 import {
   LocalNoteStore, LocalBlobStore, runSyncEngine, uploadPendingBlobs, decodeNoteMeta, displayTitle, markNoteCreated,
-  isSystemNote, setNoteFlag, setNoteTrashed, deleteNoteForever, unpublishQuietly, setNoteNotebook, setNoteTag, purgeExpiredTrash,
+  isSystemNote, setNoteFlag, setNoteTrashed, deleteNoteForever, unpublishQuietly, cleanUpGuestFilesHourly, setNoteNotebook, setNoteTag, purgeExpiredTrash,
   refreshStaleNoteMeta, listOwnReminders, setOwnReminder, deleteOwnReminder, updateReminderInDoc,
   CATALOG_ID, docFromSealed, noteBodyJson, noteBodyText, listCatalog, getSharedEditorPrefs, setSharedEditorPrefs, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, setTitle, buildNoteMeta, encodeNoteMeta, getNoteSettings,
   currentAuthToken, sessionStillValid, getVaultSetup, createVault, changeVaultPassword, openVault,
@@ -111,6 +111,8 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
       if (requiresReload) await loadNotes();
       setServerOk(true);
       setLastSyncAt(Date.now());
+      // Files guests added to live notes that no note uses any more go from the server.
+      cleanUpGuestFilesHourly(masterKey, dbStore, getVaultKey());
 
       if (failedNotes > 0) {
         setSyncStatus(`Sync problem (${failedNotes})`);

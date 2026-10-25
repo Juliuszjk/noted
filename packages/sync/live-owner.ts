@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import { apiUrl } from '@noted/config';
 import { apiFetch } from './client';
-import { fromBase64Url, nextPublishInfo, publishExpired, toBase64Url } from './publish';
+import { fromBase64Url, GuestEditsWaiting, nextPublishInfo, publishExpired, toBase64Url } from './publish';
 import type { PublishOptions } from './publish';
 import { publishPasswordKey } from '@noted/crypto';
 import { acceptGuestUpdates, liveKeys, LIVE_ORIGIN, sealUpdate, tokenHash, unsealUpdate } from './live';
@@ -279,10 +279,44 @@ export const createLiveOwner = (host: LiveOwnerHost) => {
     },
 
     isLive: (noteId: string) => byNote.has(noteId),
+
+    // Merges every guest edit the server holds for this note's live link (before the link is
+    // removed or replaced); returns the newest merged update, null when the note is not live here.
+    async catchUp(noteId: string): Promise<number | null> {
+      const id = byNote.get(noteId);
+      const share = id ? shares.get(id) : undefined;
+      if (!share) return null;
+      const pending = await fetchLiveUpdates(host.masterKey, share.info.id, host.getSeq(share.info.id));
+      if (pending.exists) share.queue.push(...(pending.updates ?? []));
+      // A merge that is running takes the queue along; wait for it.
+      while (share.busy || share.queue.length) {
+        await drain(share);
+        if (share.busy) await new Promise((r) => setTimeout(r, 50));
+      }
+      return host.getSeq(share.info.id);
+    },
   };
 };
 
 export type LiveOwner = ReturnType<typeof createLiveOwner>;
+
+// Removing a live note or replacing it with a static copy drops the guest edits the server
+// still queues for it. So this device merges them first and passes the newest merged update
+// to `action` (as `after`); the server refuses while newer guest edits wait, and then this
+// merges again and retries a few times (GuestEditsWaiting when it gives up: nothing changed).
+export const afterLiveCatchUp = async <T>(
+  owner: LiveOwner | null | undefined, noteId: string, info: NotePublish | null, action: (after?: number) => Promise<T>,
+): Promise<T> => {
+  if (!info?.live || !owner) return action();
+  for (let attempt = 0; ; attempt++) {
+    const seq = (await owner.catchUp(noteId)) ?? owner.seq(info.id);
+    try {
+      return await action(seq);
+    } catch (e) {
+      if (!(e instanceof GuestEditsWaiting) || attempt >= 2) throw e;
+    }
+  }
+};
 
 // Publishes a note live (or changes the settings of its live link). The link of an earlier
 // publish stays. `lastSeq`: the newest update this device merged (0 for a new live note).

@@ -425,8 +425,24 @@ drawer say "This device / phone only".
   on 404 (8 x 2 s); seq per device in localStorage `noted_live_seq`). Desktop App: `liveOwner`, `watchDoc` on the active note, cursors via
   `y-protocols` Awareness + CollaborationCaret (`NoteEditor extraExtensions`, editor key `:live`,
   owner label "Owner"). Guest page `apps/web/src/LiveApp.tsx` + `live-client.ts` (name in localStorage,
-  no uploads / note links / notebooks / tags / reminders / note font; a local change of protected types
-  stops sending). NoteEditor props `slashItems`, `noteLinks`, `extraExtensions` exist for it.
+  no note links / notebooks / tags / reminders / note font / images from URLs; a local change of protected
+  types stops sending). NoteEditor props `slashItems`, `noteLinks`, `extraExtensions` exist for it.
+  Guests of an editable note add images / files (2026-10-25): the page compresses + seals each with its own
+  key and uploads it first (`PUT /p/:id/blob/:blob`, read + write token headers; `liveGuestUpload` in
+  live.ts: 30 MB a file, 100 MB of guest files a note, 20 a minute, write-once ids, never an id the share's
+  `blobs` lists), table `live_guest_blobs` (outlives the share) lets guests download them before a
+  snapshot lists them; the owner's apps load them like any blob. After a sync (hourly) desktop and phone
+  run `cleanUpGuestFilesHourly` (sync/guest-files.ts): private `GET /live/guest-files` (`settled` = no
+  guest update after the upload waits outside a snapshot), delete those no note uses
+  (`POST /live/guest-files/delete`, guest files only) once older than 1 h; with an unreadable locked
+  note (vault closed) only files of notes still live and readable.
+  Removing a live link or replacing it with a static copy first merges the guest edits the server still
+  queues (`afterLiveCatchUp` + `liveOwner.catchUp` in live-owner.ts; desktop `publishActive`, phone
+  `publish` / `unpublish`): `PUT` / `DELETE /publish/:id?after=<merged seq>` answers 409
+  (`GuestEditsWaiting`) while newer guest edits wait, the app merges again, 3 tries. The page goes read only
+  when the note holds nodes / attributes / marks its schema lacks (`unknownSchemaParts`,
+  editor/schema-check.ts: an older server page once stripped collapsible headings from a note); guests
+  export (Markdown / zip, text, HTML, PDF) in the browser; Ctrl+F hangs under `.live-top`.
   Desktop keeps an Awareness + caret for every open note (a key change on going live remounted the
   editor and closed the Publish dialog). Phone (confirmed 2026-10-18): `src/live.ts` (owner made in
   NotesScreen's WS effect, seq in SecureStore, `applyToNote` = updateNoteRecord + `onLiveNoteChanged`

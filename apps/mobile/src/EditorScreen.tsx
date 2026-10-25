@@ -38,7 +38,7 @@ import { seal, unseal, bytesToBase64, base64ToBytes } from '@noted/crypto';
 import { EDITOR_HTML } from './editorHtml.generated';
 import { goingAway } from './away';
 import { getLiveOwner, onLiveNoteChanged, onLiveAwareness } from './live';
-import { publishLive } from '@noted/sync';
+import { publishLive, afterLiveCatchUp } from '@noted/sync';
 
 interface EditorScreenProps {
   // Settings > Backup > compare: show this note's backup version next to it once the page is ready.
@@ -681,20 +681,25 @@ export function EditorScreen({
       getLiveOwner()?.updateShare(note.id, info);
       return;
     }
+    // A live link becoming a static copy: guests' waiting edits go into the note first.
     const info = nextPublishInfo(noteState.published, settings);
-    const sealed = await new Promise<Uint8Array | null>((resolve) => {
-      payloadWaiterRef.current = resolve;
-      sendToEditor({ type: 'getPublishPayload', info });
-      setTimeout(() => { if (payloadWaiterRef.current === resolve) { payloadWaiterRef.current = null; resolve(null); } }, 30_000);
+    await afterLiveCatchUp(getLiveOwner(), note.id, noteState.published, async (after) => {
+      const sealed = await new Promise<Uint8Array | null>((resolve) => {
+        payloadWaiterRef.current = resolve;
+        sendToEditor({ type: 'getPublishPayload', info });
+        setTimeout(() => { if (payloadWaiterRef.current === resolve) { payloadWaiterRef.current = null; resolve(null); } }, 30_000);
+      });
+      if (!sealed) throw new Error('The note could not be prepared');
+      await putPublished(masterKey, info, sealed, after);
     });
-    if (!sealed) throw new Error('The note could not be prepared');
-    await putPublished(masterKey, info, sealed);
     sendToEditor({ type: 'setPublish', info });
     setNoteState((st) => ({ ...st, published: info }));
     getLiveOwner()?.updateShare(note.id, null);
   };
   const unpublish = async () => {
-    if (noteState.published) await deletePublished(masterKey, noteState.published);
+    // A live link: guests' waiting edits go into the note before the link (and its queue) goes.
+    const earlier = noteState.published;
+    if (earlier) await afterLiveCatchUp(getLiveOwner(), note.id, earlier, (after) => deletePublished(masterKey, earlier, after));
     sendToEditor({ type: 'setPublish', info: null });
     setNoteState((st) => ({ ...st, published: null }));
     getLiveOwner()?.updateShare(note.id, null);

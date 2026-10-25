@@ -5,14 +5,15 @@ import type { Server, IncomingMessage } from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { db } from './db.js';
 import { broadcastPrivate, privateMessageHandlers } from './realtime.js';
+import { MAX_BLOB_BYTES } from './blobs.js';
 
 // Live published notes (sync/live.ts): instead of a rendered copy, the server keeps the note's
 // Yjs state sealed with a key from the link (#fragment), plus the sealed updates sent since,
 // and relays new updates and cursors between the readers ("guests") on the public server and
 // the owner's devices on the private WebSocket. It sees only opaque bytes. Guests need the
 // read token (derived from the link key, and the password when there is one) for anything,
-// and the write token to send edits, which only works while the owner allows editing. The
-// owner's app checks every guest edit again before merging it into the note.
+// and the write token to send edits and files, which only works while the owner allows
+// editing. The owner's app checks every guest edit again before merging it into the note.
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{16}$/;
 const BLOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -28,6 +29,9 @@ const JOIN_TIMEOUT_MS = 5000;
 const HEARTBEAT_MS = 25000;
 // Wrong read tokens per note and minute (a password can only be guessed online, and slowly).
 const MAX_BAD_TOKENS_PER_MINUTE = 20;
+// Files guests add to an editable note: all of them together, and uploads a minute.
+const MAX_GUEST_BLOB_BYTES = 100 * 1024 * 1024;
+const MAX_GUEST_BLOBS_PER_MINUTE = 20;
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS live_shares (
@@ -51,6 +55,16 @@ db.exec(`
     at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS live_updates_share ON live_updates (share_id, seq);
+  -- Files guests uploaded (stored in server_blobs like the owner's): guests may download them
+  -- at once, before a snapshot of the owner lists them. The rows outlive the share: the owner's
+  -- apps delete the files no note uses any more (sync/guest-files.ts, /live/guest-files).
+  CREATE TABLE IF NOT EXISTS live_guest_blobs (
+    share_id TEXT NOT NULL,
+    blob_id TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (share_id, blob_id)
+  );
 `);
 
 interface ShareRow {
@@ -88,6 +102,11 @@ const deleteShare = (id: string): boolean => {
   if (removed) closeGuests(id, 4404, 'not published');
   return removed;
 };
+
+// Guest edits of a live note numbered after `after` (the newest one the owner's device
+// merged). Removing the live note drops its queue, so publish.ts refuses that while any wait.
+export const guestUpdatesAfter = (id: string, after: number): number =>
+  (db.prepare('SELECT COUNT(*) AS n FROM live_updates WHERE share_id = ? AND guest = 1 AND seq > ?').get(id, after) as { n: number }).n;
 
 // Called by publish.ts: a static copy replaces the live note and unpublishing removes it.
 export const removeLiveShare = (id: string): boolean => deleteShare(id);
@@ -230,6 +249,34 @@ livePrivate.put(
   },
 );
 
+// Files guests added that are still on the server, for the owner's apps to delete those no
+// note uses (sync/guest-files.ts). `settled`: every guest edit sent after the upload is in the
+// owner's snapshot already (or the share is gone), so the note shows whether it uses the file.
+livePrivate.get('/guest-files', (c) => {
+  const rows = db.prepare(`
+    SELECT g.blob_id AS id, g.share_id AS share, g.size, g.at,
+      NOT EXISTS (SELECT 1 FROM live_updates u WHERE u.share_id = g.share_id AND u.guest = 1 AND u.at >= g.at) AS settled
+    FROM live_guest_blobs g JOIN server_blobs b ON b.id = g.blob_id
+  `).all() as { id: string; share: string; size: number; at: number; settled: number }[];
+  return c.json(rows.map((r) => ({ ...r, settled: r.settled === 1 })));
+});
+
+// Deletes files guests added (never the owner's: ids not uploaded by a guest are skipped).
+livePrivate.post('/guest-files/delete', async (c) => {
+  const body = await c.req.json().catch(() => null) as { ids?: unknown } | null;
+  const ids = Array.isArray(body?.ids) ? body.ids.filter((id): id is string => typeof id === 'string' && BLOB_ID_PATTERN.test(id)).slice(0, 10_000) : [];
+  let deleted = 0;
+  db.transaction(() => {
+    for (const id of ids) {
+      if (!db.prepare('SELECT 1 FROM live_guest_blobs WHERE blob_id = ?').get(id)) continue;
+      deleted += db.prepare('DELETE FROM server_blobs WHERE id = ?').run(id).changes;
+      db.prepare('DELETE FROM live_guest_blobs WHERE blob_id = ?').run(id);
+    }
+  })();
+  if (deleted) console.log(`live: ${deleted} unused guest file${deleted === 1 ? '' : 's'} deleted`);
+  return c.json({ success: true, deleted });
+});
+
 // The updates after `after` (to merge them into the note) and the newest sequence number.
 livePrivate.get('/:id', (c) => {
   const id = c.req.param('id');
@@ -287,9 +334,47 @@ export const liveBlob = (id: string, blobId: string, readToken: string | undefin
   const share = liveShare(id);
   const denied = checkRead(share, id, readToken);
   if (denied) return { status: denied };
-  if (!(JSON.parse(share!.blobs) as string[]).includes(blobId)) return { status: 404 };
+  if (!(JSON.parse(share!.blobs) as string[]).includes(blobId) && !guestBlob(id, blobId)) return { status: 404 };
   const row = db.prepare('SELECT data FROM server_blobs WHERE id = ?').get(blobId) as { data: Buffer } | undefined;
   return row ? { data: row.data } : { status: 404 };
+};
+
+const guestBlob = (id: string, blobId: string) =>
+  db.prepare('SELECT size FROM live_guest_blobs WHERE share_id = ? AND blob_id = ?').get(id, blobId) as { size: number } | undefined;
+
+// A file a guest adds to an editable note (sealed in the page with a key of its own, which
+// goes into the note): needs the write token. Limits per note: MAX_GUEST_BLOB_BYTES in all,
+// MAX_GUEST_BLOBS_PER_MINUTE. Ids are write-once like the owner's, and an id the note already
+// uses cannot be taken (a guest could otherwise put other bytes under a file of the owner's
+// that is not uploaded yet).
+export const liveGuestUpload = (
+  id: string, blobId: string, readToken: string | undefined, writeToken: string | undefined, data: Buffer,
+): { status: 200 | 201 } | { status: 400 | 403 | 404 | 409 | 413 | 429; error: string } => {
+  if (!BLOB_ID_PATTERN.test(blobId)) return { status: 400, error: 'Bad file id' };
+  const share = liveShare(id);
+  const denied = checkRead(share, id, readToken);
+  if (denied) return { status: denied, error: 'Not allowed' };
+  const writeHash = tokenHash(writeToken);
+  if (!share!.editable || !writeHash || !sameHash(writeHash, share!.write_hash)) return { status: 403, error: 'Editing is off' };
+  // Nonce (24) + Poly1305 tag (16) is the smallest valid sealed blob.
+  if (data.length <= 40) return { status: 400, error: 'Empty file' };
+  if (data.length > MAX_BLOB_BYTES) return { status: 413, error: 'The file is larger than 30 MB' };
+  const known = guestBlob(id, blobId);
+  // A retry of an upload that already arrived.
+  if (known) return known.size === data.length ? { status: 200 } : { status: 409, error: 'This file id is taken' };
+  if ((JSON.parse(share!.blobs) as string[]).includes(blobId)) return { status: 409, error: 'This file id is taken' };
+  const used = db.prepare('SELECT COALESCE(SUM(size), 0) AS bytes, COALESCE(SUM(at > ?), 0) AS recent FROM live_guest_blobs WHERE share_id = ?')
+    .get(Date.now() - 60_000, id) as { bytes: number; recent: number };
+  if (used.recent >= MAX_GUEST_BLOBS_PER_MINUTE) return { status: 429, error: 'Too many files at once: wait a minute' };
+  if (used.bytes + data.length > MAX_GUEST_BLOB_BYTES) return { status: 413, error: 'Guests added 100 MB of files to this note already' };
+  const created = db.transaction(() => {
+    if (db.prepare('INSERT OR IGNORE INTO server_blobs (id, data, size, created_at) VALUES (?, ?, ?, ?)').run(blobId, data, data.length, Date.now()).changes === 0) return false;
+    db.prepare('INSERT INTO live_guest_blobs (share_id, blob_id, size, at) VALUES (?, ?, ?, ?)').run(id, blobId, data.length, Date.now());
+    return true;
+  })();
+  if (!created) return { status: 409, error: 'This file id is taken' };
+  console.log(`live: a guest added a file to ${id.slice(0, 4)}… (${data.length} bytes)`);
+  return { status: 201 };
 };
 
 // Token bucket per connection: `rate` messages a second, bursts up to `burst`.

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { NoteEditor } from '@noted/ui/src/NoteEditor';
 import { slashItems } from '@noted/editor/slash-items';
+import type { SlashItem } from '@noted/editor/slash';
 import { TOOLBAR_PRESETS } from '@noted/editor/toolbar-items';
 import type { ToolbarConfig } from '@noted/editor/toolbar-items';
 import type { BlobHandlers, BlobRef } from '@noted/editor/blob-image';
-import { unsealBytes, base64ToBytes } from '@noted/crypto';
+import { unsealBytes, sealBytes, generateKey, base64ToBytes, bytesToBase64 } from '@noted/crypto';
+import { compressImageBytes } from '@noted/media';
 import { liveKeys } from '@noted/sync/live';
 import type { LiveKeys } from '@noted/sync/live';
 import { getTitleText } from '@noted/sync/note-meta';
@@ -21,11 +23,15 @@ import type { LiveSession, LiveStatus } from './live-client';
 const NAME_KEY = 'noted_live_name';
 const COLORS = ['#e8590c', '#2f9e44', '#1971c2', '#9c36b5', '#c2255c', '#0c8599', '#f08c00', '#5f3dc4'];
 
-// What a guest cannot do here: files (nothing is uploaded), the owner's other notes,
-// notebooks and tags, reminders (they would ring on the owner's phone), publish. Export
-// downloads the note in the browser.
-const GUEST_HIDDEN = new Set(['Image', 'File', 'Reminder', 'Link to note', 'Link from another note', 'Go to note', 'Notebook', 'Tag', 'Publish']);
-const GUEST_SLASH = slashItems.filter((item) => !GUEST_HIDDEN.has(item.title));
+// What a guest cannot do here: images from web addresses (the page loads nothing from
+// elsewhere), the owner's other notes, notebooks and tags, reminders (they would ring on the
+// owner's phone), publish. Images and files are sealed here and uploaded (blobHandlers);
+// export downloads the note in the browser.
+const GUEST_HIDDEN = new Set(['Image from URL', 'Reminder', 'Link to note', 'Link from another note', 'Go to note', 'Notebook', 'Tag', 'Publish']);
+const guestItems = (items: SlashItem[]): SlashItem[] => items
+  .filter((item) => !GUEST_HIDDEN.has(item.title))
+  .map((item) => (item.submenu?.kind === 'list' ? { ...item, submenu: { ...item.submenu, items: guestItems(item.submenu.items) } } : item));
+const GUEST_SLASH = guestItems(slashItems);
 const GUEST_TOOLBAR: ToolbarConfig = {
   preset: 'custom',
   groups: TOOLBAR_PRESETS.desktop.default
@@ -55,6 +61,17 @@ const saveName = (name: string) => {
 };
 
 const MISSING_BLOB_RETRIES = 8;
+// The server's limit for one file (sealed, a little more than this).
+const MAX_FILE_BYTES = 30 * 1024 * 1024 - 64;
+
+// Pages served over plain http (a self-hosted server by IP) have no crypto.randomUUID.
+const newBlobId = (): string => {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+};
 const MISSING_BLOB_WAIT_MS = 2_000;
 
 const downloadFile = (data: BlobPart, name: string) => {
@@ -95,8 +112,33 @@ const blobHandlers = (id: string, keys: LiveKeys): BlobHandlers & { bytes: (ref:
     if (!data) throw new Error('The file is not on the server');
     downloadFile(data as BlobPart, name);
   };
+  // A guest's image or file (editable notes): sealed with a key of its own, which goes into the
+  // note with the id, and uploaded before the note refers to it.
+  const send = async (data: Uint8Array): Promise<BlobRef> => {
+    if (data.length > MAX_FILE_BYTES) throw new Error('The file is larger than 30 MB');
+    const blobId = newBlobId();
+    const key = generateKey();
+    const res = await fetch(`/p/${id}/blob/${blobId}`, {
+      method: 'PUT',
+      headers: { 'X-Live-Read': keys.read, 'X-Live-Write': keys.write, 'Content-Type': 'application/octet-stream' },
+      body: sealBytes(key, data) as BlobPart,
+    });
+    if (!res.ok) {
+      const answer = await res.json().catch(() => null) as { error?: string } | null;
+      throw new Error(answer?.error ?? `Upload failed (HTTP ${res.status})`);
+    }
+    return { id: blobId, key: bytesToBase64(key) };
+  };
   return {
     bytes,
+    upload: async (file) => {
+      const { bytes: data, type } = await compressImageBytes(file);
+      const ref = await send(data);
+      // Shown from these bytes, not downloaded again.
+      urls.set(ref.id, { url: URL.createObjectURL(new Blob([data as BlobPart], { type })), count: 0 });
+      return ref;
+    },
+    uploadFile: async (file) => send(new Uint8Array(await file.arrayBuffer())),
     resolve: objectUrl,
     release: (ref) => {
       const entry = urls.get(ref.id);

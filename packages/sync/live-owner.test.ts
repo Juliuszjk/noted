@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as Y from 'yjs';
-import { createLiveOwner } from './live-owner';
+import { createLiveOwner, afterLiveCatchUp } from './live-owner';
+import { GuestEditsWaiting } from './publish';
 import { liveKeys, sealUpdate, unsealUpdate, LIVE_ORIGIN } from './live';
 import { setTitle, getTitleText } from './note-meta';
 import type { NotePublish } from './note-meta';
@@ -125,5 +126,35 @@ describe('live owner', () => {
       await vi.advanceTimersByTimeAsync(2_000);
       expect(puts).toHaveLength(2);
     });
+  });
+
+  it('merges the waiting guest edits before a live link goes, and tries again when more came', async () => {
+    const { doc, owner, seqs, guestEdit } = setup(true);
+    const first = guestEdit((g) => setTitle(g, 'One'));
+    const second = guestEdit((g) => setTitle(g, 'Two'));
+    let served = [{ seq: 3, data: first, guest: true }];
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ exists: true, snapshotSeq: 0, updates: served }))));
+    const calls: (number | undefined)[] = [];
+    await afterLiveCatchUp(owner, 'n1', info(true), async (after) => {
+      calls.push(after);
+      // The server saw one more guest edit meanwhile: refuses once.
+      if (calls.length === 1) {
+        served = [{ seq: 3, data: first, guest: true }, { seq: 4, data: second, guest: true }];
+        throw new GuestEditsWaiting();
+      }
+    });
+    expect(calls).toEqual([3, 4]);
+    expect(getTitleText(doc).toString()).toBe('Two');
+    expect(seqs.get('abcdefghijklmnop')).toBe(4);
+  });
+
+  it('gives up after a few refusals, and runs at once for links that are not live', async () => {
+    const { owner } = setup(true);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ exists: true, snapshotSeq: 0, updates: [] }))));
+    const refuse = vi.fn(async () => { throw new GuestEditsWaiting(); });
+    await expect(afterLiveCatchUp(owner, 'n1', info(true), refuse)).rejects.toBeInstanceOf(GuestEditsWaiting);
+    expect(refuse).toHaveBeenCalledTimes(3);
+    const plain = vi.fn(async (after?: number) => after);
+    expect(await afterLiveCatchUp(owner, 'n1', { ...info(true), live: false }, plain)).toBeUndefined();
   });
 });

@@ -77,12 +77,23 @@ export const sealPublished = (note: Omit<PublishedNote, 'v' | 'publishedAt'>, in
   return out;
 };
 
-export const putPublished = async (masterKey: Uint8Array, info: NotePublish, bytes: Uint8Array): Promise<void> => {
+// The server refused to replace or remove a live note: guests sent edits this device has not
+// merged yet (they would be lost with the live note's queue). See afterLiveCatchUp.
+export class GuestEditsWaiting extends Error {
+  constructor() {
+    super('Guests\' latest edits are not in the note yet. Nothing was changed: try again in a moment.');
+  }
+}
+
+// `after`: the newest live update this device merged (replacing or removing a live note).
+const afterQuery = (after?: number) => (after === undefined ? '' : `?after=${after}`);
+
+export const putPublished = async (masterKey: Uint8Array, info: NotePublish, bytes: Uint8Array, after?: number): Promise<void> => {
   // The server would keep a copy with a past expiry forever: choose a new expiry instead.
   if (publishExpired(info)) throw new Error('The link has expired: choose a new expiry date.');
   // Without a public address there would be no link to share.
   if (!publicUrl()) throw new Error('This server has no public address for published notes (NOTED_PUBLIC_URL on the server).');
-  const res = await apiFetch(`${apiUrl()}/publish/${info.id}`, masterKey, {
+  const res = await apiFetch(`${apiUrl()}/publish/${info.id}${afterQuery(after)}`, masterKey, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/octet-stream',
@@ -91,14 +102,15 @@ export const putPublished = async (masterKey: Uint8Array, info: NotePublish, byt
     },
     body: bytes as BodyInit,
   }, 60_000);
+  if (res.status === 409) throw new GuestEditsWaiting();
   if (!res.ok) throw new Error(res.status === 413 ? 'The note is too large to publish (30 MB)' : `Publishing failed (HTTP ${res.status})`);
 };
 
 export const uploadPublished = async (
-  masterKey: Uint8Array, note: Omit<PublishedNote, 'v' | 'publishedAt'>, earlier: NotePublish | null, options: PublishOptions,
+  masterKey: Uint8Array, note: Omit<PublishedNote, 'v' | 'publishedAt'>, earlier: NotePublish | null, options: PublishOptions, after?: number,
 ): Promise<NotePublish> => {
   const info = nextPublishInfo(earlier, options);
-  await putPublished(masterKey, info, sealPublished(note, info));
+  await putPublished(masterKey, info, sealPublished(note, info), after);
   return info;
 };
 
@@ -113,8 +125,9 @@ export const publishedExists = async (masterKey: Uint8Array, info: NotePublish):
   }
 };
 
-export const deletePublished = async (masterKey: Uint8Array, info: NotePublish): Promise<void> => {
-  const res = await apiFetch(`${apiUrl()}/publish/${info.id}`, masterKey, { method: 'DELETE' });
+export const deletePublished = async (masterKey: Uint8Array, info: NotePublish, after?: number): Promise<void> => {
+  const res = await apiFetch(`${apiUrl()}/publish/${info.id}${afterQuery(after)}`, masterKey, { method: 'DELETE' });
+  if (res.status === 409) throw new GuestEditsWaiting();
   if (!res.ok && res.status !== 404) throw new Error(`Unpublishing failed (HTTP ${res.status})`);
 };
 

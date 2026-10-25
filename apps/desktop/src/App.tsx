@@ -12,7 +12,7 @@ import { NoteRecord } from '@noted/types';
 import {
   runSyncEngine, uploadPendingBlobs, LocalNoteStore, mergingNoteStore, configureVerifierCache, configureLocalVault, moveVaultToServer, refreshServerInfo, buildNoteMeta, encodeNoteMeta,
   decodeNoteMeta, displayTitle, setTitle, markNoteCreated, setNoteFlag, getNoteFlag, setNoteTrashed,
-  deleteNoteForever, unpublishQuietly, uploadPublished, deletePublished, publishedExists, publishExpired, getNotePublish, setNotePublish, setNoteNotebook, getNoteNotebooks, setNoteTag, getNoteTags, setNoteFont, getNoteFont, CATALOG_ID, isSystemNote,
+  deleteNoteForever, unpublishQuietly, cleanUpGuestFilesHourly, afterLiveCatchUp, uploadPublished, deletePublished, publishedExists, publishExpired, getNotePublish, setNotePublish, setNoteNotebook, getNoteNotebooks, setNoteTag, getNoteTags, setNoteFont, getNoteFont, CATALOG_ID, isSystemNote,
   listCatalog, getSharedEditorPrefs, refreshStaleNoteMeta, listOwnReminders, setOwnReminder, deleteOwnReminder, updateReminderInDoc, setSharedEditorPrefs, sharedPrefsChange, SHARED_EDITOR_PREFS, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, purgeExpiredTrash, getTitleText, getNoteSettings,
   currentAuthToken, sessionStillValid, setAuthEpoch, getAuthEpoch, exportAttachments, zipNoteWithFiles, backupVault, restoreServerVault, fetchVaultStatus, createBackup, restoreBackup, backupFileName, openBackup, compareBackup, restoreBackupNote, findUnusedBlobs, deleteServerBlobs, deletedNoteIds, purgeDeletedNotes, usedBlobIds, BLOB_GRACE_MS, noteBlobIds, docFromSealed, noteBodyText, applyDefaultTitle, setNoteBodyJson, appendNoteLink,
   fetchVault, passphraseOpens, parseVaultInfo, serializeVaultInfo, createLiveOwner, publishLive, LIVE_ORIGIN,
@@ -538,6 +538,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     },
   });
 
+  const vaultKeyRef = useRef<Uint8Array | null>(null);
   const syncWithServer = async (database: Database) => {
     if (!hasServer()) return;
     if (syncingRef.current) {
@@ -559,6 +560,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
 
       if (requiresReload) await loadNotes(database);
       setLastSyncAt(Date.now());
+      // Files guests added to live notes that no note uses any more go from the server.
+      cleanUpGuestFilesHourly(masterKey, store, vaultKeyRef.current);
 
       if (failedNotes > 0 || failedBlobs > 0) {
         setSyncMessage(`Sync problem (${failedNotes + failedBlobs})`);
@@ -968,15 +971,17 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     const current = activeRef.current;
     if (!current) return;
     const earlier = getNotePublish(current.ydoc);
+    // Removing a live link or replacing it with a static copy: guests' waiting edits go into
+    // the note first (the server drops them with the live link).
     if (!note) {
-      if (earlier) await deletePublished(masterKey, earlier);
+      if (earlier) await afterLiveCatchUp(liveOwner, current.id, earlier, (after) => deletePublished(masterKey, earlier, after));
       updateNoteDoc(current.id, (doc) => setNotePublish(doc, null));
       return;
     }
     const options = settings ?? { password: null, selfDestruct: false };
     const info = settings?.live
       ? await publishLive(masterKey, current.ydoc, earlier, { ...options, editable: !!settings.editable }, earlier?.live ? liveOwner.seq(earlier.id) : 0)
-      : await uploadPublished(masterKey, note, earlier, options);
+      : await afterLiveCatchUp(liveOwner, current.id, earlier, (after) => uploadPublished(masterKey, note, earlier, options, after));
     updateNoteDoc(current.id, (doc) => setNotePublish(doc, info));
   };
 
@@ -1182,6 +1187,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   // ---- locked notes (the vault) ----
   // The vault key stays in memory until the app locks or closes (or "Lock the vault").
   const [vaultKey, setVaultKey] = useState<Uint8Array | null>(null);
+  // For the sync (its interval keeps the first render's function).
+  vaultKeyRef.current = vaultKey;
   const [vaultDialog, setVaultDialog] = useState<{ mode: 'create' | 'unlock'; then?: (key: Uint8Array) => void } | null>(null);
   useEffect(() => { if (locked) setVaultKey(null); }, [locked]);
   const withVaultKey = (then: (key: Uint8Array) => void) => {
