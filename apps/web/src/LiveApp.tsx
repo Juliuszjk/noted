@@ -8,6 +8,8 @@ import { unsealBytes, base64ToBytes } from '@noted/crypto';
 import { liveKeys } from '@noted/sync/live';
 import type { LiveKeys } from '@noted/sync/live';
 import { getTitleText } from '@noted/sync/note-meta';
+import { exportAttachmentsWith, zipNoteWithFiles } from '@noted/sync/export-files';
+import { exportNote } from '@noted/editor/export';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { fetchInitial, fetchNeedsPassword, openLiveSession } from './live-client';
 import type { LiveSession, LiveStatus } from './live-client';
@@ -20,8 +22,9 @@ const NAME_KEY = 'noted_live_name';
 const COLORS = ['#e8590c', '#2f9e44', '#1971c2', '#9c36b5', '#c2255c', '#0c8599', '#f08c00', '#5f3dc4'];
 
 // What a guest cannot do here: files (nothing is uploaded), the owner's other notes,
-// notebooks and tags, reminders (they would ring on the owner's phone), export, publish.
-const GUEST_HIDDEN = new Set(['Image', 'File', 'Reminder', 'Link to note', 'Link from another note', 'Go to note', 'Notebook', 'Tag', 'Export', 'Publish']);
+// notebooks and tags, reminders (they would ring on the owner's phone), publish. Export
+// downloads the note in the browser.
+const GUEST_HIDDEN = new Set(['Image', 'File', 'Reminder', 'Link to note', 'Link from another note', 'Go to note', 'Notebook', 'Tag', 'Publish']);
 const GUEST_SLASH = slashItems.filter((item) => !GUEST_HIDDEN.has(item.title));
 const GUEST_TOOLBAR: ToolbarConfig = {
   preset: 'custom',
@@ -54,15 +57,23 @@ const saveName = (name: string) => {
 const MISSING_BLOB_RETRIES = 8;
 const MISSING_BLOB_WAIT_MS = 2_000;
 
-const blobHandlers = (id: string, keys: LiveKeys): BlobHandlers => {
+const downloadFile = (data: BlobPart, name: string) => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([data]));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+};
+
+const blobHandlers = (id: string, keys: LiveKeys): BlobHandlers & { bytes: (ref: BlobRef, retries?: number) => Promise<Uint8Array | null> } => {
   const urls = new Map<string, { url: string; count: number }>();
   // A file the owner just added is listed (and uploaded) a few seconds after it shows up in
   // the note: asked again a few times before the editor shows it as missing.
-  const bytes = async (ref: BlobRef): Promise<Uint8Array | null> => {
+  const bytes = async (ref: BlobRef, retries = MISSING_BLOB_RETRIES): Promise<Uint8Array | null> => {
     for (let attempt = 0; ; attempt++) {
       const res = await fetch(`/p/${id}/blob/${ref.id}`, { headers: { 'X-Live-Read': keys.read } });
       if (res.ok) return unsealBytes(base64ToBytes(ref.key), new Uint8Array(await res.arrayBuffer()));
-      if (res.status !== 404 || attempt >= MISSING_BLOB_RETRIES) return null;
+      if (res.status !== 404 || attempt >= retries) return null;
       await new Promise((r) => setTimeout(r, MISSING_BLOB_WAIT_MS));
     }
   };
@@ -82,13 +93,10 @@ const blobHandlers = (id: string, keys: LiveKeys): BlobHandlers => {
   const download = async (ref: BlobRef, name: string) => {
     const data = await bytes(ref);
     if (!data) throw new Error('The file is not on the server');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([data as BlobPart]));
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    downloadFile(data as BlobPart, name);
   };
   return {
+    bytes,
     resolve: objectUrl,
     release: (ref) => {
       const entry = urls.get(ref.id);
@@ -196,8 +204,9 @@ const STATUS_TEXT: Record<LiveStatus, string> = {
 };
 
 function LiveEditor({ id, keys, session }: { id: string; keys: LiveKeys; session: LiveSession }) {
-  const version = useSyncExternalStore(session.onChange, () => `${session.status()}|${session.editable()}|${session.unsaved()}|${session.broken()}|${session.awareness.getStates().size}`);
+  const version = useSyncExternalStore(session.onChange, () => `${session.status()}|${session.editable()}|${session.unsaved()}|${session.broken()}|${session.outdated()}|${session.awareness.getStates().size}`);
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
+  const [findSlot, setFindSlot] = useState<HTMLDivElement | null>(null);
   const blobs = useMemo(() => blobHandlers(id, keys), [id, keys]);
   const user = session.awareness.getLocalState()?.user ?? { name: 'Guest', color: COLORS[0] };
   const caret = useMemo(() => [CollaborationCaret.configure({ provider: { awareness: session.awareness }, user })], [session]);
@@ -221,23 +230,45 @@ function LiveEditor({ id, keys, session }: { id: string; keys: LiveKeys; session
     return () => window.removeEventListener('beforeunload', warn);
   }, [session]);
 
+  // Export (the header button or "/export"): Markdown / text downloaded by the browser; a
+  // Markdown note with images or files as a zip with an attachments folder, like the app's.
+  const saveExport = async (name: string, text: string, source?: { title: string; json: object; format: 'markdown' | 'text'; titles: Record<string, string> }) => {
+    try {
+      if (source?.format === 'markdown') {
+        const { links, files } = await exportAttachmentsWith(source.json as Parameters<typeof exportAttachmentsWith>[0], (blob, key) => blobs.bytes({ id: blob, key }, 0));
+        if (files.length) {
+          return downloadFile(zipNoteWithFiles(name, exportNote(source.title, source.json, 'markdown', source.titles, links), files) as BlobPart, name.replace(/\.md$/, '.zip'));
+        }
+      }
+      downloadFile(text, name);
+    } catch (e) {
+      alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   void version;
   return (
     <div className="live-page">
-      <header className="live-header">
-        <span className="live-brand">Noted</span>
-        <span className="live-mode">{editable ? 'Live · editing' : 'Live · read only'}</span>
-        <span className={`live-dot live-dot-${status === 'online' ? (session.unsaved() ? 'saving' : 'online') : 'offline'}`} title={status === 'online' ? (session.unsaved() ? 'Saving…' : 'Saved') : STATUS_TEXT[status]} />
-        <span style={{ flex: 1 }} />
-        <span className="live-people">
-          {people.map((p) => (
-            <span key={p.client} className="live-person" style={{ background: p.color }} title={p.name}>{p.name.slice(0, 1).toUpperCase()}</span>
-          ))}
-        </span>
-      </header>
-      {editable && <div className="live-toolbar" ref={setToolbarSlot} />}
+      <div className="live-top">
+        <header className="live-header">
+          <span className="live-brand">Noted</span>
+          <span className="live-mode">{editable ? 'Live · editing' : 'Live · read only'}</span>
+          <span className={`live-dot live-dot-${status === 'online' ? (session.unsaved() ? 'saving' : 'online') : 'offline'}`} title={status === 'online' ? (session.unsaved() ? 'Saving…' : 'Saved') : STATUS_TEXT[status]} />
+          <span style={{ flex: 1 }} />
+          <span className="live-people">
+            {people.map((p) => (
+              <span key={p.client} className="live-person" style={{ background: p.color }} title={p.name}>{p.name.slice(0, 1).toUpperCase()}</span>
+            ))}
+          </span>
+          <button type="button" className="live-button" title="Export this note (Markdown, text or PDF)" onClick={() => window.dispatchEvent(new Event('noted:export'))}>Export</button>
+        </header>
+        {editable && <div className="live-toolbar" ref={setToolbarSlot} />}
+        {/* The find bar (Ctrl+F) hangs under the header and the toolbar. */}
+        <div className="live-find" ref={setFindSlot} />
+      </div>
       {status !== 'online' && status !== 'connecting' && <div className="live-banner">{STATUS_TEXT[status]}</div>}
       {session.broken() && <div className="live-banner">Something here could not be saved. Reload the page to go on editing.</div>}
+      {session.outdated() && <div className="live-banner">This note uses things this page does not know yet (the server runs an older Noted), so editing is off: nothing in the note gets lost.</div>}
       <main className="live-note">
         <NoteEditor
           noteId={id}
@@ -248,6 +279,8 @@ function LiveEditor({ id, keys, session }: { id: string; keys: LiveKeys; session
           toolbarMode="top"
           toolbarSlot={toolbarSlot}
           toolbarConfig={GUEST_TOOLBAR}
+          findSlot={findSlot}
+          onSaveExport={saveExport}
           slashItems={GUEST_SLASH}
           noteLinks={false}
           extraExtensions={caret}

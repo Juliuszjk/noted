@@ -25,8 +25,17 @@ const imageExtension = (bytes: Uint8Array): string => {
   return 'png';
 };
 
-export const exportAttachments = async (
+export const exportAttachments = (
   masterKey: Uint8Array, json: Parameters<typeof noteAttachments>[0], blobs: LocalBlobStore, dir = '',
+): Promise<{ links: Record<string, string>; files: ExportedFile[] }> => exportAttachmentsWith(json, async (id, key) => {
+  const sealed = await fetchSealedBlob(masterKey, blobs, id);
+  return sealed ? openBlob(sealed, key) : null;
+}, dir);
+
+// The same with the files read by the caller (`read`: decrypted bytes of a blob id and its
+// key, null when missing), e.g. the live note page, which downloads them from the server.
+export const exportAttachmentsWith = async (
+  json: Parameters<typeof noteAttachments>[0], read: (id: string, key: string) => Promise<Uint8Array | null>, dir = '',
 ): Promise<{ links: Record<string, string>; files: ExportedFile[] }> => {
   const links: Record<string, string> = {};
   const files: ExportedFile[] = [];
@@ -35,14 +44,13 @@ export const exportAttachments = async (
     const at = a.blob.indexOf(':');
     const id = a.blob.slice(0, at);
     const key = a.blob.slice(at + 1);
-    let bytes: Uint8Array;
+    let bytes: Uint8Array | null;
     try {
-      const sealed = await fetchSealedBlob(masterKey, blobs, id);
-      if (!sealed) continue;
-      bytes = openBlob(sealed, key);
+      bytes = await read(id, key);
     } catch {
       continue;
     }
+    if (!bytes) continue;
     let name = safeName(a.name);
     if (a.kind === 'image' && !/\.[a-z0-9]{2,5}$/i.test(name)) name = `${name}.${imageExtension(bytes)}`;
     const rel = `attachments/${id.replace(/-/g, '').slice(0, 16)}-${name}`;

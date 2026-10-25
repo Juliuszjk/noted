@@ -1,5 +1,8 @@
 import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness';
+import { getSchema } from '@tiptap/core';
+import { createSchemaExtensions } from '@noted/editor/extensions';
+import { unknownSchemaParts } from '@noted/editor/schema-check';
 import { sealUpdate, unsealUpdate } from '@noted/sync/live';
 import type { LiveGuestMessage, LiveInitial, LiveKeys } from '@noted/sync/live';
 
@@ -13,6 +16,10 @@ export type LiveStatus = 'online' | 'connecting' | 'offline' | 'gone' | 'denied'
 const REMOTE = 'live-remote';
 const SEND_MS = 150;
 const AWARENESS_MS = 120;
+
+// This page's editor schema (the server may serve an older page than the owner's apps).
+let schema: ReturnType<typeof getSchema> | null = null;
+const pageSchema = () => (schema ??= getSchema(createSchemaExtensions({ ydoc: new Y.Doc(), placeholder: '' })));
 
 export type InitialResult = { ok: true; initial: LiveInitial } | { ok: false; status: number };
 
@@ -37,6 +44,9 @@ export interface LiveSession {
   unsaved: () => boolean;
   // A change here could not be sent (see afterTransaction below): reload.
   broken: () => boolean;
+  // The note holds parts this page's editor does not know (made by a newer Noted than the
+  // server's page): editing is off, or the editor would write the note back without them.
+  outdated: () => boolean;
   onChange: (fn: () => void) => () => void;
   close: () => void;
 }
@@ -49,6 +59,17 @@ export const openLiveSession = (id: string, keys: LiveKeys, initial: LiveInitial
   let editable = initial.editable && wantsToEdit;
   let status: LiveStatus = 'connecting';
   let lastSeq = initial.snapshotSeq;
+  let outdated = false;
+  const checkSchema = () => {
+    if (outdated) return;
+    const unknown = unknownSchemaParts(doc.getXmlFragment('default'), pageSchema());
+    if (!unknown.length) return;
+    outdated = true;
+    editable = false;
+    pending = [];
+    console.warn('Live note: this page does not know', unknown.join(', '), '- editing is off');
+    changed();
+  };
 
   const apply = (data: string, seq?: number) => {
     try {
@@ -66,6 +87,7 @@ export const openLiveSession = (id: string, keys: LiveKeys, initial: LiveInitial
   const unacked = new Map<number, Uint8Array>();
   let nextRef = 1;
   let sendTimer: ReturnType<typeof setTimeout> | null = null;
+  checkSchema();
   let ws: WebSocket | null = null;
   let joined = false;
   let closed = false;
@@ -78,6 +100,9 @@ export const openLiveSession = (id: string, keys: LiveKeys, initial: LiveInitial
 
   const flush = () => {
     sendTimer = null;
+    // A safety net: newer parts are caught as they arrive (apply's callers check at once,
+    // before the editor can write the note back without them).
+    checkSchema();
     if (!pending.length || !joined || !editable) return;
     const update = pending.length === 1 ? pending[0] : Y.mergeUpdates(pending);
     pending = [];
@@ -155,8 +180,9 @@ export const openLiveSession = (id: string, keys: LiveKeys, initial: LiveInitial
       if (msg.type === 'joined') {
         joined = true;
         attempt = 0;
-        editable = msg.editable && wantsToEdit;
+        editable = msg.editable && wantsToEdit && !outdated;
         for (const u of msg.updates) apply(u.data, u.seq);
+        checkSchema();
         setStatus('online');
         // What the last connection did not get acknowledged goes again (Yjs ignores doubles).
         pending = [...unacked.values(), ...pending];
@@ -166,6 +192,7 @@ export const openLiveSession = (id: string, keys: LiveKeys, initial: LiveInitial
         changed();
       } else if (msg.type === 'update') {
         apply(msg.data, msg.seq);
+        checkSchema();
       } else if (msg.type === 'ack') {
         if (msg.ref !== null) unacked.delete(msg.ref);
         if (msg.seq > lastSeq) lastSeq = msg.seq;
@@ -234,6 +261,7 @@ export const openLiveSession = (id: string, keys: LiveKeys, initial: LiveInitial
     status: () => status,
     unsaved: () => pending.length > 0 || unacked.size > 0,
     broken: () => broken,
+    outdated: () => outdated,
     onChange: (fn) => {
       listeners.add(fn);
       return () => listeners.delete(fn);
