@@ -8,7 +8,7 @@ import {
   mdiFormatIndentIncrease, mdiFormatStrikethrough, mdiCodeTags, mdiFormatSubscript, mdiFormatSuperscript, mdiMarker, mdiFormatColorText,
   mdiFunctionVariant, mdiPin, mdiPinOutline, mdiInvertColorsOff, mdiClose, mdiTable, mdiVectorLink, mdiOpenInNew, mdiLinkVariantOff,
   mdiContentCopy, mdiPencilOutline, mdiBookOutline, mdiPound, mdiCheck, mdiTabPlus, mdiLanguageMarkdownOutline, mdiTextBoxOutline,
-  mdiFilePdfBox, mdiShareVariantOutline, mdiTableCog, mdiTableEdit, mdiPaletteOutline, mdiEyeOutline, mdiDownload, mdiImageSizeSelectLarge,
+  mdiFilePdfBox, mdiLanguageHtml5, mdiShareVariantOutline, mdiTableCog, mdiTableEdit, mdiPaletteOutline, mdiEyeOutline, mdiDownload, mdiImageSizeSelectLarge,
   mdiGesture, mdiUndoVariant,
 } from '@mdi/js';
 import { trackCorrections } from './autocorrect';
@@ -83,7 +83,7 @@ export interface ToolbarContext {
   linkFrom: (id: string, title: string) => void;
   openSplit: (id: string, side: SplitSide) => void;
   // Export of the note (React Native saves / shares the file).
-  exportNote: (format: 'markdown' | 'text' | 'pdf', share: boolean) => void;
+  exportNote: (format: 'markdown' | 'text' | 'html' | 'pdf', share: boolean) => void;
   // The keyboard is about to come up (focus given by code): React Native makes room for it
   // at once, so Chromium does not first push the text up under it.
   expectKeyboard: () => void;
@@ -692,16 +692,18 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   });
   editor.storage.image.requestUrl = imageUrlSheet;
 
-  // "/export" (and the note menu): Markdown, plain text or PDF.
+  // "/export" (and the note menu): Markdown, plain text, HTML or PDF.
   const exportSheet = () => showSheet('export', 'Export note', (body) => {
     body.append(
       h('div', 'tb-hint', 'Saves the note into your download folder (Settings › Editor › Files). Markdown with images or files becomes a .zip with an attachments folder.'),
       row('Markdown (.md)', () => { closeSheet(); ctx.exportNote('markdown', false); }, { icon: mdiLanguageMarkdownOutline }),
       row('Plain text (.txt)', () => { closeSheet(); ctx.exportNote('text', false); }, { icon: mdiTextBoxOutline }),
+      row('HTML (.html)', () => { closeSheet(); ctx.exportNote('html', false); }, { icon: mdiLanguageHtml5 }),
       row('PDF', () => { closeSheet(); ctx.exportNote('pdf', false); }, { icon: mdiFilePdfBox }),
       h('div', 'tb-hint', 'Or send it with the share menu:'),
       row('Share as Markdown', () => { closeSheet(); ctx.exportNote('markdown', true); }, { icon: mdiShareVariantOutline }),
       row('Share as plain text', () => { closeSheet(); ctx.exportNote('text', true); }, { icon: mdiShareVariantOutline }),
+      row('Share as HTML', () => { closeSheet(); ctx.exportNote('html', true); }, { icon: mdiShareVariantOutline }),
       row('Share as PDF', () => { closeSheet(); ctx.exportNote('pdf', true); }, { icon: mdiShareVariantOutline }),
     );
   });

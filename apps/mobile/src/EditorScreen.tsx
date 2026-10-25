@@ -610,7 +610,7 @@ export function EditorScreen({
     } else if (typeof msg.text === 'string') {
       data = msg.text;
     } else return;
-    const mimeType = msg.format === 'pdf' ? 'application/pdf' : msg.format === 'markdown' ? 'text/markdown' : 'text/plain';
+    const mimeType = msg.format === 'pdf' ? 'application/pdf' : msg.format === 'markdown' ? 'text/markdown' : msg.format === 'html' ? 'text/html' : 'text/plain';
     if (msg.share) return shareFileBytes(msg.name, data, mimeType);
     const text = await saveFileBytes(msg.name, data, mimeType);
     if (text) showToast(text);

@@ -160,3 +160,10 @@ export const HeadingFold = Extension.create({
     })];
   },
 });
+
+// A rendered copy of the note for print / PDF shows everything: folded headings and outline
+// list items are opened (a folded section would be missing from the paper).
+export const unfoldRenderedCopy = (root: HTMLElement) => {
+  root.querySelectorAll('.heading-folded').forEach((el) => el.classList.remove('heading-folded'));
+  root.querySelectorAll('[data-collapsed="true"]').forEach((el) => el.removeAttribute('data-collapsed'));
+};

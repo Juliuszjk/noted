@@ -93,3 +93,78 @@ export const buildPublishedNote = async (editorDom: HTMLElement): Promise<{ html
   wrapper.innerHTML = clone.innerHTML;
   return { html: wrapper.outerHTML, css: await noteCss() };
 };
+
+const escapeHtml = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+
+// Colours of an exported HTML file: light, or dark when the reader's system is dark (like the
+// published note viewer).
+const FILE_THEME = `
+  :root { color-scheme: light dark; --text-main: #1b1b1f; --text-muted: #5f5f66; --bg-base: #ffffff; --bg-surface: #f3f3f5;
+    --bg-surface-low: #f7f7f9; --bg-surface-high: #ececef; --bg-surface-highest: #e4e4e8; --border: #cfcfd6; --border-focus: #9a9aa3;
+    --primary: #6750a4; --primary-fg: #ffffff; --secondary-container: #e8def8; --on-secondary-container: #1d192b; --error: #b3261e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --text-main: #e6e0e9; --text-muted: #a6a0aa; --bg-base: #141218; --bg-surface: #211f26; --bg-surface-low: #1d1b20;
+      --bg-surface-high: #2b2930; --bg-surface-highest: #36343b; --border: #49454f; --border-focus: #79747e; --primary: #d0bcff;
+      --primary-fg: #381e72; --secondary-container: #4a4458; --on-secondary-container: #e8def8; --error: #f2b8b5; }
+  }
+  html, body { margin: 0; background: var(--bg-base); color: var(--text-main); }
+  body { font-family: var(--font-sans, system-ui, sans-serif); }
+  article { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+  .export-title { font-size: 2em; font-weight: 700; margin: 0 0 24px; line-height: 1.25; }
+  .ProseMirror { outline: none; }
+  .ProseMirror img { max-width: 100%; height: auto; }
+  .ProseMirror input[type=checkbox] { pointer-events: none; }
+  .ProseMirror .code-block-lang { pointer-events: none; }
+  @media print { .ProseMirror .code-block-bar { display: none; } }
+`;
+
+// The file's own script: folding headings and outline lists (heading-fold.ts and the outline
+// list in the editor) and the code blocks' Copy button.
+const FILE_SCRIPT = `
+(() => {
+  const level = (el) => Number((/^H([1-6])$/.exec(el.tagName) || [])[1] || 0);
+  const refold = () => {
+    document.querySelectorAll('.heading-folded').forEach((el) => el.classList.remove('heading-folded'));
+    document.querySelectorAll('[data-foldable="true"][data-collapsed="true"]').forEach((heading) => {
+      const own = level(heading);
+      for (let next = heading.nextElementSibling; next; next = next.nextElementSibling) {
+        const l = level(next);
+        if (l && l <= own) break;
+        next.classList.add('heading-folded');
+      }
+    });
+  };
+  const flip = (holder, toggle) => {
+    const collapsed = holder.getAttribute('data-collapsed') !== 'true';
+    if (collapsed) holder.setAttribute('data-collapsed', 'true'); else holder.removeAttribute('data-collapsed');
+    toggle.dataset.collapsed = String(collapsed);
+  };
+  document.addEventListener('click', (e) => {
+    const toggle = e.target.closest('.heading-toggle, .outline-toggle, .code-block-copy');
+    if (!toggle) return;
+    if (toggle.classList.contains('heading-toggle')) {
+      const heading = toggle.closest('[data-foldable="true"]');
+      if (heading) { flip(heading, toggle); refold(); }
+    } else if (toggle.classList.contains('outline-toggle')) {
+      const item = toggle.closest('li');
+      if (item) flip(item, toggle);
+    } else {
+      const code = toggle.closest('.code-block')?.querySelector('pre');
+      if (!code) return;
+      navigator.clipboard.writeText(code.textContent || '').then(() => { toggle.textContent = 'Copied'; }, () => { toggle.textContent = 'Copy failed'; });
+      setTimeout(() => { toggle.textContent = 'Copy'; }, 1500);
+    }
+  });
+})();
+`;
+
+// "Export > HTML": the note as one file that looks like it does in the app (the same copy as
+// a published note: styles, fonts and images inside), readable anywhere without Noted.
+export const buildNoteHtmlFile = async (editorDom: HTMLElement, title: string, font: string | null): Promise<string> => {
+  const { html, css } = await buildPublishedNote(editorDom);
+  const name = escapeHtml(title.trim() || 'Untitled');
+  return `<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`
+    + `<title>${name}</title><style>${css.replace(/<\/style/gi, '')}</style><style>${FILE_THEME}</style></head>`
+    + `<body${font ? ` data-note-font="${escapeHtml(font)}"` : ''}><article><div class="export-title note-title">${name}</div>`
+    + `${html}</article><script>${FILE_SCRIPT}</script></body></html>\n`;
+};

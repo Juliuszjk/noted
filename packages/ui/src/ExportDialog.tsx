@@ -1,14 +1,16 @@
 import { useEffect } from 'react';
 import type { Editor } from '@tiptap/core';
-import { mdiLanguageMarkdownOutline, mdiTextBoxOutline, mdiFilePdfBox, mdiClose } from '@mdi/js';
+import { mdiLanguageMarkdownOutline, mdiTextBoxOutline, mdiLanguageHtml5, mdiFilePdfBox, mdiClose } from '@mdi/js';
 import { Icon } from './Icon';
 import { popoverStyle } from './menu-parts';
+import { unfoldRenderedCopy } from '@noted/editor/heading-fold';
 
-export type ExportFormat = 'markdown' | 'text' | 'pdf';
+export type ExportFormat = 'markdown' | 'text' | 'html' | 'pdf';
 
 const OPTIONS: { format: ExportFormat; icon: string; label: string; detail: string }[] = [
   { format: 'markdown', icon: mdiLanguageMarkdownOutline, label: 'Markdown', detail: '.md file; with images or files a .zip with an attachments folder' },
   { format: 'text', icon: mdiTextBoxOutline, label: 'Plain text', detail: '.txt file, text only' },
+  { format: 'html', icon: mdiLanguageHtml5, label: 'HTML', detail: '.html file: the note as it looks here, images inside' },
   { format: 'pdf', icon: mdiFilePdfBox, label: 'PDF', detail: 'Print dialog: choose “Print to File” (PDF)' },
 ];
 
@@ -62,6 +64,7 @@ export const printNote = (editor: Editor, title: string, noteFont: string | null
   const clone = editor.view.dom.cloneNode(true) as HTMLElement;
   clone.removeAttribute('contenteditable');
   clone.querySelectorAll('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'));
+  unfoldRenderedCopy(clone);
   // Pictures load lazily in the note; the printed copy needs all of them.
   clone.querySelectorAll('img').forEach((img) => { img.loading = 'eager'; });
   holder.innerHTML = `<div class="note-title" style="font-size:1.9em;font-weight:700;margin:0 0 16px">${escapeHtml(title || 'Untitled')}</div>`;

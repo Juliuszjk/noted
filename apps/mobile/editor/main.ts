@@ -10,7 +10,8 @@ import { parseEditorPrefs, editorPrefsCssVars, setLigatures } from '@noted/edito
 import { setCodeThemeByLanguage } from '@noted/editor/code-block';
 import type { EditorPrefs } from '@noted/editor/editor-prefs';
 import { parseToolbarConfig } from '@noted/editor/toolbar-items';
-import { buildPublishedNote } from '@noted/ui/src/publish-html';
+import { buildPublishedNote, buildNoteHtmlFile } from '@noted/ui/src/publish-html';
+import { unfoldRenderedCopy } from '@noted/editor/heading-fold';
 import { sealPublished, AUTO_PUBLISH_DELAY_MS } from '@noted/sync/publish';
 import { setNoteBodyJson } from '@noted/sync/json-to-y';
 import type { NoteFlag } from '@noted/sync/note-meta';
@@ -749,7 +750,7 @@ const receive = (raw: string) => {
     toolbarApi?.refocus();
   } else if (msg.type === 'find') {
     findBar?.open();
-  } else if (msg.type === 'export' && ['markdown', 'text', 'pdf'].includes(msg.format)) {
+  } else if (msg.type === 'export' && ['markdown', 'text', 'html', 'pdf'].includes(msg.format)) {
     exportCurrent(msg.format, !!msg.share);
   } else if (msg.type === 'showHistory' && typeof msg.state === 'string' && editor) {
     flush();
@@ -802,6 +803,7 @@ const exportHtml = async (): Promise<string> => {
   clone.removeAttribute('contenteditable');
   clone.querySelectorAll('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'));
   clone.querySelectorAll('.is-empty, .ProseMirror-trailingBreak, .ProseMirror-separator').forEach((el) => el.classList.remove('is-empty'));
+  unfoldRenderedCopy(clone);
   // Decrypted images are object URLs of this page: the PDF printer needs the bytes inline.
   await Promise.all([...clone.querySelectorAll('img')].map(async (img) => {
     const src = img.getAttribute('src') ?? '';
@@ -814,12 +816,15 @@ const exportHtml = async (): Promise<string> => {
     + `<style>${styles}</style><style>${PRINT_CSS}</style></head><body${font ? ` data-note-font="${escapeHtml(font)}"` : ''}>`
     + `<div class="export-title note-title">${escapeHtml(title || 'Untitled')}</div>${clone.outerHTML}</body></html>`;
 };
-const exportCurrent = async (format: 'markdown' | 'text' | 'pdf', share = false) => {
+const exportCurrent = async (format: 'markdown' | 'text' | 'html' | 'pdf', share = false) => {
   if (!editor) return;
   const title = getTitleText(ydoc).toString();
   try {
     if (format === 'pdf') {
       post({ type: 'exported', format, share, name: exportFileName(title, 'pdf'), html: await exportHtml() });
+    } else if (format === 'html') {
+      // One file that looks like the note (images inside), unlike the PDF's printer page.
+      post({ type: 'exported', format, share, name: exportFileName(title, 'html'), text: await buildNoteHtmlFile(editor.view.dom as HTMLElement, title, getNoteFont(ydoc)) });
     } else {
       const json = editor.getJSON();
       const text = exportNote(title, json, format, titles);

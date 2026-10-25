@@ -42,7 +42,7 @@ import { exportNote, exportFileName } from '@noted/editor/export';
 import { getTitleText, getNoteFont, getNotePublish, setNotePublish, getNoteSettings, publishedUrl, AUTO_PUBLISH_DELAY_MS } from '@noted/sync';
 import { PublishDialog } from './PublishDialog';
 import type { PublishSettings } from './PublishDialog';
-import { buildPublishedNote } from './publish-html';
+import { buildPublishedNote, buildNoteHtmlFile } from './publish-html';
 import { computeTextStats } from './StatusBar';
 import type { TextStats } from './StatusBar';
 import type { MathEditRequest, ReminderEditRequest, ReminderTimes } from '@noted/editor';
@@ -89,7 +89,7 @@ export function NoteEditor({
   reminderTimes?: ReminderTimes,
   // Where the find bar goes (top right under the toolbar).
   findSlot?: HTMLElement | null,
-  // Saves an exported Markdown / text file (the app shows a save dialog).
+  // Saves an exported Markdown / text / HTML file (the app shows a save dialog).
   // `source`: the note itself, so the app can add its images and files (a zip like Notesnook's).
   onSaveExport?: (name: string, text: string, source?: { title: string; json: object; format: 'markdown' | 'text'; titles: Record<string, string> }) => void,
   // Publishes this copy of the note (or, with null, removes the published copy).
@@ -157,6 +157,13 @@ export function NoteEditor({
     if (!ed) return;
     const title = getTitleText(ydoc).toString();
     if (format === 'pdf') return printNote(ed, title, getNoteFont(ydoc));
+    if (format === 'html') {
+      buildNoteHtmlFile(ed.view.dom as HTMLElement, title, getNoteFont(ydoc)).then(
+        (html) => onSaveExport?.(exportFileName(title, 'html'), html),
+        (e) => console.error('HTML export failed:', e),
+      );
+      return;
+    }
     const titles = Object.fromEntries(notes.map((n) => [n.id, n.title]));
     const json = ed.getJSON();
     onSaveExport?.(exportFileName(title, format === 'markdown' ? 'md' : 'txt'), exportNote(title, json, format, titles), { title, json, format, titles });

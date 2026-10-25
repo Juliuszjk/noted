@@ -937,7 +937,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     if (id) openNote(id, { newTab: true });
   };
 
-  // Export (Markdown / text): a save dialog, then the file.
+  // Export (Markdown / text / HTML): a save dialog, then the file.
   const saveExport = async (name: string, text: string, source?: { title: string; json: object; format: 'markdown' | 'text'; titles: Record<string, string> }) => {
     try {
       // Markdown with images or files: a zip with the note and an "attachments" folder (like
@@ -952,7 +952,9 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
           return;
         }
       }
-      const path = await save({ defaultPath: name, filters: [{ name: name.endsWith('.md') ? 'Markdown' : 'Text', extensions: [name.split('.').pop() ?? 'txt'] }] });
+      const extension = name.split('.').pop() ?? 'txt';
+      const kind = extension === 'md' ? 'Markdown' : extension === 'html' ? 'HTML' : 'Text';
+      const path = await save({ defaultPath: name, filters: [{ name: kind, extensions: [extension] }] });
       if (path) await writeFile(path, new TextEncoder().encode(text));
     } catch (e) {
       console.error('Export failed:', e);

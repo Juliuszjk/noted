@@ -7,7 +7,7 @@ import {
   mdiPin, mdiPinOff, mdiStar, mdiStarOutline, mdiArchiveArrowDownOutline, mdiArchiveArrowUpOutline, mdiPencilOffOutline,
   mdiSpellcheck, mdiBookOutline, mdiPound, mdiPlus, mdiVectorLink, mdiContentCopy, mdiShareVariantOutline,
   mdiContentDuplicate, mdiTrashCanOutline, mdiRestore, mdiDeleteForeverOutline, mdiArrowLeft, mdiFileDocumentOutline,
-  mdiMagnify, mdiExportVariant, mdiHistory, mdiWeb, mdiOpenInNew, mdiLockOutline, mdiLanguageMarkdownOutline, mdiTextBoxOutline, mdiFilePdfBox,
+  mdiMagnify, mdiExportVariant, mdiHistory, mdiWeb, mdiOpenInNew, mdiLockOutline, mdiLanguageMarkdownOutline, mdiTextBoxOutline, mdiLanguageHtml5, mdiFilePdfBox,
   mdiPaperclip, mdiImageOutline, mdiDownload, mdiCrosshairsGps,
 } from '@mdi/js';
 import { relativeTime } from '@noted/ui/src/note-list';
@@ -65,7 +65,7 @@ interface Props {
   onRestore: () => void;
   onDeleteForever: () => void;
   onFind: () => void;
-  onExport: (format: 'markdown' | 'text' | 'pdf', share: boolean) => void;
+  onExport: (format: 'markdown' | 'text' | 'html' | 'pdf', share: boolean) => void;
   // Local versions of this note (newest first); loaded when the menu opens.
   history: { id: string; startedAt: number; endedAt: number }[] | null;
   onOpenHistory: (id: string) => void;
@@ -143,7 +143,7 @@ export function NoteMenu(p: Props) {
       {detail ? <Text style={styles.detail}>{detail}</Text> : null}
     </TouchableOpacity>
   );
-  const exportRow = (key: string, icon: string, label: string, format: 'markdown' | 'text' | 'pdf') => (
+  const exportRow = (key: string, icon: string, label: string, format: 'markdown' | 'text' | 'html' | 'pdf') => (
     <View key={key} style={styles.linkRow}>
       <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 16 }} onPress={act(() => p.onExport(format, false))}>
         <Icon path={icon} size={22} color={T.on_surface_variant} />
@@ -272,6 +272,7 @@ export function NoteMenu(p: Props) {
             <Text style={styles.empty}>Saves the note into your download folder (Settings › Editor › Files). The share icon sends it somewhere instead.</Text>
             {exportRow('md', mdiLanguageMarkdownOutline, 'Markdown (.md)', 'markdown')}
             {exportRow('txt', mdiTextBoxOutline, 'Plain text (.txt)', 'text')}
+            {exportRow('html', mdiLanguageHtml5, 'HTML (.html)', 'html')}
             {exportRow('pdf', mdiFilePdfBox, 'PDF', 'pdf')}
           </>
         )) : page === 'files' ? subPage('Attached files', (

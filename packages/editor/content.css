@@ -201,8 +201,12 @@
   font-weight: normal;
 }
 .ProseMirror .heading-toggle:hover { color: var(--text-main); }
+/* Fingers: the whole margin left of the heading (20 px on the phone page, the arrow's em
+   would push it off the screen beside big headings), plus some room above, below and into
+   the heading's first letter. */
 @media (pointer: coarse) {
-  .ProseMirror .heading-toggle { left: -1.25em; width: 1.25em; }
+  .ProseMirror .heading-toggle { left: -22px; width: 22px; }
+  .ProseMirror .heading-toggle::after { content: ""; position: absolute; top: -8px; bottom: -8px; left: -4px; right: -8px; }
 }
 .ProseMirror .heading-toggle::before { content: "\25BE"; }
 .ProseMirror .heading-toggle[data-collapsed="true"]::before { content: "\25B8"; }

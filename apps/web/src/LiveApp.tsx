@@ -230,7 +230,7 @@ function LiveEditor({ id, keys, session }: { id: string; keys: LiveKeys; session
     return () => window.removeEventListener('beforeunload', warn);
   }, [session]);
 
-  // Export (the header button or "/export"): Markdown / text downloaded by the browser; a
+  // Export (the header button or "/export"): Markdown / text / HTML downloaded by the browser; a
   // Markdown note with images or files as a zip with an attachments folder, like the app's.
   const saveExport = async (name: string, text: string, source?: { title: string; json: object; format: 'markdown' | 'text'; titles: Record<string, string> }) => {
     try {
@@ -260,7 +260,7 @@ function LiveEditor({ id, keys, session }: { id: string; keys: LiveKeys; session
               <span key={p.client} className="live-person" style={{ background: p.color }} title={p.name}>{p.name.slice(0, 1).toUpperCase()}</span>
             ))}
           </span>
-          <button type="button" className="live-button" title="Export this note (Markdown, text or PDF)" onClick={() => window.dispatchEvent(new Event('noted:export'))}>Export</button>
+          <button type="button" className="live-button" title="Export this note (Markdown, text, HTML or PDF)" onClick={() => window.dispatchEvent(new Event('noted:export'))}>Export</button>
         </header>
         {editable && <div className="live-toolbar" ref={setToolbarSlot} />}
         {/* The find bar (Ctrl+F) hangs under the header and the toolbar. */}
