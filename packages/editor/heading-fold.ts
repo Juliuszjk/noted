@@ -1,8 +1,9 @@
 import { Extension } from '@tiptap/core';
 import type { Node as PmNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
-import type { EditorState } from '@tiptap/pm/state';
+import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import type { EditorView } from '@tiptap/pm/view';
 
 // Collapsible headings, like the outline list: a heading with `foldable` gets an arrow that
 // folds everything below it up to the next heading of the same or a higher level (in the
@@ -64,6 +65,28 @@ const hiddenRanges = (doc: PmNode): { from: number; to: number }[] => {
   return ranges;
 };
 
+// Meta on the transaction a fold arrow makes: the apps leave the scrolling alone (the phone
+// brought the caret, often far away, back into view).
+export const FOLD_TOGGLE = 'notedFoldToggle';
+
+// Dispatches a fold toggle of the heading / list item at `pos` and keeps it where it was on
+// the screen: text folding around it, or the browser's scroll anchoring, moved the page.
+export const toggleInPlace = (view: EditorView, pos: number, tr: Transaction) => {
+  const top = () => (view.nodeDOM(pos) as Element | null)?.getBoundingClientRect?.().top ?? null;
+  const before = top();
+  view.dispatch(tr.setMeta(FOLD_TOGGLE, true));
+  if (before === null) return;
+  let scroller: Element | null = view.dom.parentElement;
+  while (scroller && !(/(auto|scroll)/.test(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) scroller = scroller.parentElement;
+  const target = scroller ?? document.scrollingElement;
+  const keep = () => {
+    const now = top();
+    if (target && now !== null && Math.abs(now - before) >= 1) target.scrollTop += now - before;
+  };
+  keep();
+  requestAnimationFrame(keep);
+};
+
 const foldKey = new PluginKey<DecorationSet>('headingFold');
 
 const decorate = (state: EditorState): DecorationSet => {
@@ -88,7 +111,7 @@ const decorate = (state: EditorState): DecorationSet => {
           const { selection } = tr;
           if (selection.to > from && selection.from < to) tr.setSelection(TextSelection.create(tr.doc, pos + current.nodeSize - 1));
         }
-        view.dispatch(tr);
+        toggleInPlace(view, pos, tr);
       });
       return button;
     }, { side: -1, key: `heading-fold-${pos}-${collapsed}` }));

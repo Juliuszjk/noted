@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { toggleInPlace } from './heading-fold';
 
 export const BULLET_STYLES = ['disc', 'circle', 'square', 'square-open'] as const;
 export const NUMBER_STYLES = ['decimal', 'lower-alpha', 'upper-alpha', 'lower-roman', 'upper-roman', 'lower-greek'] as const;
@@ -68,9 +69,7 @@ export const ListStyles = Extension.create({
                       event.preventDefault();
                       const current = view.state.doc.nodeAt(pos);
                       if (!current) return;
-                      view.dispatch(
-                        view.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, collapsed: !current.attrs.collapsed }),
-                      );
+                      toggleInPlace(view, pos, view.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, collapsed: !current.attrs.collapsed }));
                     });
                     return button;
                   },

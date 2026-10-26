@@ -20,6 +20,7 @@ import {
 import type { TableMoveResult } from '@noted/editor/table-tools';
 import { insertImageFromUrl } from '@noted/editor/blob-image';
 import { IMAGE_DRAG_START } from '@noted/editor/image-drag';
+import { FOLD_TOGGLE } from '@noted/editor/heading-fold';
 import { toolbarGroups, toolbarItem, CELL_TOOLBAR_ITEMS } from '@noted/editor/toolbar-items';
 import type { ToolbarConfig } from '@noted/editor/toolbar-items';
 import { slashItems as allSlashItems, slashItemsWithoutPublish, HEADING_ICONS } from '@noted/editor/slash-items';
@@ -1458,7 +1459,8 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   }
   editor.on('selectionUpdate', () => centerCaret());
   // A ticked checkbox elsewhere in the note must not bring the caret's line into view.
-  editor.on('update', ({ transaction }) => { if (!transaction.getMeta(KEEP_SCROLL)) centerCaret(); });
+  // Nor does folding a section (heading-fold.ts keeps the arrow under the finger).
+  editor.on('update', ({ transaction }) => { if (!transaction.getMeta(KEEP_SCROLL) && !transaction.getMeta(FOLD_TOGGLE)) centerCaret(); });
   // Focus coming back with the keyboard: the keyboard's arrival (onViewport) centres the line.
   editor.on('focus', () => { if (keyboardUp()) centerCaretSoon(); });
 
@@ -1599,9 +1601,22 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   // Go) and, on the empty page below the note, scrolled the note up. Only short, still taps;
   // long presses (selection), drags (scrolling) and taps on links, checkboxes, note links,
   // images, formulas, tables, the title and the bars keep the native handling.
+  // The last block on the screen: blocks under a folded heading have no box (bottom 0 made
+  // every tap a tap below the note).
+  const lastShownBlock = () => {
+    let last = editor.view.dom.lastElementChild;
+    while (last && !last.getClientRects().length) last = last.previousElementSibling;
+    return last;
+  };
   const belowContent = (y: number) => {
-    const last = editor.view.dom.lastElementChild;
+    const last = lastShownBlock();
     return !!last && y > last.getBoundingClientRect().bottom + 8;
+  };
+  // The end of the note as shown (a folded section's end is out of sight).
+  const shownEnd = (): number | null => {
+    const last = lastShownBlock();
+    if (!last || last === editor.view.dom.lastElementChild) return null;
+    return editor.view.posAtDOM(last, last.childNodes.length);
   };
   const NATIVE_TAP = 'a, input, textarea, label, button, select, img, .image-node, [data-note-link], [data-type="inline-math"], .outline-toggle, .heading-toggle, [data-type="drawing"], .db, '
     + '[data-type="block-math"], .tableWrapper, .attachment-card, .tb, .tb-notelink, .find-bar, .history-view, #chips, #title, #wordcount';
@@ -1702,7 +1717,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       if (!editor.isFocused) {
         closePanels();
         alignBottomOnce = true;
-        focusAt(null);
+        focusAt(shownEnd());
       }
       return;
     }
