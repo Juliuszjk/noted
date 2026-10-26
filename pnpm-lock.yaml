@@ -602,6 +602,9 @@ importers:
       '@mdi/js':
         specifier: ^7.4.47
         version: 7.4.47
+      '@noted/media':
+        specifier: workspace:*
+        version: link:../media
       '@tiptap/core':
         specifier: ^3.31.4
         version: 3.31.4(@tiptap/pm@3.31.4)

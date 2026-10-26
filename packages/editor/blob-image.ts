@@ -1,6 +1,7 @@
 import Image from '@tiptap/extension-image';
 import type { Editor } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { isSvgFile, parseSvg, svgSize } from '@noted/media/svg-size';
 
 // Images stored as encrypted blobs. The image node keeps its name and attributes; a new `blob`
 // attribute holds "<blobId>:<base64 key>" in ONE attribute, so concurrent edits on two devices
@@ -427,6 +428,15 @@ export const isHeicFile = (file: File): boolean =>
 
 const isImageFile = (file: File): boolean => file.type.startsWith('image/') || isHeicFile(file);
 
+// An SVG is stored drawn large (sharp, @noted/media) but shown at the size it asks for.
+const svgDisplaySize = async (file: File): Promise<{ width: number; height: number } | null> => {
+  if (!isSvgFile(file)) return null;
+  const svg = parseSvg(await file.text());
+  if (!svg) return null;
+  const { width, height } = svgSize(svg);
+  return { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) };
+};
+
 // Stores files and inserts them at `pos` (or the cursor): images as compressed image blobs,
 // everything else as attachments. Errors are reported through handlers.notify.
 export const insertFiles = async (editor: Editor, files: File[], pos?: number): Promise<boolean> => {
@@ -436,7 +446,8 @@ export const insertFiles = async (editor: Editor, files: File[], pos?: number): 
   for (const file of files) {
     try {
       if (isImageFile(file) && handlers.upload) {
-        nodes.push({ type: 'image', attrs: { blob: formatBlobRef(await handlers.upload(file)), alt: file.name || null } });
+        const size = await svgDisplaySize(file);
+        nodes.push({ type: 'image', attrs: { blob: formatBlobRef(await handlers.upload(file)), alt: file.name || null, ...size } });
       } else if (handlers.uploadFile) {
         const ref = await handlers.uploadFile(file);
         nodes.push({ type: 'attachment', attrs: { blob: formatBlobRef(ref), name: file.name || 'file', size: file.size, mime: file.type || null } });
