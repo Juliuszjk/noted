@@ -58,8 +58,10 @@ export const ListSelect = Extension.create({
           if (sel.focusNode === at.node && sel.focusOffset === at.offset) return;
           sel.extend(at.node, at.offset);
         };
+        // A press something else handled (the fold arrows in the margin) starts no selection:
+        // the next tiny movement extended the old selection to the line beside the arrow.
         const down = (e: MouseEvent) => {
-          dragging = e.button === 0 && !e.shiftKey && e.detail === 1 && !(e.target as Element | null)?.closest?.('label');
+          dragging = e.button === 0 && !e.shiftKey && e.detail === 1 && !e.defaultPrevented && !(e.target as Element | null)?.closest?.('label');
           target = null;
         };
         view.dom.addEventListener('mousedown', down);
