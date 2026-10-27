@@ -9,19 +9,19 @@ import { isReminderRepeat, reminderPlainText } from '@noted/editor/reminder-time
 
 // A note body as Markdown for Claude, and Markdown from Claude back into the body, without
 // losing what Markdown cannot hold. Images, drawings and files become tokens on a line of
-// their own ("⟦image 1⟧"), reminder chips and note links inline tokens ("⟦reminder 1: …⟧",
+// their own ("⟦image 1⟧", a page break of the PDF "⟦page-break 1⟧"), reminder chips and note links inline tokens ("⟦reminder 1: …⟧",
 // "⟦link 1: Title⟧"); a rewrite puts the original nodes back where the tokens are. A block
 // whose Markdown did not change keeps its original node (colours, highlights, alignment, ...);
 // only changed blocks are made from Markdown. Needs a DOM (dom.ts) for the HTML parser.
 
-export type BlockKind = 'image' | 'drawing' | 'file';
+export type BlockKind = 'image' | 'drawing' | 'file' | 'page-break';
 export type InlineKind = 'reminder' | 'link';
 
-const BLOCK_KINDS: Record<string, BlockKind> = { image: 'image', drawing: 'drawing', attachment: 'file' };
+const BLOCK_KINDS: Record<string, BlockKind> = { image: 'image', drawing: 'drawing', attachment: 'file', pageBreak: 'page-break' };
 const INLINE_KINDS: Record<string, InlineKind> = { reminder: 'reminder', noteLink: 'link' };
 
-export const TOKEN = /⟦(image|drawing|file|reminder|link) (\d+)(?::[^⟧]*)?⟧/g;
-const TOKEN_ONLY = /^⟦(image|drawing|file) (\d+)(?::[^⟧]*)?⟧$/;
+export const TOKEN = /⟦(image|drawing|file|page-break|reminder|link) (\d+)(?::[^⟧]*)?⟧/g;
+const TOKEN_ONLY = /^⟦(image|drawing|file|page-break) (\d+)(?::[^⟧]*)?⟧$/;
 
 export interface NoteView {
   // The body as Markdown (blocks separated by blank lines).

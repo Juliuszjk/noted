@@ -2,9 +2,10 @@ import { Extension } from '@tiptap/core';
 import type { Editor } from '@tiptap/core';
 
 // Note-level actions started from inside the editor (slash menu "Notebook" / "Tag" /
-// "Export" / "Publish" / "Go to note" / "Link from another note"), handled by the app UI.
+// "Export" / "PDF preview" / "Publish" / "Go to note" / "Link from another note"), handled by
+// the app UI.
 // Without a handler the request does nothing.
-export type NoteActionKind = 'notebook' | 'tag' | 'export' | 'publish' | 'goto' | 'linkto';
+export type NoteActionKind = 'notebook' | 'tag' | 'export' | 'pdf' | 'publish' | 'goto' | 'linkto';
 export type NoteActionRequest = { kind: NoteActionKind; pos: number };
 
 export const NoteActions = Extension.create<{ onRequest: ((request: NoteActionRequest) => void) | null }>({

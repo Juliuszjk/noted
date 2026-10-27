@@ -11,7 +11,7 @@ import { setCodeThemeByLanguage } from '@noted/editor/code-block';
 import type { EditorPrefs } from '@noted/editor/editor-prefs';
 import { parseToolbarConfig } from '@noted/editor/toolbar-items';
 import { buildPublishedNote, buildNoteHtmlFile } from '@noted/ui/src/publish-html';
-import { unfoldRenderedCopy } from '@noted/editor/heading-fold';
+import { createPdfFlow } from './pdf-flow';
 import { sealPublished, AUTO_PUBLISH_DELAY_MS } from '@noted/sync/publish';
 import { setNoteBodyJson } from '@noted/sync/json-to-y';
 import type { NoteFlag } from '@noted/sync/note-meta';
@@ -457,6 +457,7 @@ const startEditor = () => {
       NoteActions.configure({
         onRequest: (request) => {
           if (request.kind === 'export') toolbarApi?.openExport();
+          else if (request.kind === 'pdf') post({ type: 'openPdf' });
           else if (request.kind === 'goto' || request.kind === 'linkto') toolbarApi?.openNotePicker(request.kind);
           else if (request.kind === 'publish') post({ type: 'openPublish' });
           else openCatalog?.(request.kind === 'notebook' ? 'notebooks' : 'tags');
@@ -542,6 +543,8 @@ const startEditor = () => {
     expectKeyboard: () => post({ type: 'expectKeyboard' }),
   });
   toolbarApi = toolbar;
+  pdfFlow = createPdfFlow({ editor, title: () => getTitleText(ydoc).toString(), noteFont: () => getNoteFont(ydoc), post, toDataUrl: blobToDataUrl });
+  if (pdfPaneWanted) pdfFlow.setPane(pdfPaneWanted.open, pdfPaneWanted.reset);
   drawingBar = createDrawingBar(editor, { pickColor: toolbar.pickColor, saveTools: (text) => post({ type: 'drawingTools', text }) });
   drawingBar.setConfig(drawingToolbarConfig);
   if (drawingToolsText) restoreDrawingTools(editor, drawingToolsText);
@@ -750,6 +753,9 @@ const receive = (raw: string) => {
     toolbarApi?.refocus();
   } else if (msg.type === 'find') {
     findBar?.open();
+  } else if (msg.type === 'pdfPane') {
+    pdfPaneWanted = { open: !!msg.open, reset: !!msg.reset };
+    pdfFlow?.setPane(!!msg.open, !!msg.reset);
   } else if (msg.type === 'export' && ['markdown', 'text', 'html', 'pdf'].includes(msg.format)) {
     exportCurrent(msg.format, !!msg.share);
   } else if (msg.type === 'showHistory' && typeof msg.state === 'string' && editor) {
@@ -779,49 +785,23 @@ const receive = (raw: string) => {
   }
 };
 
-// ---- export (note menu): Markdown, plain text, or HTML that React Native prints to a PDF ----
+// ---- export (note menu): Markdown, plain text, or sheets that React Native prints to a PDF ----
 const blobToDataUrl = (url: string): Promise<string> => fetch(url).then((r) => r.blob()).then((blob) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(String(reader.result));
   reader.onerror = () => reject(reader.error);
   reader.readAsDataURL(blob);
 }));
-const escapeHtml = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
-// Light colours for paper, whatever the app's theme is.
-const PRINT_CSS = `
-  :root { color-scheme: light; --text-main: #1b1b1f; --text-muted: #5f5f66; --bg-base: #ffffff; --bg-surface: #f3f3f5;
-    --bg-surface-low: #f7f7f9; --bg-surface-high: #ececef; --bg-surface-highest: #e4e4e8; --border: #cfcfd6; --primary: #6750a4; }
-  html, body { background: #fff; color: #1b1b1f; margin: 0; padding: 0; }
-  body { padding: 0 8px; font-family: var(--font-sans); }
-  .export-title { font-size: 1.9em; font-weight: 700; margin: 0 0 16px; }
-  .ProseMirror { outline: none; }
-  .ProseMirror img { max-width: 100%; }
-  .ProseMirror input[type=checkbox] { pointer-events: none; }
-`;
-const exportHtml = async (): Promise<string> => {
-  const clone = editor!.view.dom.cloneNode(true) as HTMLElement;
-  clone.removeAttribute('contenteditable');
-  clone.querySelectorAll('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'));
-  clone.querySelectorAll('.is-empty, .ProseMirror-trailingBreak, .ProseMirror-separator').forEach((el) => el.classList.remove('is-empty'));
-  unfoldRenderedCopy(clone);
-  // Decrypted images are object URLs of this page: the PDF printer needs the bytes inline.
-  await Promise.all([...clone.querySelectorAll('img')].map(async (img) => {
-    const src = img.getAttribute('src') ?? '';
-    if (src.startsWith('blob:')) img.setAttribute('src', await blobToDataUrl(src).catch(() => ''));
-  }));
-  const styles = [...document.querySelectorAll('style')].map((s) => s.textContent ?? '').join('\n');
-  const font = document.body.getAttribute('data-note-font');
-  const title = getTitleText(ydoc).toString().trim();
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title || 'Untitled')}</title>`
-    + `<style>${styles}</style><style>${PRINT_CSS}</style></head><body${font ? ` data-note-font="${escapeHtml(font)}"` : ''}>`
-    + `<div class="export-title note-title">${escapeHtml(title || 'Untitled')}</div>${clone.outerHTML}</body></html>`;
-};
+// The PDF goes through the phone's PDF page (pdf-flow.ts), made with the editor. A preview
+// opened before the editor was made (the note's tab shown again) starts with it.
+let pdfFlow: ReturnType<typeof createPdfFlow> | null = null;
+let pdfPaneWanted: { open: boolean; reset: boolean } | null = null;
 const exportCurrent = async (format: 'markdown' | 'text' | 'html' | 'pdf', share = false) => {
   if (!editor) return;
   const title = getTitleText(ydoc).toString();
   try {
     if (format === 'pdf') {
-      post({ type: 'exported', format, share, name: exportFileName(title, 'pdf'), html: await exportHtml() });
+      pdfFlow?.send({ save: true, share });
     } else if (format === 'html') {
       // One file that looks like the note (images inside), unlike the PDF's printer page.
       post({ type: 'exported', format, share, name: exportFileName(title, 'html'), text: await buildNoteHtmlFile(editor.view.dom as HTMLElement, title, getNoteFont(ydoc)) });

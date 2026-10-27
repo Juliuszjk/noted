@@ -32,3 +32,4 @@ export * from './note-place';
 export * from './reminder-list';
 export * from './reminder-notify';
 export * from './RemindersList';
+export * from './PdfPreview';

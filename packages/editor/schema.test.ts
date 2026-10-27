@@ -12,7 +12,7 @@ describe('note document schema', () => {
     expect(Object.keys(schema.nodes)).toEqual(
       expect.arrayContaining([
         'attachment', 'blockMath', 'blockquote', 'bulletList', 'callout', 'codeBlock', 'drawing', 'drawingStroke', 'heading', 'horizontalRule', 'image',
-        'inlineMath', 'listItem', 'noteLink', 'orderedList', 'paragraph', 'reminder', 'table', 'tableCell', 'tableHeader', 'tableRow',
+        'inlineMath', 'listItem', 'noteLink', 'orderedList', 'pageBreak', 'paragraph', 'reminder', 'table', 'tableCell', 'tableHeader', 'tableRow',
         'taskItem', 'taskList',
       ]),
     );

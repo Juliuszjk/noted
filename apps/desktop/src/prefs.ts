@@ -21,6 +21,8 @@ export interface Prefs {
   listWidth: number;
   // Note properties panel on the right.
   propsWidth: number;
+  // Width of the PDF preview beside the note ("/pdf").
+  pdfWidth: number;
   fullWidth: boolean;
   focusMode: boolean;
   zoom: number;
@@ -37,8 +39,10 @@ const KEY = 'noted_ui_prefs';
 // The note properties panel: narrower than this cuts its rows.
 export const PROPS_MIN_WIDTH = 250;
 export const PROPS_MAX_WIDTH = 560;
+export const PDF_MIN_WIDTH = 280;
+export const PDF_MAX_WIDTH = 1400;
 
-const DEFAULTS: Prefs = { view: { kind: 'notes' }, sort: 'edited', grouping: 'notebook', listFolds: [], propsOpen: false, navHidden: false, navCompact: false, listHidden: false, navWidth: 236, listWidth: 290, propsWidth: 300, fullWidth: false, focusMode: false, zoom: 1, toolbar: 'top', tableMenu: 'floating', drawingMenu: 'floating', tabs: [], activeTab: null };
+const DEFAULTS: Prefs = { view: { kind: 'notes' }, sort: 'edited', grouping: 'notebook', listFolds: [], propsOpen: false, navHidden: false, navCompact: false, listHidden: false, navWidth: 236, listWidth: 290, propsWidth: 300, pdfWidth: 560, fullWidth: false, focusMode: false, zoom: 1, toolbar: 'top', tableMenu: 'floating', drawingMenu: 'floating', tabs: [], activeTab: null };
 
 export const loadPrefs = (): Prefs => {
   try {
@@ -58,6 +62,7 @@ export const loadPrefs = (): Prefs => {
       navWidth: typeof data.navWidth === 'number' ? Math.min(520, Math.max(120, data.navWidth)) : 236,
       listWidth: typeof data.listWidth === 'number' ? Math.min(520, Math.max(100, data.listWidth)) : 290,
       propsWidth: typeof data.propsWidth === 'number' ? Math.min(PROPS_MAX_WIDTH, Math.max(PROPS_MIN_WIDTH, data.propsWidth)) : 300,
+      pdfWidth: typeof data.pdfWidth === 'number' ? Math.min(PDF_MAX_WIDTH, Math.max(PDF_MIN_WIDTH, data.pdfWidth)) : 560,
       fullWidth: data.fullWidth === true,
       focusMode: data.focusMode === true,
       zoom: typeof data.zoom === 'number' && data.zoom >= 0.5 && data.zoom <= 2 ? data.zoom : 1,

@@ -97,12 +97,20 @@ describe('slash items', () => {
   });
 
   it('has a compact root menu', () => {
-    expect(slashItems.map((i) => i.title)).toEqual(['Heading', 'Quote', 'List', 'Divider', 'Code block', 'Table', 'Image', 'File', 'Callout', 'Math', 'Drawing', 'Reminder', 'Link to note', 'Link from another note', 'Go to note', 'Notebook', 'Tag', 'Export', 'Publish']);
+    expect(slashItems.map((i) => i.title)).toEqual(['Heading', 'Quote', 'List', 'Divider', 'Page break', 'Code block', 'Table', 'Image', 'File', 'Callout', 'Math', 'Drawing', 'Reminder', 'Link to note', 'Link from another note', 'Go to note', 'Notebook', 'Tag', 'Export', 'PDF preview', 'Publish']);
   });
 });
 
 describe('slash search', () => {
   const search = (q: string) => searchNav(slashItems, q);
+
+  it('"/pg" offers the page break', () => {
+    expect(titlesOf(search('pg')[0])[0]).toBe('Page break');
+  });
+
+  it('"/pdf" offers the PDF preview first', () => {
+    expect(titlesOf(search('pdf')[0])[0]).toBe('PDF preview');
+  });
 
   it('opens the category submenu for a unique category match', () => {
     const model = search('list');

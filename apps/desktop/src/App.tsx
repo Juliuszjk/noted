@@ -20,7 +20,8 @@ import {
 } from '@noted/sync';
 import { formatBlobRef, parseBlobRef, parseEditorPrefs, DEFAULT_EDITOR_PREFS, newReminderId, applyReminderAction } from '@noted/editor';
 import type { ReminderState, ReminderAction } from '@noted/editor';
-import { exportNote } from '@noted/editor/export';
+import { exportNote, exportFileName } from '@noted/editor/export';
+import { mountPrintSheets, printSheets } from '@noted/editor/pdf-sheets';
 import { PINCH_EVENT } from '@noted/editor/image-viewer';
 import type { CatalogKind } from '@noted/sync';
 
@@ -40,16 +41,16 @@ import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { mdiDotsVertical, mdiBookOutline, mdiDockLeft, mdiFormatListText } from '@mdi/js';
 import {
   SettingsDialog, LockScreen, VaultDialog, LockedNote, NotePicker, NoteEditor, UnlockScreen, NoteList, TabBar, StatusBar, NavPanel, NoteProperties, CatalogPicker, HistoryPreview,
-  IconBtn, Icon, tabDropIndex, placeTab, confirmDialog, messageDialog, showDialog, linkDescendants, matchesShortcut, setShortcutOverrides, getShortcutOverrides, notesInView, Resizer, RESIZE_SNAP, LinkTree, RemindersList, reminderEntries, dueReminderCount, reminderNotices, parseNoticeId, MISSED_WITHIN_MS, NAV_MIN_WIDTH, NAV_RAIL_WIDTH,
+  IconBtn, Icon, tabDropIndex, placeTab, confirmDialog, messageDialog, showDialog, linkDescendants, matchesShortcut, setShortcutOverrides, getShortcutOverrides, notesInView, Resizer, RESIZE_SNAP, LinkTree, RemindersList, reminderEntries, dueReminderCount, reminderNotices, parseNoticeId, MISSED_WITHIN_MS, NAV_MIN_WIDTH, NAV_RAIL_WIDTH, PdfPreview,
 } from '@noted/ui';
 import type { NoteSummary, NoteListItem, TextStats, NoteAction, NoteView, PropertyFlags, HistoryEntry, ImportedNote, AttachmentEntry, ReminderEntry } from '@noted/ui';
 import { notePlaces, parseImport, IMPORT_SOURCES, expandZips, noteFilesFor } from '@noted/ui';
 import type { BlobHandlers } from '@noted/editor';
-import type { JSONContent } from '@tiptap/core';
+import type { Editor, JSONContent } from '@tiptap/core';
 import { BLOBS_TABLE_SQL, clearAttachmentCache, createDesktopBlobStore, createDesktopBlobHandlers, migrateBlobsToFiles } from './blobs';
 import { HISTORY_TABLE_SQL, listHistory, readHistoryState, recordHistory, allHistoryStates } from './history';
 import type { HistorySession } from './history';
-import { loadPrefs, savePrefs, PROPS_MIN_WIDTH, PROPS_MAX_WIDTH, loadShortcutOverrides, saveShortcutOverrides } from './prefs';
+import { loadPrefs, savePrefs, PROPS_MIN_WIDTH, PROPS_MAX_WIDTH, PDF_MIN_WIDTH, PDF_MAX_WIDTH, loadShortcutOverrides, saveShortcutOverrides } from './prefs';
 import type { Prefs } from './prefs';
 import {
   readEpoch, writeEpoch, readAppZoom, applyAppZoom, saveFileDialog, openTextFileDialog, readAutoBackup, writeAutoBackup,
@@ -189,6 +190,16 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   const [downloadFolder, setDownloadFolder] = useState(readDownloadFolder);
   const [synced, setSynced] = useState(true);
   const [stats, setStats] = useState<TextStats | null>(null);
+  // "/pdf": the open note on paper beside it (PdfPreview), read from the main editor. It belongs
+  // to the note (its tab): another tab hides it, coming back shows it again.
+  const [pdfNotes, setPdfNotes] = useState<ReadonlySet<string>>(new Set());
+  const setPdfPreview = (id: string, on: boolean) => setPdfNotes((all) => {
+    const next = new Set(all);
+    if (on) next.add(id);
+    else next.delete(id);
+    return next;
+  });
+  const [mainEditor, setMainEditor] = useState<Editor | null>(null);
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [tabs, setTabs] = useState<string[]>([]);
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
@@ -941,6 +952,22 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
   };
 
   // Export (Markdown / text / HTML): a save dialog, then the file.
+  // PDF (preview, Export > PDF): straight into a file chosen here; where the app cannot print
+  // to a file itself (print_pdf: Linux only) the print dialog opens instead.
+  const savePdf = async (sheets: HTMLElement[], title: string) => {
+    const path = await save({ defaultPath: exportFileName(title, 'pdf'), filters: [{ name: 'PDF', extensions: ['pdf'] }] }).catch(() => null);
+    if (!path) return;
+    const remove = mountPrintSheets(sheets);
+    try {
+      await invoke('print_pdf', { path });
+      showToast('PDF saved');
+    } catch (e) {
+      if (String(e) === 'unsupported') printSheets(sheets);
+      else messageDialog('Saving the PDF failed', String(e), 'error');
+    } finally {
+      remove();
+    }
+  };
   const saveExport = async (name: string, text: string, source?: { title: string; json: object; format: 'markdown' | 'text'; titles: Record<string, string> }) => {
     try {
       // Markdown with images or files: a zip with the note and an "attachments" folder (like
@@ -1451,6 +1478,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                 spellcheck={editorPrefs.spellcheck && !getNoteFlag(split.ydoc, 'noSpellcheck')}
                 onNoteAction={(request, x, y) => { if (request.kind === 'goto') setNotePicker({ mode: 'goto', at: { x, y } }); }}
                 onSaveExport={saveExport}
+                onSavePdf={savePdf}
               />
             )}
           </div>
@@ -1727,8 +1755,11 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                   fullWidth={prefs.fullWidth}
                   readOnly={activeFlags.readOnly}
                   spellcheck={editorPrefs.spellcheck && activeFlags.spellcheck}
+                  onEditor={setMainEditor}
+                  onSavePdf={savePdf}
                   onNoteAction={(request, x, y) => {
-                    if (request.kind === 'goto' || request.kind === 'linkto') setNotePicker({ mode: request.kind, at: { x, y } });
+                    if (request.kind === 'pdf') setPdfPreview(activeNote.id, true);
+                    else if (request.kind === 'goto' || request.kind === 'linkto') setNotePicker({ mode: request.kind, at: { x, y } });
                     else setPicker({ kind: request.kind === 'notebook' ? 'notebooks' : 'tags', x, y });
                   }}
                   restore={restore && restore.noteId === activeNote.id ? restore : null}
@@ -1746,6 +1777,19 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
           </div>
           {split && (split.mode === 'right' || split.mode === 'bottom') && splitDivider}
           {split && split.mode !== 'left' && split.mode !== 'top' && splitPane}
+          {activeNote && pdfNotes.has(activeNote.id) && (
+            <>
+              <Resizer edge="left" width={prefs.pdfWidth} onDrag={(w) => setPrefs((p) => ({ ...p, pdfWidth: Math.min(PDF_MAX_WIDTH, Math.max(PDF_MIN_WIDTH, w)) }))} />
+              <PdfPreview
+                editor={mainEditor}
+                title={titleOf(activeNote.id)}
+                noteFont={getNoteFont(activeNote.ydoc)}
+                width={prefs.pdfWidth}
+                onClose={() => setPdfPreview(activeNote.id, false)}
+                onSave={(sheets) => savePdf(sheets, titleOf(activeNote.id))}
+              />
+            </>
+          )}
           </div>
         </main>
         {noteDrag && (

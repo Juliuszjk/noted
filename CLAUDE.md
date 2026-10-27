@@ -402,6 +402,32 @@ drawer say "This device / phone only".
   a note line) / update (done = `completeReminder`, snooze). `undo_last_change`: snapshot of
   title / body / notebooks / tags / flags before each change (table `history`); a created note goes to the trash.
 
+## PDF (2026-10-27)
+
+- Every PDF is A4 sheets laid out by the app, the same on every device: `editor/pdf-sheets.ts`
+  copies the note (`noteFlow`: title + unfolded clone, `markPrintCopy` adds `print-copy`, the
+  paper rules in content.css), measures it at the text width and `print-pages.ts paginate` finds
+  where pages begin (headings stay with the next block, pictures / formulas / code up to a page
+  move whole, paragraphs and long code split between lines, tables between rows with the header
+  row repeated, `pageBreak` nodes); each sheet shows its slice (inline-block body, copy moved with
+  `top`: a negative margin / plain block was paginated again by the print engine).
+  Units: 1.25 CSS px per point (WebKitGTK's print scale; prints 1:1 there with GTK's 6.35 mm
+  dialog margins, the sheet padding makes 16 mm). Chromium: `@page { margin: 0 }` + zoom 96/90;
+  Android (expo-print): print media queries on the page width (desktop Chromium answers them with
+  740 px). Fonts are bundled (`pdf-fonts.ts`: Inter + JetBrains Mono, OFL) and the type is 16 px
+  whatever the editor settings: system fonts and font sizes made pages differ.
+- Desktop: `/pdf` = `ui/src/PdfPreview.tsx` beside the note (per note / tab, width pref
+  `pdfWidth`), rebuilt 500 ms after changes; Save PDF and Export > PDF: save dialog + Rust
+  `print_pdf` (WebKitGTK PrintOperation to a file, A4, no dialog; elsewhere it answers
+  "unsupported" and the print dialog opens). Live guest page: the same preview, browser print.
+- Phone: the editor WebView follows the system font size (text zoom scales type and line height,
+  not em spacing), so the PDF is made in its own WebView with `textZoom={100}`: `src/PdfPane.tsx`
+  (page `editor/pdf.ts`, `pdfHtml.generated.ts`) under the note, open per note (`pdfOpenNotes`);
+  the editor page sends the flow (`pdf-flow.ts`, `{type:'pdfFlow'}`, pictures once each as data
+  URLs) after changes; Export > PDF goes the same way; expo-print with `textZoom: 100`.
+- `/page break` (`/pg`): node `pageBreak` (page-break.ts), dashed line in editors only, left out
+  of Markdown / text / HTML / published copies; MCP token `⟦page-break N⟧`.
+
 ## Publishing, backups, import, theme (details in `docs/features.md`)
 
 - Publishing: `sync/publish.ts` + `ui/src/publish-html.ts`; server `apps/api/src/publish.ts`

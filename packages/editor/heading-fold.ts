@@ -190,3 +190,23 @@ export const unfoldRenderedCopy = (root: HTMLElement) => {
   root.querySelectorAll('.heading-folded').forEach((el) => el.classList.remove('heading-folded'));
   root.querySelectorAll('[data-collapsed="true"]').forEach((el) => el.removeAttribute('data-collapsed'));
 };
+
+// Lines of code that fit on a page with the title: longer code blocks may split (content.css).
+const PAGE_LINES = 45;
+
+// A rendered copy of the note (the .ProseMirror element) made ready for paper: unfolded, the
+// paper styles on (content.css) and long code blocks marked.
+export const markPrintCopy = (root: HTMLElement) => {
+  unfoldRenderedCopy(root);
+  root.classList.add('print-copy');
+  // Nothing of the moment it was copied: selected blocks (a page break's outline drew lines
+  // across the paper), cells, a whole-note selection, search matches.
+  const passing = ['ProseMirror-selectednode', 'selectedCell', 'has-all-selection', 'all-selected-text', 'all-selected-node', 'search-match', 'search-match-current', 'ProseMirror-focused'];
+  for (const name of passing) {
+    if (root.classList.contains(name)) root.classList.remove(name);
+    root.querySelectorAll(`.${name}`).forEach((el) => el.classList.remove(name));
+  }
+  root.querySelectorAll('.code-block').forEach((block) => {
+    if ((block.querySelector('pre')?.textContent ?? '').split('\n').length > PAGE_LINES) block.classList.add('code-block-long');
+  });
+};

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { NoteEditor } from '@noted/ui/src/NoteEditor';
+import { PdfPreview } from '@noted/ui/src/PdfPreview';
+import type { Editor } from '@tiptap/core';
 import { slashItems } from '@noted/editor/slash-items';
 import type { SlashItem } from '@noted/editor/slash';
 import { TOOLBAR_PRESETS } from '@noted/editor/toolbar-items';
@@ -9,7 +11,7 @@ import { unsealBytes, sealBytes, generateKey, base64ToBytes, bytesToBase64 } fro
 import { compressImageBytes } from '@noted/media';
 import { liveKeys } from '@noted/sync/live';
 import type { LiveKeys } from '@noted/sync/live';
-import { getTitleText } from '@noted/sync/note-meta';
+import { getNoteFont, getTitleText } from '@noted/sync/note-meta';
 import { exportAttachmentsWith, zipNoteWithFiles } from '@noted/sync/export-files';
 import { exportNote } from '@noted/editor/export';
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
@@ -250,6 +252,18 @@ function LiveEditor({ id, keys, session }: { id: string; keys: LiveKeys; session
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   const [findSlot, setFindSlot] = useState<HTMLDivElement | null>(null);
   const blobs = useMemo(() => blobHandlers(id, keys), [id, keys]);
+  // "/pdf": the note on A4 sheets, beside it on a wide screen, under it on a narrow one.
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [title, setTitle] = useState('');
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const resize = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+  const pdfSide = width >= 900;
+  const pdfWidth = pdfSide ? Math.min(620, Math.round(width * 0.45)) : width;
   const user = session.awareness.getLocalState()?.user ?? { name: 'Guest', color: COLORS[0] };
   const caret = useMemo(() => [CollaborationCaret.configure({ provider: { awareness: session.awareness }, user })], [session]);
   const status = session.status();
@@ -259,7 +273,10 @@ function LiveEditor({ id, keys, session }: { id: string; keys: LiveKeys; session
     .map(([client, state]) => ({ client, name: String(state.user.name).slice(0, 40), color: String(state.user.color ?? COLORS[0]) }));
 
   useEffect(() => {
-    const update = () => { document.title = getTitleText(session.doc).toString().trim() || 'Untitled'; };
+    const update = () => {
+      document.title = getTitleText(session.doc).toString().trim() || 'Untitled';
+      setTitle(getTitleText(session.doc).toString());
+    };
     update();
     getTitleText(session.doc).observe(update);
     return () => getTitleText(session.doc).unobserve(update);
@@ -290,7 +307,7 @@ function LiveEditor({ id, keys, session }: { id: string; keys: LiveKeys; session
 
   void version;
   return (
-    <div className="live-page">
+    <div className={`live-page${pdfOpen ? (pdfSide ? ' live-pdf-side' : ' live-pdf-below') : ''}`} style={pdfOpen ? { ['--live-pdf' as string]: pdfSide ? `${pdfWidth}px` : '45vh' } : undefined}>
       <div className="live-top">
         <header className="live-header">
           <span className="live-brand">Noted</span>
@@ -327,8 +344,15 @@ function LiveEditor({ id, keys, session }: { id: string; keys: LiveKeys; session
           noteLinks={false}
           extraExtensions={caret}
           onOpenLink={(href) => window.open(href, '_blank', 'noopener,noreferrer')}
+          onEditor={setEditor}
+          onNoteAction={(request) => { if (request.kind === 'pdf') setPdfOpen(true); }}
         />
       </main>
+      {pdfOpen && (
+        <div className="live-pdf">
+          <PdfPreview editor={editor} title={title} noteFont={getNoteFont(session.doc)} width={pdfWidth} onClose={() => setPdfOpen(false)} />
+        </div>
+      )}
       <footer className="live-footer">Noted · end-to-end encrypted: the server never sees this note</footer>
     </div>
   );

@@ -17,7 +17,9 @@ import { heicToJpegBase64 } from './heic';
 import { openFileBytes, saveFileBytes, shareFileBytes } from './files';
 import { KeyboardEvents } from 'react-native-keyboard-controller';
 import { docFromSealed, isNoteLocked, appendNoteLink, readLockedBody, writeLockedBody, lockNote, unlockNote, openVault, sealDoc, exportAttachments, zipNoteWithFiles } from '@noted/sync';
-import { exportNote } from '@noted/editor/export';
+import { exportNote, exportFileName } from '@noted/editor/export';
+import { PdfPane, pdfOpenNotes } from './PdfPane';
+import type { PdfPaneHandle } from './PdfPane';
 import type { VaultSetup } from '@noted/sync';
 import { mdiLockOutline } from '@mdi/js';
 import type { HistoryEntry, HistorySession } from './history';
@@ -149,6 +151,22 @@ export function EditorScreen({
   // Saves run one at a time so each one merges into the state the previous one wrote.
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingSavesRef = useRef(0);
+
+  // "/pdf" and every PDF: the PDF page in its own WebView (PdfPane), mounted once needed.
+  const [pdfMounted, setPdfMounted] = useState(() => pdfOpenNotes.has(note.id));
+  const [pdfOpen, setPdfOpenState] = useState(() => pdfOpenNotes.has(note.id));
+  const setPdfOpen = (on: boolean) => {
+    if (on) pdfOpenNotes.add(note.id);
+    else pdfOpenNotes.delete(note.id);
+    setPdfOpenState(on);
+  };
+  const pdfOpenRef = useRef(false);
+  pdfOpenRef.current = pdfOpen;
+  const pdfPaneRef = useRef<PdfPaneHandle>(null);
+  const pdfReadyRef = useRef(false);
+  // A flow sent before the pane existed, and how the PDF asked for by the editor page is used.
+  const pdfPendingRef = useRef<{ html: string; pictures?: Record<string, string>; title?: string; save?: boolean } | null>(null);
+  const pdfShareRef = useRef(false);
 
   const sendToEditor = (msg: Record<string, unknown>) => {
     const literal = JSON.stringify(JSON.stringify(msg));
@@ -284,6 +302,8 @@ export function EditorScreen({
       if (msg.type === 'ready') {
         readyRef.current = true;
         sendToEditor({ type: 'theme', colors: T });
+        // The preview was open on this note (in its tab) before.
+        if (pdfOpenRef.current && pdfReadyRef.current) sendToEditor({ type: 'pdfPane', open: true, reset: false });
         sendToEditor({ type: 'editorPrefs', canPublish: hasServer(), prefs: getEditorPrefs(), toolbar: getToolbarConfig(), tableToolbar: getTableToolbarConfig(), drawingToolbar: getDrawingToolbarConfig(), drawingTools: getDrawingTools() });
         sendToEditor({ type: 'titles', titles: titlesRef.current, places: placesRef.current, archived: archivedRef.current, currentId: note.id });
         sendToEditor({ type: 'catalog', ...catalogRef.current });
@@ -415,6 +435,18 @@ export function EditorScreen({
         // The native keyboard handling follows the keyboard by itself.
       } else if (msg.type === 'alert' && typeof msg.text === 'string') {
         appAlert('Noted', msg.text);
+      } else if (msg.type === 'openPdf') {
+        setPdfMounted(true);
+        setPdfOpen(true);
+        if (pdfReadyRef.current) sendToEditor({ type: 'pdfPane', open: true, reset: false });
+      } else if (msg.type === 'pdfFlow' && typeof msg.html === 'string') {
+        const flow = { html: msg.html, pictures: msg.pictures, title: msg.title, save: !!msg.save };
+        if (msg.save) pdfShareRef.current = !!msg.share;
+        if (pdfPaneRef.current) pdfPaneRef.current.flow(flow);
+        else {
+          pdfPendingRef.current = flow;
+          setPdfMounted(true);
+        }
       } else if (msg.type === 'exported' && typeof msg.name === 'string') {
         finishExport(msg).catch((e) => appAlert('Export failed', String(e instanceof Error ? e.message : e)));
       } else if (msg.type === 'historyCopy' && typeof msg.state === 'string') {
@@ -604,7 +636,9 @@ export function EditorScreen({
     }
     if (msg.format === 'pdf' && typeof msg.html === 'string') {
       // The printer's own file cannot be moved (no read access): take its bytes.
-      const { base64 } = await Print.printToFileAsync({ html: msg.html, base64: true });
+      // A4 in points: the page holds the note's A4 sheets (pdf-sheets.ts), one per page. No text
+      // zoom, like the PDF page that laid them out (PdfPane).
+      const { base64 } = await Print.printToFileAsync({ html: msg.html, base64: true, width: 595, height: 842, textZoom: 100 });
       if (!base64) throw new Error('The PDF printer returned nothing');
       data = base64ToBytes(base64);
     } else if (typeof msg.text === 'string') {
@@ -780,6 +814,33 @@ export function EditorScreen({
           keyboardDisplayRequiresUserAction={false}
           hideKeyboardAccessoryView={true}
         />
+        {pdfMounted ? (
+          <PdfPane
+            ref={(pane) => {
+              pdfPaneRef.current = pane;
+              if (pane && pdfPendingRef.current) {
+                pane.flow(pdfPendingRef.current);
+                pdfPendingRef.current = null;
+              }
+            }}
+            open={pdfOpen}
+            keyboard={keyboardPad}
+            onClose={() => {
+              setPdfOpen(false);
+              sendToEditor({ type: 'pdfPane', open: false, reset: false });
+            }}
+            onReady={() => {
+              pdfReadyRef.current = true;
+              if (pdfOpenRef.current) sendToEditor({ type: 'pdfPane', open: true, reset: true });
+            }}
+            onPdf={(html, fromButton) => {
+              const share = fromButton ? false : pdfShareRef.current;
+              pdfShareRef.current = false;
+              finishExport({ format: 'pdf', name: exportFileName(titles[note.id] ?? 'Untitled', 'pdf'), html, share })
+                .catch((e) => appAlert('Export failed', String(e instanceof Error ? e.message : e)));
+            }}
+          />
+        ) : null}
       </View>
       {comparing ? <View style={[StyleSheet.absoluteFill, { backgroundColor: T.background }]} /> : null}
       {lockedClosed ? (

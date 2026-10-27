@@ -30,6 +30,7 @@ const text = (value: string, isError = false): Result => ({ content: [{ type: 't
 export const INSTRUCTIONS = `Noted is the user's notes app (end-to-end encrypted; this server is one of their devices).
 Notes are shown as Markdown. Things Markdown cannot hold appear as tokens:
 - ⟦image N⟧, ⟦drawing N⟧, ⟦file N⟧ on a line of their own: an image, a hand drawing (can hold handwriting or code) or an attached file. read_note with images: true shows images and drawings to you.
+- ⟦page-break N⟧ on a line of its own: the note's PDF starts a new page there (nothing else shows it).
 - ⟦reminder N: …⟧ inline: a reminder chip (date shown after the colon). ⟦link N: Title⟧ inline: a link to another note.
 When you rewrite a note, keep every token where it should go (move them freely); a token you drop is refused unless you list it in "remove". [[Exact note title]] creates a link to a note.
 Prefer the small edits (replace_text, append_to_note, set_task_done) over rewrite_note when only a part changes; blocks you leave unchanged in rewrite_note keep their exact formatting (colours, highlights), changed blocks get plain Markdown formatting.

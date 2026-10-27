@@ -36,7 +36,8 @@ import { TopToolbar } from './TopToolbar';
 import { FindBar } from './FindBar';
 import { setLigatures, restoreDrawingTools, serializeDrawingTools, onDrawingChange } from '@noted/editor';
 import type { ToolbarConfig } from '@noted/editor';
-import { ExportDialog, printNote } from './ExportDialog';
+import { ExportDialog } from './ExportDialog';
+import { buildSheets, printNote } from '@noted/editor/pdf-sheets';
 import type { ExportFormat } from './ExportDialog';
 import { exportNote, exportFileName } from '@noted/editor/export';
 import { getTitleText, getNoteFont, getNotePublish, setNotePublish, getNoteSettings, publishedUrl, AUTO_PUBLISH_DELAY_MS } from '@noted/sync';
@@ -70,7 +71,7 @@ export function NoteEditor({
   noteId, ydoc, onUpdate, onOpenLink, notes = [], onOpenNote, onCreateNote, blobs,
   toolbarMode = 'floating', toolbarSlot = null, tableMenuSlot = null, tableToolbarConfig = null, drawingMenuSlot = null, drawingToolbarConfig = null, drawingTools, onStats, fullWidth = false, readOnly = false, spellcheck = true,
   onNoteAction, restore, findSlot = null, onSaveExport, onPublish, toolbarConfig = null, ligatures = true, codeThemeByLanguage, reminderTimes,
-  secondary = false, slashItems, noteLinks = true, extraExtensions = [],
+  secondary = false, slashItems, noteLinks = true, extraExtensions = [], onEditor, onSavePdf,
 }: {
   // Guests of a live note (apps/web): fewer insert menu entries, no "[[" note links, and
   // extensions of their own (other people's cursors).
@@ -119,6 +120,10 @@ export function NoteEditor({
   drawingTools?: { load: () => string | null; save: (text: string) => void },
   // Word/character/paragraph/space counts, after every change.
   onStats?: (stats: TextStats) => void,
+  // The editor once made, null when it goes (the desktop PDF preview reads the note from it).
+  onEditor?: (editor: Editor | null) => void,
+  // Export > PDF: saves the note's sheets (pdf-sheets.ts) as a file; without it the print dialog.
+  onSavePdf?: (sheets: HTMLElement[], title: string) => void,
   // Encrypted image storage of the platform. Without it images are read only.
   blobs?: BlobHandlers,
   notes?: NoteSummary[],
@@ -156,7 +161,11 @@ export function NoteEditor({
     const ed = editorRef.current;
     if (!ed) return;
     const title = getTitleText(ydoc).toString();
-    if (format === 'pdf') return printNote(ed, title, getNoteFont(ydoc));
+    if (format === 'pdf') {
+      if (!onSavePdf) return void printNote(ed, title, getNoteFont(ydoc));
+      buildSheets(ed, title, getNoteFont(ydoc)).then((sheets) => onSavePdf(sheets, title), (e) => console.error('PDF export failed:', e));
+      return;
+    }
     if (format === 'html') {
       buildNoteHtmlFile(ed.view.dom as HTMLElement, title, getNoteFont(ydoc)).then(
         (html) => onSaveExport?.(exportFileName(title, 'html'), html),
@@ -589,6 +598,14 @@ export function NoteEditor({
   }, [editor, blobs]);
 
   editorRef.current = editor;
+
+  const onEditorRef = useRef(onEditor);
+  onEditorRef.current = onEditor;
+  useEffect(() => {
+    if (!editor) return;
+    onEditorRef.current?.(editor);
+    return () => onEditorRef.current?.(null);
+  }, [editor]);
 
   // Read only and spell check (note properties).
   useEffect(() => {

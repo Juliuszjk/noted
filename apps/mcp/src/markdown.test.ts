@@ -43,6 +43,17 @@ describe('note as Markdown', () => {
     expect(view.markdown).toContain('- [ ] read chapter 2');
   });
 
+  it('shows a page break as a token and keeps it through a rewrite', () => {
+    const doc = new Y.Doc();
+    setNoteBodyJson(doc, { type: 'doc', content: [para(text('one')), { type: 'pageBreak' }, para(text('two'))] });
+    const view = renderBody(noteBodyJson(doc), titles);
+    expect(view.markdown).toBe('one\n\n⟦page-break 1⟧\n\ntwo');
+    const parsed = parseRewrite(view, 'one more\n\n⟦page-break 1⟧\n\ntwo', noTitles);
+    if ('error' in parsed) throw new Error(parsed.error);
+    applyRewrite(doc, parsed.items, view.blocks.map((b) => b.json));
+    expect(body(doc).map((n) => n.type)).toEqual(['paragraph', 'pageBreak', 'paragraph']);
+  });
+
   it('keeps everything when the Markdown comes back unchanged', () => {
     const doc = lecture();
     const before = body(doc);

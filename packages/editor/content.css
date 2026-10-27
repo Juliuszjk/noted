@@ -78,6 +78,19 @@
 }
 
 .ProseMirror hr { border: none; border-top: 1px solid var(--border); margin: 1.2em 0; }
+/* Page break (page-break.ts): a dashed line in an editor only (copies for files, published
+   pages and the PDF have no contenteditable); on paper a new page starts there. */
+.ProseMirror .page-break { display: none; }
+.ProseMirror[contenteditable] .page-break {
+  display: flex; align-items: center; gap: 8px; margin: 1em 0; color: var(--text-muted); font-size: 11px;
+  letter-spacing: 0.05em; text-transform: uppercase; user-select: none; cursor: default;
+}
+.ProseMirror[contenteditable] .page-break::before, .ProseMirror[contenteditable] .page-break::after {
+  content: ""; flex: 1; border-top: 1px dashed var(--border);
+}
+.ProseMirror[contenteditable] .page-break.ProseMirror-selectednode { outline: none; color: var(--primary); }
+.ProseMirror[contenteditable] .page-break.ProseMirror-selectednode::before,
+.ProseMirror[contenteditable] .page-break.ProseMirror-selectednode::after { border-color: var(--primary); }
 
 .ProseMirror code {
   background: var(--bg-surface-high);
@@ -478,3 +491,30 @@ body.table-resizing-row, body.table-resizing-row * { cursor: row-resize !importa
 .collaboration-carets__label { position: absolute; top: -1.4em; left: -1px; padding: 0.1rem 0.3rem; border-radius: 3px 3px 3px 0;
   color: #fff; font-size: 12px; font-weight: 600; line-height: normal; white-space: nowrap; user-select: none; }
 .collaboration-carets__selection { opacity: 0.85; }
+
+/* Paper: the copy of a note made for PDF export (desktop and phone, `print-copy`, markPrintCopy
+   in heading-fold.ts; on screen too, the desktop measures it to place page breaks, print-pages.ts):
+   pictures, drawings, formulas, callouts, table rows and short code blocks never split across
+   pages, a heading stays with what follows it, nothing scrolls sideways (it was cut off at the
+   page edge) and the editor's controls stay off the paper. */
+.ProseMirror.print-copy .image-node, .ProseMirror.print-copy .image-node > img, .ProseMirror.print-copy .drawing-block,
+.ProseMirror.print-copy div[data-type="block-math"], .ProseMirror.print-copy div[data-type="callout"],
+.ProseMirror.print-copy .attachment-card, .ProseMirror.print-copy tr, .ProseMirror.print-copy blockquote, .ProseMirror.print-copy li > p {
+  break-inside: avoid;
+}
+/* A picture taller than a page shrinks to fit one (A4 / Letter minus the margins). */
+.ProseMirror.print-copy .image-node > img { max-height: 230mm; width: auto; object-fit: contain; }
+.ProseMirror.print-copy :is(h1, h2, h3, h4, h5, h6) { break-after: avoid; break-inside: avoid; }
+.ProseMirror.print-copy p { orphans: 2; widows: 2; }
+/* Code: long lines wrap, a block up to about a page stays whole, longer ones split between
+   lines (`code-block-long`, markPrintCopy in heading-fold.ts). */
+.ProseMirror.print-copy pre { overflow: visible; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ProseMirror.print-copy .code-block { break-inside: avoid; }
+.ProseMirror.print-copy .code-block.code-block-long { break-inside: auto; }
+.ProseMirror.print-copy .code-block pre { border-radius: 8px; }
+.ProseMirror.print-copy .tableWrapper, .ProseMirror.print-copy div[data-type="block-math"], .ProseMirror.print-copy .drawing-scroll { overflow: visible; }
+/* Only its place counts (print-pages.ts starts a new page there). */
+.ProseMirror.print-copy .page-break { display: block; height: 0; margin: 0; overflow: hidden; }
+.ProseMirror.print-copy .code-block-bar, .ProseMirror.print-copy .code-block-menu, .ProseMirror.print-copy .heading-toggle,
+.ProseMirror.print-copy .outline-toggle, .ProseMirror.print-copy .image-grip, .ProseMirror.print-copy .drawing-actions,
+.ProseMirror.print-copy .attachment-actions, .ProseMirror.print-copy .collaboration-carets__caret { display: none !important; }

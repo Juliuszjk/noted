@@ -80,8 +80,9 @@ const indentLines = (text: string, first: string, rest: string) =>
   text.split('\n').map((line, i) => (i === 0 ? first : line ? rest : '') + line).join('\n');
 
 // Children of a container joined as blocks (a blank line between them; tight inside lists).
+// Page breaks are left out: only the PDF knows pages.
 const blocks = (nodes: JSONContent[] | undefined, ctx: Ctx, tight = false): string =>
-  (nodes ?? []).map((n) => block(n, ctx)).filter((b) => b !== null).join(tight || ctx.tight ? '\n' : '\n\n');
+  (nodes ?? []).filter((n) => n.type !== 'pageBreak').map((n) => block(n, ctx)).filter((b) => b !== null).join(tight || ctx.tight ? '\n' : '\n\n');
 
 // Following lines of an item are indented by the marker's width; `restWidth` overrides it
 // (a task item's content starts after "- ", not after "- [ ] ": deeper is a code block).

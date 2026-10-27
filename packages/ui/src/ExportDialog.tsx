@@ -1,9 +1,7 @@
 import { useEffect } from 'react';
-import type { Editor } from '@tiptap/core';
 import { mdiLanguageMarkdownOutline, mdiTextBoxOutline, mdiLanguageHtml5, mdiFilePdfBox, mdiClose } from '@mdi/js';
 import { Icon } from './Icon';
 import { popoverStyle } from './menu-parts';
-import { unfoldRenderedCopy } from '@noted/editor/heading-fold';
 
 export type ExportFormat = 'markdown' | 'text' | 'html' | 'pdf';
 
@@ -50,39 +48,3 @@ export function ExportDialog({ onPick, onClose }: { onPick: (format: ExportForma
     </div>
   );
 }
-
-const escapeHtml = (text: string) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
-
-// PDF: the note alone on light "paper", printed with the system dialog (Print to File = PDF).
-// The page's own styles apply; everything else is hidden while printing.
-export const printNote = (editor: Editor, title: string, noteFont: string | null) => {
-  document.getElementById('noted-print')?.remove();
-  document.getElementById('noted-print-style')?.remove();
-  const holder = document.createElement('div');
-  holder.id = 'noted-print';
-  if (noteFont) holder.setAttribute('data-note-font', noteFont);
-  const clone = editor.view.dom.cloneNode(true) as HTMLElement;
-  clone.removeAttribute('contenteditable');
-  clone.querySelectorAll('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'));
-  unfoldRenderedCopy(clone);
-  // Pictures load lazily in the note; the printed copy needs all of them.
-  clone.querySelectorAll('img').forEach((img) => { img.loading = 'eager'; });
-  holder.innerHTML = `<div class="note-title" style="font-size:1.9em;font-weight:700;margin:0 0 16px">${escapeHtml(title || 'Untitled')}</div>`;
-  holder.append(clone);
-  const style = document.createElement('style');
-  style.id = 'noted-print-style';
-  style.textContent = `
-    #noted-print { display: none; }
-    @media print {
-      @page { margin: 16mm; }
-      html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
-      body > *:not(#noted-print) { display: none !important; }
-      #noted-print { display: block; color: #1b1b1f; font-family: var(--font-sans);
-        --text-main: #1b1b1f; --text-muted: #5f5f66; --bg-base: #fff; --bg-surface: #f3f3f5; --bg-surface-high: #ececef; --border: #cfcfd6; }
-      #noted-print .ProseMirror { color: #1b1b1f; }
-    }`;
-  document.body.append(style, holder);
-  // Removed after printing (or by the next export; hidden on screen anyway).
-  window.addEventListener('afterprint', () => { holder.remove(); style.remove(); }, { once: true });
-  setTimeout(() => window.print(), 50);
-};

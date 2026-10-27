@@ -23,6 +23,8 @@ const katexCss = () => {
 const targets = [
   { entry: 'editor/main.ts', template: 'editor/index.html', out: 'src/editorHtml.generated.ts', name: 'EDITOR_HTML' },
   { entry: 'editor/kdf.ts', template: 'editor/kdf.html', out: 'src/kdfHtml.generated.ts', name: 'KDF_HTML' },
+  // The PDF preview / export page (src/PdfPane.tsx), with the note's styles like the editor.
+  { entry: 'editor/pdf.ts', template: 'editor/pdf.html', out: 'src/pdfHtml.generated.ts', name: 'PDF_HTML' },
 ];
 
 for (const t of targets) {
@@ -41,7 +43,7 @@ for (const t of targets) {
   const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
   const template = readFileSync(path.join(root, t.template), 'utf8');
   // A missing marker would silently ship a page without its styles or code.
-  for (const marker of ['/*__BUNDLE__*/', ...(t.template === 'editor/index.html' ? ['/*__CONTENT_CSS__*/'] : [])]) {
+  for (const marker of ['/*__BUNDLE__*/', ...(t.template !== 'editor/kdf.html' ? ['/*__CONTENT_CSS__*/'] : [])]) {
     if (!template.includes(marker)) throw new Error(`${t.template} lacks the ${marker} marker`);
   }
   const contentCss = katexCss() + '\n' + readFileSync(path.join(root, '../../packages/editor/content.css'), 'utf8');

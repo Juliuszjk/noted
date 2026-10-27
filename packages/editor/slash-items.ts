@@ -11,7 +11,7 @@ import {
   mdiFormatHeader5, mdiFormatHeader6, mdiFormatQuoteClose, mdiFormatListBulleted, mdiFormatListNumbered, mdiFormatListCheckbox,
   mdiFileTreeOutline, mdiMinusBoxMultipleOutline, mdiCodeBraces, mdiTable, mdiFileDelimitedOutline, mdiImageOutline, mdiUpload,
   mdiLinkVariant, mdiPaperclip, mdiCommentOutline, mdiMathIntegral, mdiFunctionVariant, mdiSigma, mdiNoteTextOutline,
-  mdiLinkVariantPlus, mdiArrowRightBoldBoxOutline, mdiBookOutline, mdiPound, mdiExportVariant, mdiWeb,
+  mdiLinkVariantPlus, mdiArrowRightBoldBoxOutline, mdiBookOutline, mdiPound, mdiExportVariant, mdiWeb, mdiFilePdfBox, mdiFormatPageBreak,
 } from '@mdi/js';
 
 // Slash menu content, shared by every platform that offers a "/" menu. The menu is a tree:
@@ -252,6 +252,17 @@ const exportItem: SlashItem = {
   },
 };
 
+// The note on A4 sheets beside it, updated while writing (desktop; the phone exports a PDF).
+const pdfItem: SlashItem = {
+  title: 'PDF preview',
+  icon: mdiFilePdfBox,
+  keywords: ['pdf', 'print', 'preview', 'paper', 'page', 'podglad', 'drukuj'],
+  command: ({ editor, range }) => {
+    editor.chain().focus().deleteRange(range).run();
+    requestNoteAction(editor, { kind: 'pdf', pos: range.from });
+  },
+};
+
 // Publish the note as a public, read-only page (the dialog is app UI).
 const publishItem: SlashItem = {
   title: 'Publish',
@@ -306,6 +317,12 @@ export const slashItems: SlashItem[] = [
     command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
   },
   {
+    title: 'Page break',
+    icon: mdiFormatPageBreak,
+    keywords: ['pg', 'new page', 'pdf', 'print', 'nowa strona', 'podzial strony'],
+    command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertPageBreak().run(),
+  },
+  {
     title: 'Code block',
     icon: mdiCodeBraces,
     keywords: ['code', 'snippet', 'pre'],
@@ -324,6 +341,7 @@ export const slashItems: SlashItem[] = [
   notebookItem,
   tagItem,
   exportItem,
+  pdfItem,
   publishItem,
 ];
 

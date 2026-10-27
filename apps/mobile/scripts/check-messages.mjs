@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
 const pageFiles = readdirSync(join(root, 'editor'))
-  // kdf.ts is the separate key derivation page (src/KdfRunner.tsx).
-  .filter((f) => f.endsWith('.ts') && f !== 'kdf.ts' && !f.endsWith('.d.ts'))
+  // kdf.ts and pdf.ts are separate pages (src/KdfRunner.tsx, src/PdfPane.tsx).
+  .filter((f) => f.endsWith('.ts') && f !== 'kdf.ts' && f !== 'pdf.ts' && !f.endsWith('.d.ts'))
   .map((f) => `editor/${f}`);
 
 const collect = (text, re) => new Set([...text.matchAll(re)].map((m) => m[1]));

@@ -473,6 +473,59 @@ async fn clipboard_file_paths() -> Result<Vec<String>, String> {
     Ok(Vec::new())
 }
 
+// "Save PDF" (PDF preview, Export > PDF): prints the page (the note's sheets, pdf-sheets.ts) to
+// a PDF file without the print dialog. A4 with GTK's default margins of 6.35 mm, which the
+// sheets are sized for. Other systems print with the dialog instead (the page falls back when
+// this fails).
+#[cfg(target_os = "linux")]
+#[tauri::command]
+async fn print_pdf(window: tauri::WebviewWindow, path: String) -> Result<(), String> {
+    use webkit2gtk::PrintOperationExt;
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    window
+        .with_webview(move |webview| {
+            let uri = match glib::filename_to_uri(&path, None) {
+                Ok(uri) => uri,
+                Err(e) => {
+                    let _ = tx.send(Err(e.to_string()));
+                    return;
+                }
+            };
+            let settings = gtk::PrintSettings::new();
+            settings.set_printer("Print to File");
+            settings.set(gtk::PRINT_SETTINGS_OUTPUT_FILE_FORMAT, Some("pdf"));
+            settings.set(gtk::PRINT_SETTINGS_OUTPUT_URI, Some(uri.as_str()));
+            let setup = gtk::PageSetup::new();
+            setup.set_paper_size(&gtk::PaperSize::new(Some(&gtk::PAPER_NAME_A4)));
+            for set in [gtk::PageSetup::set_top_margin, gtk::PageSetup::set_bottom_margin, gtk::PageSetup::set_left_margin, gtk::PageSetup::set_right_margin] {
+                set(&setup, 6.35, gtk::Unit::Mm);
+            }
+            let operation = webkit2gtk::PrintOperation::new(&webview.inner());
+            operation.set_print_settings(&settings);
+            operation.set_page_setup(&setup);
+            let done = tx.clone();
+            operation.connect_finished(move |_| {
+                let _ = done.send(Ok(()));
+            });
+            operation.connect_failed(move |_, error| {
+                let _ = tx.send(Err(error.to_string()));
+            });
+            operation.print();
+        })
+        .map_err(|e| e.to_string())?;
+    // "failed" comes before "finished": the first answer counts.
+    tauri::async_runtime::spawn_blocking(move || rx.recv().unwrap_or(Err("Printing stopped".into())))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+async fn print_pdf(path: String) -> Result<(), String> {
+    let _ = path;
+    Err("unsupported".into())
+}
+
 // Touchpad / touchscreen pinch: WebKitGTK magnifies the whole page and the page cannot stop it
 // (no setting, the viewport meta is ignored). WebKit keeps its GtkGestureZoom on the view
 // under "wk-view-zoom-gesture" with handlers whose data is the view; those are disconnected
@@ -615,6 +668,7 @@ pub fn run() {
             notify,
             read_local_file,
             clipboard_file_paths,
+            print_pdf,
             reminders::set_reminder_notices
         ])
         .run(tauri::generate_context!())

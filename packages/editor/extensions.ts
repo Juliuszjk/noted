@@ -35,6 +35,7 @@ import { createMathExtensions } from './math';
 import type { MathEditHandler } from './math';
 import { Reminder } from './reminder';
 import { Drawing, DrawingStroke, DrawingStarter } from './drawing';
+import { PageBreak } from './page-break';
 import type { ReminderEditHandler } from './reminder';
 
 export interface SchemaExtensionOptions {
@@ -96,6 +97,8 @@ export const createSchemaExtensions = ({ ydoc, placeholder, onEditMath, onEditRe
   DrawingStroke,
   // A pen stroke on an empty line or under the note starts a drawing there (no schema).
   DrawingStarter,
+  // Where the PDF starts a new page (page-break.ts).
+  PageBreak,
   ...createMathExtensions(onEditMath),
   // Dragging the lines between columns and rows (mouse and touch; no schema).
   TableResize,
