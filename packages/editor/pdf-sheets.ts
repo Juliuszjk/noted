@@ -59,6 +59,13 @@ export const ensureSheetStyles = () => {
       --bg-surface-high: #ececef; --bg-surface-highest: #e4e4e8; --border: #cfcfd6; --primary: #6750a4; }
     .pdf-flow .ProseMirror { color: #1b1b1f; outline: none; min-height: 0; font-size: inherit !important; }
     .pdf-flow .ProseMirror code, .pdf-flow .ProseMirror pre { font-family: var(--font-mono); }
+    /* Tiptap's own editor styles (it adds them with an editor; the phone's PDF page has none):
+       kept spaces (a double space collapsed there and a heading fitted one line instead of two),
+       no ligatures. */
+    .pdf-flow .ProseMirror { position: relative; word-wrap: break-word; white-space: pre-wrap; white-space: break-spaces;
+      -webkit-font-variant-ligatures: none; font-variant-ligatures: none; font-feature-settings: "liga" 0; }
+    .pdf-flow .ProseMirror pre { white-space: pre-wrap; }
+    .pdf-flow img.ProseMirror-separator { display: inline !important; border: none !important; margin: 0 !important; width: 0 !important; height: 0 !important; }
     .pdf-flow .note-title { font-size: 1.9em; font-weight: 700; margin: 0 0 16px; }
     .pdf-measure { position: fixed; left: -100000px; top: 0; visibility: hidden; pointer-events: none; }
     .pdf-sheet { box-sizing: border-box; width: ${PAPER_W}px; height: ${PAPER_H}px; padding: ${MARGIN}px; background: #fff; overflow: hidden; }
