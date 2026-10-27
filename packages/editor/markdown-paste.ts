@@ -169,8 +169,11 @@ export const MarkdownPaste = Extension.create({
           // Rich pastes (web pages, apps) keep their own formatting; plain HTML wrappers (code
           // editors, terminals) do not count. Except Markdown with formulas whose HTML has no
           // rendered math (an AI chat's Copy button): that HTML came from a Markdown renderer
-          // that knew no math and ate the LaTeX backslashes.
-          const rich = !!html && /<(h[1-6]|ul|ol|li|table|blockquote|strong|em|b|i|a|img)\b/i.test(html);
+          // that knew no math and ate the LaTeX backslashes. A copy from a note holds its
+          // formulas as math nodes (data-latex) and as "$…$" in its text: its HTML always wins
+          // (read as Markdown it lost its headings, code blocks and quotes).
+          if (html && /data-latex=/i.test(html)) return false;
+          const rich = !!html && /<(h[1-6]|ul|ol|li|table|blockquote|strong|em|b|i|a|img|pre)\b/i.test(html);
           const mathLost = rich && hasMarkdownMath(text) && !/class="[^"]*katex|<math\b/i.test(html);
           if (!text || (rich && !mathLost)) return false;
           if (view.state.selection.$from.parent.type.spec.code || !looksLikeMarkdown(text)) return false;

@@ -92,3 +92,15 @@ it('turns pasted KaTeX into math nodes', () => {
   expect(editor.state.doc.textContent).toBe('Let  be');
   editor.destroy();
 });
+
+it('pastes a copy from a note as its HTML, not as the Markdown of its text', () => {
+  const editor = new Editor({ extensions: createSchemaExtensions({ ydoc: new Y.Doc(), placeholder: '' }).filter((e) => e.name !== 'collaboration') });
+  const paste = (data: Record<string, string>) => editor.view.someProp('handlePaste', (f) => f(editor.view, { clipboardData: { getData: (t: string) => data[t] ?? '' } } as unknown as ClipboardEvent, null as never));
+  // The text part of such a copy has "$…$" and quotes: read as Markdown it flattened the note.
+  const text = 'Zadanie 1\nSygnał $f_{max}$ i $f_p$\n> Przykład: $f_p$ = 1000 Hz';
+  expect(looksLikeMarkdown(text)).toBe(true);
+  expect(paste({ 'text/plain': text, 'text/html': '<h1>Zadanie 1</h1><p>Sygnał <span data-latex="f_{max}" data-type="inline-math"></span></p><blockquote><p>Przykład</p></blockquote>' })).toBeFalsy();
+  // An AI chat's copy whose HTML lost the formulas still goes through Markdown.
+  expect(paste({ 'text/plain': text, 'text/html': '<h1>Zadanie 1</h1><p>Sygnał f_max</p>' })).toBe(true);
+  editor.destroy();
+});
