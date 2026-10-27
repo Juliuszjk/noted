@@ -1,5 +1,6 @@
 import { Extension } from '@tiptap/core';
 import type { Editor } from '@tiptap/core';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import type { Node as PmNode } from '@tiptap/pm/model';
 
@@ -7,7 +8,11 @@ import type { Node as PmNode } from '@tiptap/pm/model';
 //  - list item: nest it one level deeper / move it one level up,
 //  - code block: two spaces at the start of the line (see code-extensions.ts),
 //  - paragraph / heading: the whole block moves right / left (attribute `indent`, levels
-//    0..MAX_INDENT); every block the selection touches.
+//    0..MAX_INDENT); every block the selection touches,
+//  - a whole list (its markers too) carries the same attribute on its outermost list node: Tab
+//    in an item that cannot nest (the first one) moves the list right, Shift+Tab in a top-level
+//    item moves it left before taking the item out of the list. A list started in an indented
+//    paragraph takes over its indent, and leaving such a list keeps it on the new paragraph.
 // Used by the Tab key (TextIndent) and the toolbar buttons. The Tab key inside a line (not at
 // its start, nothing selected) still types a tab character (shown 4 wide, see content.css);
 // Shift+Tab removes a tab right before the cursor first, and tabs typed at the start of a
@@ -28,6 +33,7 @@ export const MAX_INDENT = 8;
 // Width of one level.
 const INDENT_EM = 2;
 const INDENTED = ['paragraph', 'heading'];
+const LISTS = ['bulletList', 'orderedList', 'taskList'];
 
 const listItemType = (editor: Editor): string | null =>
   editor.isActive('taskItem') ? 'taskItem' : editor.isActive('listItem') ? 'listItem' : null;
@@ -62,6 +68,68 @@ const shiftBlocks = (tr: Transaction, by: number, dispatch: unknown): boolean =>
   return true;
 };
 
+// The outermost list around the selection's start: [position, node, depth], or null.
+const outerList = (tr: Transaction): [number, PmNode, number] | null => {
+  const { $from } = tr.selection;
+  for (let d = 1; d <= $from.depth; d++) {
+    if (LISTS.includes($from.node(d).type.name)) return [$from.before(d), $from.node(d), d];
+  }
+  return null;
+};
+
+// Moves the outermost list `by` levels; false when it cannot move that way.
+const shiftList = (tr: Transaction, by: number, dispatch: unknown): boolean => {
+  const found = outerList(tr);
+  if (!found) return false;
+  const [pos, list] = found;
+  const level = Number(list.attrs.indent) || 0;
+  if (by > 0 ? level >= MAX_INDENT : level <= 0) return false;
+  if (dispatch) tr.setNodeMarkup(pos, undefined, { ...list.attrs, indent: Math.max(0, Math.min(MAX_INDENT, level + by)) || null });
+  return true;
+};
+
+// The selection is in an item of the outermost list (not in a nested one).
+const inTopLevelItem = (tr: Transaction): boolean => {
+  const found = outerList(tr);
+  // list > item > paragraph
+  return !!found && tr.selection.$from.depth === found[2] + 2;
+};
+
+// Takes the item out of the list; the paragraph it leaves keeps the list's indent.
+const liftKeepingIndent = (editor: Editor, item: string): boolean => {
+  const level = Number(outerList(editor.state.tr)?.[1].attrs.indent) || 0;
+  return editor.chain().liftListItem(item).command(({ tr }) => {
+    const { $from } = tr.selection;
+    if (level && !['listItem', 'taskItem'].includes($from.node(-1).type.name) && INDENTED.includes($from.parent.type.name) && !$from.parent.attrs.indent) {
+      tr.setNodeMarkup($from.before(), undefined, { ...$from.parent.attrs, indent: level });
+    }
+    return true;
+  }).run();
+};
+
+// Paragraphs and headings inside list items carry no indent of their own (a list started in an
+// indented paragraph, a pasted list): the outermost list takes it over. [list position, level]
+// for every such list, and the blocks to clear.
+export const listIndentFixes = (doc: PmNode): { lists: [number, number][]; blocks: number[] } => {
+  const lists: [number, number][] = [];
+  const blocks: number[] = [];
+  doc.descendants((node, pos) => {
+    if (!LISTS.includes(node.type.name)) return !node.isTextblock;
+    let level = 0;
+    node.descendants((child, offset) => {
+      if (!child.isTextblock) return true;
+      if (INDENTED.includes(child.type.name) && child.attrs.indent > 0) {
+        if (!level) level = child.attrs.indent;
+        blocks.push(pos + 1 + offset);
+      }
+      return false;
+    });
+    if (level && !(node.attrs.indent > 0)) lists.push([pos, level]);
+    return false;
+  });
+  return { lists, blocks };
+};
+
 // Start positions of the text blocks touched by the selection.
 const blockStarts = (state: EditorState | Transaction): number[] => {
   const { from, to } = state.selection;
@@ -89,7 +157,11 @@ export const TextIndent = Extension.create({
           return true;
         }
         const item = listItemType(editor);
-        if (item) return can().sinkListItem(item) ? commands.sinkListItem(item) : true;
+        if (item) {
+          if (can().sinkListItem(item)) return commands.sinkListItem(item);
+          shiftList(tr, 1, dispatch);
+          return true;
+        }
         shiftBlocks(tr, 1, dispatch);
         return true;
       },
@@ -105,7 +177,10 @@ export const TextIndent = Extension.create({
           return true;
         }
         const item = listItemType(editor);
-        if (item) return can().liftListItem(item) ? commands.liftListItem(item) : true;
+        if (item) {
+          if (inTopLevelItem(tr) && shiftList(tr, -1, dispatch)) return true;
+          return can().liftListItem(item) ? commands.liftListItem(item) : true;
+        }
         if (tr.selection.empty) {
           // A tab right before the cursor first.
           const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 1), $from.parentOffset);
@@ -126,7 +201,7 @@ export const TextIndent = Extension.create({
 
   addGlobalAttributes() {
     return [{
-      types: INDENTED,
+      types: [...INDENTED, ...LISTS],
       attributes: {
         indent: {
           default: null,
@@ -162,10 +237,28 @@ export const TextIndent = Extension.create({
       'Shift-Tab': ({ editor }) => editor.commands.outdentContent(),
     };
   },
+
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: new PluginKey('listIndent'),
+      appendTransaction: (transactions, _old, state) => {
+        // Own edits only (changes arriving from other devices are theirs).
+        if (!transactions.some((t) => t.docChanged && !t.getMeta('y-sync$'))) return null;
+        const { lists, blocks } = listIndentFixes(state.doc);
+        if (!blocks.length) return null;
+        const tr = state.tr;
+        for (const pos of blocks) tr.setNodeMarkup(pos, undefined, { ...tr.doc.nodeAt(pos)!.attrs, indent: null });
+        for (const [pos, level] of lists) tr.setNodeMarkup(pos, undefined, { ...tr.doc.nodeAt(pos)!.attrs, indent: level });
+        return tr;
+      },
+    })];
+  },
 });
 
 // Backspace at the start of an indented block takes one level off first (like a text processor)
 // instead of joining it with the line above. Before the core keymap (priority 100), which joins.
+// Enter in an empty item of an indented list: the paragraph after the list stays indented
+// (the list items' own Enter, priority 100, would lift it to the margin).
 export const IndentBackspace = Extension.create({
   name: 'indentBackspace',
   priority: 200,
@@ -180,6 +273,15 @@ export const IndentBackspace = Extension.create({
           tr.setNodeMarkup($from.before(), undefined, { ...$from.parent.attrs, indent: level || null });
           return true;
         });
+      },
+      // Enter in an empty item of an indented list: the paragraph after it stays indented.
+      Enter: ({ editor }) => {
+        const { selection } = editor.state;
+        const item = listItemType(editor);
+        const tr = editor.state.tr;
+        if (!item || !selection.empty || selection.$from.parent.content.size || !inTopLevelItem(tr)) return false;
+        if (!(outerList(tr)?.[1].attrs.indent > 0) || selection.$from.node(-1).childCount !== 1) return false;
+        return liftKeepingIndent(editor, item);
       },
     };
   },

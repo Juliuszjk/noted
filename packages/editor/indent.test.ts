@@ -5,6 +5,8 @@ import StarterKit from '@tiptap/starter-kit';
 import { TaskList, TaskItem } from '@tiptap/extension-list';
 import { TextIndent, IndentBackspace } from './indent';
 import { CodeBlockIndent } from './code-extensions';
+import * as Y from 'yjs';
+import { createSchemaExtensions } from './extensions';
 
 let editor: Editor;
 afterEach(() => editor?.destroy());
@@ -74,10 +76,10 @@ describe('indent / outdent', () => {
     expect(html()).toBe('<ul><li><p>a</p><ul><li><p>b</p></li></ul></li></ul>');
     e.commands.outdentContent();
     expect(html()).toBe('<ul><li><p>a</p></li><li><p>b</p></li></ul>');
-    // The first item cannot be nested: nothing happens, no tab is typed.
+    // The first item cannot be nested: the whole list moves (see below), no tab is typed.
     e.commands.setTextSelection(3);
     e.commands.indentContent();
-    expect(html()).toBe('<ul><li><p>a</p></li><li><p>b</p></li></ul>');
+    expect(e.state.doc.textContent).toBe('ab');
   });
 
   it('uses two spaces in code blocks', () => {
@@ -87,5 +89,53 @@ describe('indent / outdent', () => {
     expect(e.state.doc.textContent).toBe('  x');
     e.commands.outdentContent();
     expect(e.state.doc.textContent).toBe('x');
+  });
+});
+
+describe('indented lists', () => {
+  const list = (attrs = '') => `<ul${attrs}><li><p>one</p></li><li><p>two</p></li></ul>`;
+  const indented = (level: number) => ` data-indent="${level}" style="margin-left: ${level * 2}em;"`;
+
+  it('Tab in the first item moves the whole list, Shift+Tab moves it back first', () => {
+    const e = make(list());
+    e.commands.setTextSelection(3);
+    e.commands.indentContent();
+    expect(html()).toBe(list(indented(1)));
+    e.commands.outdentContent();
+    expect(html()).toBe(list());
+    e.commands.outdentContent();
+    expect(html()).toBe('<p>one</p><ul><li><p>two</p></li></ul>');
+  });
+
+  it('nests a later item instead of moving the list', () => {
+    const e = make(list(indented(1)));
+    e.commands.setTextSelection(10);
+    e.commands.indentContent();
+    expect(html()).toBe(`<ul${indented(1)}><li><p>one</p><ul><li><p>two</p></li></ul></li></ul>`);
+  });
+
+  // The whole schema: list conversion and Enter come from other extensions.
+  const full = (content: string) => {
+    editor = new Editor({ extensions: createSchemaExtensions({ ydoc: new Y.Doc(), placeholder: '' }).filter((x) => x.name !== 'collaboration'), content });
+    return editor;
+  };
+
+  it('a list started in an indented paragraph takes over its indent', () => {
+    const e = full('<p data-indent="2">one</p>');
+    e.commands.setTextSelection(2);
+    e.commands.toggleBulletList();
+    expect(html()).toBe(`<ul${indented(2)}><li><p>one</p></li></ul>`);
+    e.commands.setTextSelection(1);
+    e.commands.insertContent('x');
+    e.commands.toggleTaskList();
+    expect(html()).toContain('data-type="taskList"');
+    expect(html()).toContain(indented(2));
+  });
+
+  it('Enter in the empty last item leaves the list with the indent kept', () => {
+    const e = full(`<ul${indented(1)}><li><p>one</p></li><li><p></p></li></ul><p>end</p>`);
+    e.commands.setTextSelection(10);
+    e.commands.keyboardShortcut('Enter');
+    expect(e.getHTML()).toBe(`<ul${indented(1)}><li><p>one</p></li></ul><p${indented(1)}></p><p>end</p>`);
   });
 });

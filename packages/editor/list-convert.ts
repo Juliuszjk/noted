@@ -42,7 +42,8 @@ const convertList = (schema: Schema, list: PMNode, kind: ListKind): PMNode => {
     const attrs = kind === 'taskList' ? { checked: item.type.name === 'taskItem' ? item.attrs.checked : false } : {};
     items.push(itemType.create(attrs, content, item.marks));
   });
-  return listType.create(kind === 'orderedList' && from === 'orderedList' ? list.attrs : null, items, list.marks);
+  const attrs = kind === 'orderedList' && from === 'orderedList' ? list.attrs : { indent: list.attrs.indent ?? null };
+  return listType.create(attrs, items, list.marks);
 };
 
 export const convertSelectedLists = (state: EditorState, tr: Transaction, kind: ListKind): boolean => {
