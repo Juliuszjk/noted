@@ -1,6 +1,6 @@
 [package]
 name = "noted"
-version = "0.1.10"
+version = "0.1.11"
 description = "Noted: encrypted notes"
 authors = ["Noted contributors"]
 license = "AGPL-3.0-or-later"
