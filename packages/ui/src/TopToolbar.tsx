@@ -46,7 +46,8 @@ const menuItem: CSSProperties = { display: 'block', width: '100%', padding: '6px
 // Dropdown under its button. Rendered into <body> and fixed to the window: inside the toolbar
 // (a sticky stacking context that scrolls sideways) WebKit cut it off and painted the note and
 // the tab bar over it. Kept inside the window, scrollable when taller than the space below. It
-// follows its button when the toolbar scrolls (clicking a half hidden button scrolls it).
+// follows its button when the toolbar scrolls (clicking a half hidden button scrolls it). Above
+// the table and drawing menus docked under the toolbar (toolbarStyle), which would hide it.
 function Drop({ open, children, width, fixedWidth }: { open: boolean; children: ReactNode; width?: number; fixedWidth?: number }) {
   const anchor = useRef<HTMLSpanElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -78,7 +79,7 @@ function Drop({ open, children, width, fixedWidth }: { open: boolean; children: 
         ref={box}
         data-toolbar-drop=""
         style={{
-          ...popoverStyle, position: 'fixed', top: pos?.top ?? -9999, left: pos?.left ?? 0, minWidth: width ?? 160, zIndex: 9000,
+          ...popoverStyle, position: 'fixed', top: pos?.top ?? -9999, left: pos?.left ?? 0, minWidth: width ?? 160, zIndex: 9999,
           ...(fixedWidth ? { width: fixedWidth, boxSizing: 'border-box' as const } : {}),
           maxHeight: pos ? window.innerHeight - pos.top - 8 : undefined, overflowY: 'auto',
         }}
