@@ -33,14 +33,19 @@ export const CODE_THEMES: CodeTheme[] = [
 
 export const codeThemeVars = (id: string | null | undefined): Record<string, string> | null => CODE_THEMES.find((t) => t.id === id)?.vars ?? null;
 
-// The languages a code block can be set to (ids of highlight.js / lowlight "common").
+// The languages a code block can be set to (grammars registered in code-block.ts).
 export const CODE_LANGUAGES: [id: string, label: string][] = [
-  ['plaintext', 'Plain text'], ['bash', 'Bash'], ['shell', 'Shell session'], ['c', 'C'], ['cpp', 'C++'], ['csharp', 'C#'], ['css', 'CSS'],
-  ['diff', 'Diff'], ['go', 'Go'], ['graphql', 'GraphQL'], ['xml', 'HTML / XML'], ['ini', 'INI / TOML'], ['java', 'Java'],
-  ['javascript', 'JavaScript'], ['json', 'JSON'], ['kotlin', 'Kotlin'], ['less', 'Less'], ['lua', 'Lua'], ['makefile', 'Makefile'],
-  ['markdown', 'Markdown'], ['objectivec', 'Objective-C'], ['perl', 'Perl'], ['php', 'PHP'], ['python', 'Python'], ['python-repl', 'Python REPL'],
-  ['r', 'R'], ['ruby', 'Ruby'], ['rust', 'Rust'], ['scss', 'SCSS'], ['sql', 'SQL'], ['swift', 'Swift'], ['typescript', 'TypeScript'],
-  ['vbnet', 'Visual Basic'], ['wasm', 'WebAssembly'], ['yaml', 'YAML'], ['arduino', 'Arduino'],
+  ['plaintext', 'Plain text'], ['arduino', 'Arduino'], ['armasm', 'ARM assembly'], ['x86asm', 'Assembly x86'], ['bash', 'Bash'], ['dos', 'Batch (cmd)'],
+  ['bnf', 'BNF'], ['c', 'C'], ['cpp', 'C++'], ['csharp', 'C#'], ['cmake', 'CMake'], ['css', 'CSS'], ['dart', 'Dart'], ['diff', 'Diff'],
+  ['dockerfile', 'Dockerfile'], ['ebnf', 'EBNF'], ['elixir', 'Elixir'], ['erlang', 'Erlang'], ['fsharp', 'F#'], ['glsl', 'GLSL'], ['go', 'Go'],
+  ['gradle', 'Gradle'], ['graphql', 'GraphQL'], ['groovy', 'Groovy'], ['haskell', 'Haskell'], ['xml', 'HTML / XML'], ['http', 'HTTP'],
+  ['ini', 'INI / TOML'], ['java', 'Java'], ['javascript', 'JavaScript'], ['json', 'JSON'], ['julia', 'Julia'], ['kotlin', 'Kotlin'],
+  ['latex', 'LaTeX'], ['less', 'Less'], ['lisp', 'Lisp'], ['lua', 'Lua'], ['makefile', 'Makefile'], ['markdown', 'Markdown'],
+  ['matlab', 'MATLAB / Octave (.m)'], ['mipsasm', 'MIPS assembly'], ['nginx', 'Nginx'], ['objectivec', 'Objective-C'], ['ocaml', 'OCaml'],
+  ['perl', 'Perl'], ['php', 'PHP'], ['powershell', 'PowerShell'], ['prolog', 'Prolog'], ['properties', 'Properties'], ['protobuf', 'Protocol Buffers'],
+  ['python', 'Python'], ['python-repl', 'Python REPL'], ['r', 'R'], ['ruby', 'Ruby'], ['rust', 'Rust'], ['scala', 'Scala'], ['scheme', 'Scheme'],
+  ['scss', 'SCSS'], ['shell', 'Shell session'], ['sql', 'SQL'], ['swift', 'Swift'], ['typescript', 'TypeScript'], ['verilog', 'Verilog'],
+  ['vhdl', 'VHDL'], ['vbnet', 'Visual Basic'], ['wasm', 'WebAssembly'], ['xaml', 'XAML'], ['yaml', 'YAML'],
 ];
 
 export const codeLanguageLabel = (id: string | null | undefined): string => CODE_LANGUAGES.find(([l]) => l === id)?.[1] ?? id ?? 'Plain text';

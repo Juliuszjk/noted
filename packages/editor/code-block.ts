@@ -1,6 +1,37 @@
 import type { Editor } from '@tiptap/core';
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
 import { createLowlight, common } from 'lowlight';
+import armasm from 'highlight.js/lib/languages/armasm';
+import bnf from 'highlight.js/lib/languages/bnf';
+import cmake from 'highlight.js/lib/languages/cmake';
+import dart from 'highlight.js/lib/languages/dart';
+import dockerfile from 'highlight.js/lib/languages/dockerfile';
+import dos from 'highlight.js/lib/languages/dos';
+import ebnf from 'highlight.js/lib/languages/ebnf';
+import elixir from 'highlight.js/lib/languages/elixir';
+import erlang from 'highlight.js/lib/languages/erlang';
+import fsharp from 'highlight.js/lib/languages/fsharp';
+import glsl from 'highlight.js/lib/languages/glsl';
+import gradle from 'highlight.js/lib/languages/gradle';
+import groovy from 'highlight.js/lib/languages/groovy';
+import haskell from 'highlight.js/lib/languages/haskell';
+import http from 'highlight.js/lib/languages/http';
+import julia from 'highlight.js/lib/languages/julia';
+import latex from 'highlight.js/lib/languages/latex';
+import lisp from 'highlight.js/lib/languages/lisp';
+import matlab from 'highlight.js/lib/languages/matlab';
+import mipsasm from 'highlight.js/lib/languages/mipsasm';
+import nginx from 'highlight.js/lib/languages/nginx';
+import ocaml from 'highlight.js/lib/languages/ocaml';
+import powershell from 'highlight.js/lib/languages/powershell';
+import prolog from 'highlight.js/lib/languages/prolog';
+import properties from 'highlight.js/lib/languages/properties';
+import protobuf from 'highlight.js/lib/languages/protobuf';
+import scala from 'highlight.js/lib/languages/scala';
+import scheme from 'highlight.js/lib/languages/scheme';
+import verilog from 'highlight.js/lib/languages/verilog';
+import vhdl from 'highlight.js/lib/languages/vhdl';
+import x86asm from 'highlight.js/lib/languages/x86asm';
 import { CODE_LANGUAGES, codeLanguageLabel, codeThemeVars } from './code-themes';
 
 // Code blocks with syntax colours (highlight.js grammars through lowlight, painted as
@@ -9,7 +40,17 @@ import { CODE_LANGUAGES, codeLanguageLabel, codeThemeVars } from './code-themes'
 // from a searchable list) and a Copy button. The node and its `language` attribute are
 // unchanged from StarterKit's code block, so older notes and devices read it as before.
 
-export const lowlight = createLowlight(common);
+const base = createLowlight({
+  ...common, armasm, bnf, cmake, dart, dockerfile, dos, ebnf, elixir, erlang, fsharp, glsl, gradle, groovy, haskell, http, julia, latex,
+  lisp, matlab, mipsasm, nginx, ocaml, powershell, prolog, properties, protobuf, scala, scheme, verilog, vhdl, x86asm,
+});
+// XAML is XML; the language of its own only gives it a name in the list.
+base.registerAlias({ xml: ['xaml'] });
+
+// Detection only tries the common languages: the small ones in the list above would win on
+// short snippets and recolour blocks that are already fine. They are picked by hand.
+const AUTO_SUBSET = Object.keys(common);
+export const lowlight: typeof base = { ...base, highlightAuto: (value, options) => base.highlightAuto(value, { ...options, subset: AUTO_SUBSET }) };
 
 // Detection needs a few lines to be sure; short snippets stay "plain text".
 const MIN_RELEVANCE = 5;

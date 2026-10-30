@@ -66,7 +66,9 @@ changing a feature. Full pre-trim copies: `docs/private/claude-md-full-*.md` (no
   `FreshColumnsTableView`. Touch: hold in a cell then drag = cell selection.
 - Code blocks (`code-block.ts`): CodeBlockLowlight (node `codeBlock`, attr `language`), bar with
   language picker ("Auto · X" via `detectCodeLanguage`) and Copy; colours `--code-*`; themes
-  `code-themes.ts`, prefs `codeTheme` / `codeThemeByLanguage`. Tab = 2 spaces.
+  `code-themes.ts`, prefs `codeTheme` / `codeThemeByLanguage`. Tab = 2 spaces. Language list
+  `CODE_LANGUAGES`: a new one also needs its grammar in `code-block.ts` (Mathematica left out: 150 KB);
+  detection stays on lowlight's `common` set, the extra languages are picked by hand.
 - Callout (`callout.ts`, variant / icon / color, drawn by CSS; inside a list wraps the outermost
   list). Math: `$$x$$` inline, `$$$x$$$` block; edit UI through `onEditMath` / `requestMathEdit`
   / `commitMathEdit`.
