@@ -12,8 +12,9 @@ Engines in the browser tests:
   go through the same calls as `print_pdf`. It has no real mouse: layout, PDF and DOM-event checks only.
 - **Firefox**: for the guests of live pages; the editor, exports and SVG run there too.
 
-Tests live in `apps/release-check/tests/`. Fix commit in brackets: reverting that fix makes the
-test fail (checked by hand when the test was written).
+Tests live in `apps/release-check/tests/`. Fix commit in brackets: reverting that fix made the test
+fail when it was written, except the two rows marked "guard", which pass without their fix because
+something else also holds the behaviour.
 
 ## Editor interactions
 
