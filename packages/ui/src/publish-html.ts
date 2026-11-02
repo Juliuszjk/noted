@@ -80,6 +80,8 @@ export const buildPublishedNote = async (editorDom: HTMLElement): Promise<{ html
     const label = chip.querySelector('span');
     if (label) label.textContent = reminderDateLabel({ at, repeat: isReminderRepeat(repeat) ? repeat : null, done });
   });
+  // A tick is a property of the box: without the attribute the HTML below loses it.
+  clone.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((box) => box.toggleAttribute('checked', box.checked));
   // Decrypted images are object URLs of this page: put the bytes into the copy.
   await Promise.all(Array.from(clone.querySelectorAll('img')).map(async (img) => {
     const src = img.getAttribute('src') ?? '';

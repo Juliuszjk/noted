@@ -207,6 +207,8 @@ export const markPrintCopy = (root: HTMLElement) => {
     if (root.classList.contains(name)) root.classList.remove(name);
     root.querySelectorAll(`.${name}`).forEach((el) => el.classList.remove(name));
   }
+  // A tick is a property of the box: copied as HTML (the phone's PDF page) it was lost.
+  root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((box) => box.toggleAttribute('checked', box.checked));
   root.querySelectorAll('.code-block').forEach((block) => {
     if ((block.querySelector('pre')?.textContent ?? '').split('\n').length > PAGE_LINES) block.classList.add('code-block-long');
   });
