@@ -113,7 +113,7 @@ test.describe('paste', () => {
     await openNote(page, '<p></p>');
     await page.evaluate(() => (window as any).__h.editor().commands.focus('end'));
     await page.waitForFunction(() => (window as any).__h.editor().isFocused);
-    await paste(page, { 'text/html': '<p>Picture <img src="http://127.0.0.1:9/never.png"></p>', 'text/plain': 'Picture' });
+    await paste(page, { 'text/html': '<p>Picture <img src="https://example.com/never.png"></p>', 'text/plain': 'Picture' });
     await page.waitForTimeout(200);
     expect(outside).toEqual([]);
     expect(await page.locator('.ProseMirror img[src*="never.png"]').count()).toBe(0);

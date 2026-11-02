@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import { artifact } from './helpers';
@@ -45,11 +45,10 @@ export const pictureDifference = (a: string, b: string): number => {
     return out;
   });
   try {
-    const out = execFileSync('compare', ['-metric', 'RMSE', ...blurred, 'null:'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    return parseRmse(out);
-  } catch (e: any) {
-    // compare exits 1 when the pictures differ and prints the metric on stderr.
-    return parseRmse(String(e.stderr ?? ''));
+    // compare exits 0 for identical pictures and 1 when they differ; 2 is a real error.
+    const result = spawnSync('compare', ['-metric', 'RMSE', ...blurred, 'null:'], { encoding: 'utf8' });
+    if (result.status === 2 || result.status === null) throw new Error(`compare failed: ${result.stderr}`);
+    return parseRmse(`${result.stdout}${result.stderr}`);
   } finally {
     blurred.forEach((file) => rmSync(file, { force: true }));
   }

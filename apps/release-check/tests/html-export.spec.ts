@@ -54,13 +54,13 @@ test.describe('HTML export', () => {
     await expect(page.getByText('HIDDENOUTLINE')).toBeVisible();
   });
 
-  test('printed, the file does not leave folded text out', async ({ page, browserName }) => {
+  test('printed, what the reader folded stays folded', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'page.pdf is Chromium only');
     await openHarness(page, 'collapsed');
     const { url } = await save(page, 'collapsed-print');
     await page.goto(url);
     await page.emulateMedia({ media: 'print' });
-    // A reader's choice: what they folded stays folded when they print. Recorded, not judged.
+    // A reader's choice: what they folded stays folded when they print.
     expect(await page.getByText('HIDDENPARAGRAPH').isVisible()).toBe(false);
   });
 

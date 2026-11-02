@@ -30,6 +30,8 @@ def wait(start):
     box = {}
 
     def done(value=None, error=None):
+        if box:  # A failed print also reports "finished": the first answer counts.
+            return
         box.update(value=value, error=error)
         loop.quit()
 

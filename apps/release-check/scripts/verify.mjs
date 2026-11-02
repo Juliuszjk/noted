@@ -20,6 +20,8 @@ const repo = path.resolve(checkDir, '../..');
 const args = process.argv.slice(2);
 const quick = args.includes('--quick');
 const only = args.find((a) => a.startsWith('--only='))?.slice(7).split(',');
+// The browser tests run on the bundles, so they are never tested stale.
+if (only?.includes('browser') && !only.includes('bundles')) only.push('bundles');
 
 const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
 // Everything generated stays under dist/: ignored by git and left out of the server deploy's rsync.
@@ -63,7 +65,7 @@ const vitest = (dir) => () => run(`vitest-${dir.replace('/', '-')}`, path.join(r
 
 const steps = [
   { id: 'preflight', title: 'Tools and browsers are here', action: async () => {
-    const missing = ['pdftotext', 'pdfinfo', 'pdffonts', 'pdftoppm', 'compare'].filter((tool) => spawnSync('which', [tool]).status !== 0);
+    const missing = ['pdftotext', 'pdfinfo', 'pdffonts', 'pdftoppm', 'compare', 'magick'].filter((tool) => spawnSync('which', [tool]).status !== 0);
     const installed = existsSync(browsers) ? readdirSync(browsers) : [];
     for (const browser of ['chromium', 'firefox']) if (!installed.some((name) => name.startsWith(`${browser}-`))) missing.push(`${browser} (run: pnpm verify:release:setup)`);
     // Like CI: no built-in server address. An existing file stays untouched.
@@ -138,7 +140,7 @@ const browserFacts = () => {
       for (const test of spec.tests ?? []) {
         const name = `[${test.projectName}] ${path.basename(spec.file ?? suite.file ?? '')}: ${[...trail, spec.title].join(' > ')}`;
         const last = test.results.at(-1);
-        const notes = (test.annotations ?? []).filter((a) => a.type === 'known-app-issue');
+        const notes = (test.annotations ?? []).filter((a) => a.type === 'known-app-issue' || a.type === 'fail').map((a) => ({ description: a.description ?? name }));
         if (test.status === 'skipped') facts.skipped.push(`${name}${test.annotations?.find((a) => a.type === 'skip')?.description ? ` (${test.annotations.find((a) => a.type === 'skip').description})` : ''}`);
         else if (test.status === 'expected' && notes.length) facts.known.push(...notes.map((n) => n.description));
         else if (test.status === 'expected') facts.passed++;
@@ -160,7 +162,7 @@ const listFiles = (dir, base = dir) => (existsSync(dir) ? readdirSync(dir).flatM
 
 const facts = browserFacts();
 const failedSteps = outcomes.filter((o) => o.status === 'FAILED');
-const verdict = failedSteps.length ? 'FAILED' : only ? 'PASSED (partial run, --only)' : outcomes.some((o) => o.status === 'skipped') ? 'PASSED, with steps skipped' : 'PASSED';
+const verdict = failedSteps.length ? 'FAILED' : only ? 'PASSED (partial run, --only)' : outcomes.some((o) => o.status === 'skipped') || facts.skipped.some((name) => name.includes('WebKitGTK')) ? 'PASSED, with steps skipped' : 'PASSED';
 const lines = [
   `# Release check ${stamp}`,
   '',

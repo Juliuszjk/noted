@@ -53,7 +53,7 @@ test.describe('static publishing', () => {
     const { url } = await publishStatic(page);
     const reader = await context.newPage();
     await reader.goto(`${url.split('#')[0]}#${'A'.repeat(43)}`);
-    await expect(reader.locator('#status')).toBeVisible();
+    await expect(reader.locator('#status')).toHaveText('This link does not open this note (wrong key).');
     await expect(noteFrame(reader).getByText('Alpha text under one.')).toHaveCount(0);
   });
 

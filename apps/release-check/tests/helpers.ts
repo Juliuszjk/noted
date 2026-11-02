@@ -1,5 +1,5 @@
 import { test as base, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -18,16 +18,33 @@ const LOOPBACK = /^(https?|wss?):\/\/(127\.0\.0\.1|localhost)(:\d+)?\//;
 
 // Every test runs behind this guard: a page that reaches past loopback fails the test, and
 // the request never leaves the machine.
+export const guardContext = async (context: BrowserContext, seen: string[]) => {
+  await context.route(/^https?:\/\//, (route) => {
+    const url = route.request().url();
+    if (LOOPBACK.test(url)) return route.fallback();
+    seen.push(url);
+    return route.abort();
+  });
+  await context.routeWebSocket(/.*/, (socket) => {
+    if (LOOPBACK.test(socket.url())) return void socket.connectToServer();
+    seen.push(socket.url());
+    return socket.close();
+  });
+};
+
 export const test = base.extend<{ outside: string[] }>({
-  outside: [async ({ context }, use, info) => {
+  outside: [async ({ context, browser }, use, info) => {
     const seen: string[] = [];
-    await context.route(/^https?:\/\//, (route) => {
-      const url = route.request().url();
-      if (LOOPBACK.test(url)) return route.fallback();
-      seen.push(url);
-      return route.abort();
-    });
+    await guardContext(context, seen);
+    // Contexts a test makes itself sit behind the same guard.
+    const newContext = browser.newContext.bind(browser);
+    browser.newContext = async (options) => {
+      const made = await newContext(options);
+      await guardContext(made, seen);
+      return made;
+    };
     await use(seen);
+    browser.newContext = newContext;
     expect(seen, `requests past loopback in "${info.title}"`).toEqual([]);
   }, { auto: true }],
 });

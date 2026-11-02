@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { firefox } from '@playwright/test';
-import { test, expect, openHarness, ARTIFACTS } from './helpers';
+import { test, expect, guardContext, openHarness, ARTIFACTS } from './helpers';
 import { chromiumPdf, isA4, pdfInfo, pdfPngs, pdfText, pictureDifference } from './pdf';
 import { noteState, phonePdf } from './phone';
 
@@ -38,7 +38,7 @@ test('the real WebKitGTK engine is available', () => {
 test.describe('headings wrap the same on every engine', () => {
   // 7a6e88f: the phone's PDF page lacked the editor's text styles, a double space collapsed
   // there and a heading fitted one line instead of two, so the pages broke elsewhere too.
-  test('Chromium, the phone PDF page, Firefox and WebKitGTK', async ({ page, browser }) => {
+  test('Chromium, the phone PDF page, Firefox and WebKitGTK', async ({ page, browser, outside }) => {
     await openHarness(page, 'wrap');
     const chromium: Sheet[] = await page.evaluate(() => (window as any).__h.sheets());
     const lines = headings(chromium);
@@ -51,7 +51,9 @@ test.describe('headings wrap the same on every engine', () => {
     await phone.context.close();
 
     const gecko = await firefox.launch();
-    const firefoxPage = await gecko.newPage({ baseURL: 'http://127.0.0.1:47321', viewport: { width: 1280, height: 820 } });
+    const firefoxContext = await gecko.newContext({ baseURL: 'http://127.0.0.1:47321', viewport: { width: 1280, height: 820 } });
+    await guardContext(firefoxContext, outside);
+    const firefoxPage = await firefoxContext.newPage();
     await openHarness(firefoxPage, 'wrap');
     const inFirefox: Sheet[] = await firefoxPage.evaluate(() => (window as any).__h.sheets());
     await gecko.close();
