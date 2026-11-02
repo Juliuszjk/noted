@@ -274,6 +274,13 @@ export const IndentBackspace = Extension.create({
           return true;
         });
       },
+      // Shift+Tab in a top-level item of an indented list moves the list back first (the list
+      // items' own Shift+Tab, priority 100, took the item out of the list).
+      'Shift-Tab': ({ editor }) => {
+        const tr = editor.state.tr;
+        if (!listItemType(editor) || !inTopLevelItem(tr) || !(outerList(tr)?.[1].attrs.indent > 0)) return false;
+        return editor.commands.outdentContent();
+      },
       // Enter in an empty item of an indented list: the paragraph after it stays indented.
       Enter: ({ editor }) => {
         const { selection } = editor.state;
