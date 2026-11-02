@@ -4,7 +4,9 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "verify:release": "node apps/release-check/scripts/verify.mjs",
+    "verify:release:setup": "pnpm --filter release-check run setup"
   },
   "devDependencies": {
     "turbo": "latest"
