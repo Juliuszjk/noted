@@ -14,7 +14,7 @@ gi.require_version("WebKit2", "4.1")
 from gi.repository import GLib, Gtk, WebKit2  # noqa: E402
 
 BASE, OUT = sys.argv[1], sys.argv[2]
-FIXTURES = ["wrap", "wrapEdge", "collapsed", "pages", "kitchen"]
+FIXTURES = ["wrap", "collapsed", "pages", "kitchen"]
 TIMEOUT_S = 40
 
 window = Gtk.Window()

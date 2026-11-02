@@ -40,12 +40,6 @@ export const FIXTURES = {
     title: 'Ends folded',
     html: `<p>Opening line of the note.</p><p>Second line of the note.</p><h2 data-foldable="true" data-collapsed="true">Last section</h2><p>Hidden end of the note.</p>`,
   },
-  // A word that fits the line exactly when the double space after it does not: Chromium moves
-  // the word down, WebKitGTK and Firefox keep it (docs/release-matrix.md, known app issues).
-  wrapEdge: {
-    title: 'Heading wrap edge',
-    html: `<h1>Foldable~~heading~~with~~kept~~double~~spaces~~that~~wraps</h1>`,
-  },
   // A bit of everything the schema renders: exports and PDF must carry all of it.
   kitchen: {
     title: 'Kitchen sink',

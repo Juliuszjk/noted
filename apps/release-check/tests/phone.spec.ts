@@ -71,17 +71,16 @@ test.describe('tap targets', () => {
     await page.screenshot({ path: artifact('phone', 'toolbar.png') });
   });
 
-  // Known app issue (docs/release-matrix.md, "Known app issues"): the box is 17 x 26 CSS px, below
-  // the 24 px minimum of WCAG 2.2, and far below the fold arrows. A UI decision for the owner;
-  // `test.fail` turns this test red the day the target grows, so the note can go.
   test('task boxes are big enough for a finger', async ({ page }) => {
-    test.info().annotations.push({ type: 'known-app-issue', description: 'Task box tap target: about 17 x 26 CSS px on the phone (WCAG 2.2 minimum 24 x 24)' });
-    test.fail();
     await openPhoneEditor(page, await noteState(page, 'kitchen'));
     const area = await hitArea(page, 'ul[data-type="taskList"] label');
     console.log(`task box hit area: ${area.width} x ${area.height}`);
-    expect(area.width).toBeGreaterThanOrEqual(24);
-    expect(area.height).toBeGreaterThanOrEqual(24);
+    expect(area.width).toBeGreaterThanOrEqual(32);
+    expect(area.height).toBeGreaterThanOrEqual(32);
+    const box = page.locator('ul[data-type="taskList"] input').first();
+    const before = await box.isChecked();
+    await page.touchscreen.tap(area.left + 2, area.cy);
+    await expect(box).toBeChecked({ checked: !before });
   });
 });
 

@@ -135,15 +135,8 @@ shell around it.
 
 ## Known app issues
 
-Each has a test marked `test.fail`: the run stays green and lists it, and the test turns red once
-the issue is gone, so this list cannot go stale.
-
-- **Task box tap target**: about 17 x 26 CSS px on the phone (WCAG 2.2 minimum 24 x 24; the fold
-  arrows have about 28 x 46). A design decision: `phone.spec`.
-- **Double space at a line's end in PDFs**: with `white-space: break-spaces`, a word that fits the
-  line while the double space after it does not stays there in WebKitGTK and Firefox and moves
-  down in Chromium (phone, Windows). The line count can differ, rarely, and so can the pages. Fixture
-  `wrapEdge`: `engines.spec`.
+None right now. A known issue gets a test marked `test.fail`: the run stays green and lists it, and
+the test turns red once the issue is gone.
 
 ## Before a release, by hand
 

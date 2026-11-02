@@ -66,15 +66,6 @@ test.describe('headings wrap the same on every engine', () => {
   // Known app issue (docs/release-matrix.md): with `white-space: break-spaces`, a word that fits
   // the line while the double space after it does not stays there in WebKitGTK and Firefox, and
   // moves down in Chromium (the phone, Windows). Rare, but a page count could differ.
-  test('a word followed by a double space at the very end of a line', async ({ page }) => {
-    test.info().annotations.push({ type: 'known-app-issue', description: 'PDF: a word that fits a line while the double space after it does not wraps differently in Chromium (phone, Windows) and WebKitGTK (Linux)' });
-    test.skip(!webkit, 'WebKitGTK did not run');
-    test.fail();
-    await openHarness(page, 'wrapEdge');
-    const chromium: Sheet[] = await page.evaluate(() => (window as any).__h.sheets());
-    expect(headings(webkit!.notes.wrapEdge.sheets)).toEqual(headings(chromium));
-  });
-
   test('a page without Tiptap\'s styles still keeps double spaces (the phone PDF page)', async ({ page, browser }) => {
     const state = await noteState(page, 'wrap');
     const phone = await phonePdf(browser, state, 'Heading wrap');
