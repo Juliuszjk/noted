@@ -72,7 +72,8 @@ export const FOLD_TOGGLE = 'notedFoldToggle';
 // Dispatches a fold toggle of the heading / list item at `pos` and keeps it where it was on
 // the screen: text folding around it, or the browser's scroll anchoring, moved the page.
 export const toggleInPlace = (view: EditorView, pos: number, tr: Transaction) => {
-  const top = () => (view.nodeDOM(pos) as Element | null)?.getBoundingClientRect?.().top ?? null;
+  // The frame below can come after the note was closed.
+  const top = () => (view.isDestroyed ? null : (view.nodeDOM(pos) as Element | null)?.getBoundingClientRect?.().top ?? null);
   const before = top();
   view.dispatch(tr.setMeta(FOLD_TOGGLE, true));
   if (before === null) return;
