@@ -1,0 +1,28 @@
+{
+  "name": "release-check",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "esbuild": "0.28.2"
+  },
+  "dependencies": {
+    "@noted/config": "workspace:*",
+    "@noted/crypto": "workspace:*",
+    "@noted/editor": "workspace:*",
+    "@noted/media": "workspace:*",
+    "@noted/sync": "workspace:*",
+    "@noted/theme": "workspace:*",
+    "@noted/ui": "workspace:*",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "yjs": "^13.6.33",
+    "@tiptap/core": "^3.31.4"
+  },
+  "scripts": {
+    "build:harness": "node scripts/build-harness.mjs",
+    "setup": "node scripts/setup.mjs",
+    "e2e": "playwright test"
+  }
+}

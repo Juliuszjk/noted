@@ -1,0 +1,6 @@
+/* Only what the app shell gives a note: a scrolling page with room for the fold arrows. */
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg-base); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+#root { overflow-y: auto; }
+.harness-note { max-width: 760px; margin: 0 auto; padding: 32px 48px 120px; box-sizing: border-box; }
+.harness-measure { position: fixed; left: 0; top: 0; visibility: hidden; pointer-events: none; }
