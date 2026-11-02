@@ -130,18 +130,27 @@ test.describe('paste', () => {
   });
 });
 
-// d3b1720: a copy from a note holding formulas came back as Markdown with its formatting lost.
-test('copy and paste inside a note keeps formulas and formatting', async ({ page, browserName, context }) => {
+// d3b1720: the text of a copy holding formulas has "$...$" and quotes, so it was read as Markdown
+// and the pasted copy lost its headings and quotes.
+test('copy and paste inside a note keeps formulas, headings and quotes', async ({ page, browserName, context }) => {
   test.skip(browserName !== 'chromium', 'needs the real clipboard');
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-  await openNote(page, '<p>Bold <strong>word</strong> and <span data-type="inline-math" data-latex="x^2"></span> end</p><p>Target:</p>');
-  await placeCursor(page, 'Bold', 0);
-  await page.keyboard.press('Shift+End');
+  const formula = (latex: string) => `<span data-type="inline-math" data-latex="${latex}"></span>`;
+  await openNote(page, `<h1>Task one</h1><p>Signal ${formula('f_{max}')} and ${formula('f_p')}</p><blockquote><p>Example ${formula('f_p')} here</p></blockquote><p>Target:</p>`);
+  await page.evaluate(() => {
+    const editor = (window as any).__h.editor();
+    let end = 0;
+    editor.state.doc.descendants((node: any, pos: number) => { if (node.type.name === 'blockquote') end = pos + node.nodeSize - 2; });
+    editor.commands.focus();
+    editor.commands.setTextSelection({ from: 1, to: end });
+  });
+  await page.waitForFunction(() => (window as any).__h.editor().isFocused);
   await page.keyboard.press('Control+c');
   await placeCursor(page, 'Target:', 7);
   await page.keyboard.press('Enter');
   await page.keyboard.press('Control+v');
   const text = await html(page);
-  expect(text.split('<strong>word</strong>')).toHaveLength(3);
-  expect(text.split('data-latex="x^2"')).toHaveLength(3);
+  expect(text.split('<h1>')).toHaveLength(3);
+  expect(text.split('<blockquote>')).toHaveLength(3);
+  expect(text.split('data-latex="f_p"')).toHaveLength(5);
 });
