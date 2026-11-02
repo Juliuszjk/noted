@@ -30,6 +30,7 @@ apps/mobile    Expo, Android. Editor = WebView page (apps/mobile/editor). SQLite
 apps/api       Hono + better-sqlite3 + ws, Docker (self-hosted).
 apps/web       guest page of live published notes (esbuild -> apps/api/src/live.generated.ts)
 apps/mcp       MCP server for Claude Code (Node 22+, node:sqlite; esbuild -> dist/noted-mcp.mjs)
+apps/release-check  release pipeline: harness around the real editor, browser tests (not shipped)
 packages/crypto   XChaCha20-Poly1305 (@noble/ciphers), Argon2id + HKDF (@noble/hashes 1.8)
 packages/sync     Yjs merge, API client, sync engine, editor bridge, backups, import/export
 packages/editor   Tiptap schema (single source of truth), slash menu, toolbar model, content.css
@@ -67,6 +68,24 @@ packages/types, media (WebP compression), theme (Material 3 -> CSS variables); d
 - **Updates** only in CI builds (`VITE_NOTED_UPDATES` / `EXPO_PUBLIC_NOTED_UPDATES`): desktop
   `src/updates.ts` (tauri-plugin-updater, signed `latest.json`), phone `src/updates.ts` (GitHub
   latest release). Repo address: `RELEASES_PAGE` / `LATEST_RELEASE_API` in `@noted/config`.
+
+## Release check
+
+Run **`pnpm verify:release`** before every release (it is the release verification command) and
+after changes to the editor, PDF, exports or publishing. About 2 minutes (the first `cargo check`
+in a checkout about 1 more); exit code 1 = something failed.
+
+- First time in a checkout: `pnpm install`, then `pnpm verify:release:setup` (downloads Chromium
+  and Firefox into `apps/release-check/dist/browsers`, the only step that uses the network).
+- Report and artifacts (PDFs, exported HTML, screenshots, logs):
+  `apps/release-check/dist/runs/latest/report.md`. `--quick` skips cargo, `--only=browser` runs
+  one step, `--list` lists them.
+- Safe at any time: no push, no publish, nothing installed; browser tests block everything past
+  127.0.0.1 and use a throwaway local API. Never add `build-apk.sh` to it (it runs `adb install`).
+- The real WebKitGTK runs headless through `weston` and python-gobject (WebKit2 4.1), offscreen; without
+  them those tests show as skipped, which is not a pass for the Linux app.
+- `docs/release-matrix.md`: what is automated, what stays manual before a release, known app
+  issues. A known issue is a `test.fail` test: it turns red once the issue is fixed.
 
 ## Server
 
