@@ -143,6 +143,23 @@ describe('MCP tools', () => {
     expect((await call('read_note', { id: ids.lecture })).text).not.toContain('Semestr 5');
   });
 
+  it('marks an existing note as Claude\'s and moves notebooks', async () => {
+    await call('update_note_properties', { id: ids.lecture, created_by_claude: true });
+    const state = async () => docFromSealed(key, (await stores.notes.get(ids.lecture))!.yjs_state);
+    expect(getNoteCreatedBy(await state())).toBe('claude');
+    await call('update_note_properties', { id: ids.lecture, created_by_claude: false });
+    expect(getNoteCreatedBy(await state())).toBe(null);
+    await call('create_note', { title: 'S3', markdown: 'x', notebooks: ['Uni/Semestr 3/Java'] });
+    expect((await call('move_notebook', { notebook: 'Uni/Semestr 3', into: 'Uni/Rok 2' })).text).toBe('Moved.');
+    expect((await call('list_notes', { notebook: 'Uni/Rok 2/Semestr 3/Java' })).text).toContain('S3');
+    expect((await call('move_notebook', { notebook: 'Uni', into: 'Uni/Rok 2' })).isError).toBe(true);
+    expect((await call('move_notebook', { notebook: 'Uni', into: 'Uni/Nowy' })).isError).toBe(true);
+    expect((await call('list_notebooks_tags')).text).not.toContain('Nowy');
+    expect((await call('move_notebook', { notebook: 'Uni/Rok 2', into: 'Protected' })).isError).toBe(true);
+    await call('move_notebook', { notebook: 'Uni/Rok 2', into: '' });
+    expect((await call('list_notebooks_tags')).text).toMatch(/^- Rok 2 /m);
+  });
+
   it('asks for a path when several sub-notebooks share a name', async () => {
     await call('create_note', { title: 'A', markdown: 'x', notebooks: ['Semestr 5/Lab'] });
     await call('create_note', { title: 'B', markdown: 'x', notebooks: ['Semestr 6/Lab'] });

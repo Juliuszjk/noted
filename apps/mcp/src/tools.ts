@@ -4,7 +4,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { JSONContent } from '@tiptap/core';
 import {
   ensureCatalogEntry, ensureNotebookPath, getNoteFlag, getNoteNotebooks, getNoteTags, getSharedEditorPrefs, listCatalog, listNotebookTree,
-  listOwnReminders, markNoteCreated, notebookSubtree, noteBodyJson, noteBodyText, resolveNotebookPath, setNoteBodyJson, setNoteCreatedBy, setNoteFlag,
+  getNoteSettings, listOwnReminders, markNoteCreated, notebookSubtree, noteBodyJson, noteBodyText, resolveNotebookPath, setNoteBodyJson, setNoteCreatedBy,
+  setNotebookParent, setNoteFlag,
   setNoteNotebook, setNoteTag, setOwnReminder, setTitle, splitNotebookPath, updateReminderInDoc,
 } from '@noted/sync';
 import type { LocalBlobStore, NotebookNode, NoteMeta, OwnReminder } from '@noted/sync';
@@ -361,7 +362,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
 
   server.registerTool('update_note_properties', {
     title: 'Change note properties',
-    description: 'Title, notebooks / tags (by name, created when missing; a notebook may be a path like "Linux/TODO"), pinned, favorite, archived.',
+    description: 'Title, notebooks / tags (by name, created when missing; a notebook may be a path like "Linux/TODO"), pinned, favorite, archived, created_by_claude (the apps mark such notes; set it only on notes Claude wrote).',
     inputSchema: {
       id: z.string(),
       title: z.string().optional(),
@@ -372,6 +373,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
       pinned: z.boolean().optional(),
       favorite: z.boolean().optional(),
       archived: z.boolean().optional(),
+      created_by_claude: z.boolean().optional(),
     },
   }, (args) => run(async () => {
     const { doc, before } = await editable(args.id);
@@ -388,7 +390,30 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
       if (e && getNoteTags(doc).includes(e.id)) setNoteTag(doc, e.id, false);
     }
     for (const flag of ['pinned', 'favorite', 'archived'] as const) if (args[flag] !== undefined) setNoteFlag(doc, flag, args[flag]!);
+    if (args.created_by_claude === true) setNoteCreatedBy(doc, 'claude');
+    else if (args.created_by_claude === false) doc.transact(() => getNoteSettings(doc).delete('createdBy'));
     return saved(args.id, doc, 'update_note_properties', before, 'Updated.');
+  }, true));
+
+  server.registerTool('move_notebook', {
+    title: 'Move a notebook',
+    description: 'Moves a notebook (with its notes and sub-notebooks) inside another notebook, by name or path like "Studia/Rok 2" (created when missing); an empty `into` moves it to the top level.',
+    inputSchema: { notebook: z.string(), into: z.string() },
+  }, (args) => run(async () => {
+    const n = await names();
+    const source = findNotebook(n.notebooks, n.cat, n.prot, args.notebook);
+    if (!source) return text(`No notebook "${args.notebook.trim()}".`, true);
+    // Refused before catalogIds creates any missing level of `into`.
+    const below = notebookSubtree(n.notebooks, source.id);
+    const target = args.into.trim() ? findNotebook(n.notebooks, n.cat, n.prot, args.into) : undefined;
+    const reached = target ? [target] : resolveNotebookPath(n.cat, splitNotebookPath(args.into));
+    if (reached.some((e) => below.has(e.id))) return text('A notebook cannot go inside itself or one of its sub-notebooks.', true);
+    const parent = args.into.trim() ? (await catalogIds('notebooks', [args.into]))[0] : null;
+    let moved = false;
+    await notes.writeCatalog((cat) => { moved = setNotebookParent(cat, source.id, parent); });
+    if (!moved) return text('A notebook cannot go inside itself or one of its sub-notebooks.', true);
+    await notes.sync(true);
+    return text('Moved.');
   }, true));
 
   server.registerTool('undo_last_change', {
