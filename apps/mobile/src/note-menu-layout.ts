@@ -1,12 +1,13 @@
 import * as SecureStore from 'expo-secure-store';
 import {
   mdiPin, mdiStarOutline, mdiArchiveArrowDownOutline, mdiPencilOffOutline, mdiLockOutline, mdiSpellcheck, mdiBookOutline,
-  mdiPound, mdiVectorLink, mdiContentCopy, mdiShareVariantOutline, mdiContentDuplicate, mdiMagnify, mdiExportVariant,
+  mdiPound, mdiVectorLink, mdiContentCopy, mdiContentDuplicate, mdiMagnify, mdiExportVariant,
   mdiPaperclip, mdiHistory, mdiWeb,
 } from '@mdi/js';
 
 // Settings > Note menu: which switches and actions the note menu shows, and in what order
 // (this phone only). "Move to trash" (or Restore / Delete forever in the trash) always comes last.
+// Ids no longer listed here (the old "share") are dropped from a stored layout when it is read.
 
 export interface MenuItemDef {
   id: string;
@@ -28,7 +29,6 @@ export const MENU_ACTIONS: MenuItemDef[] = [
   { id: 'tag', label: 'Add tag', icon: mdiPound },
   { id: 'links', label: 'Links', icon: mdiVectorLink },
   { id: 'copy', label: 'Copy', icon: mdiContentCopy },
-  { id: 'share', label: 'Share', icon: mdiShareVariantOutline },
   { id: 'duplicate', label: 'Duplicate', icon: mdiContentDuplicate },
   { id: 'find', label: 'Find in note', icon: mdiMagnify },
   { id: 'export', label: 'Export', icon: mdiExportVariant },

@@ -144,10 +144,10 @@ default. A new server needs a setup code to create its vault; local-only mode = 
 - Body: XmlFragment `default`. Title: Y.Text `title` (`note-meta.ts`).
 - Y.Map `settings` (absent = off): `pinned`, `favorite`, `archived`, `readOnly`, `noSpellcheck`,
   `trashedAt`, `deleted` (tombstone), `font`, `createdAt`, `published`, `locked`, `autoTitled`,
-  legacy `notebook`. Y.Maps `tags` and `notebooks` (id -> true; several notebooks per note).
+  `createdBy` ('claude' from the MCP), legacy `notebook`. Y.Maps `tags` and `notebooks` (id -> true; several notebooks per note).
 - The sealed `content` column holds **note meta JSON** (`buildNoteMeta(doc)`), never HTML.
-- Catalog (`catalog.ts`): hidden note `noted-catalog` (notebooks, tags, vault, prefs,
-  reminders). **`isSystemNote(id)` must keep it out of every list.** Create entries one at a time.
+- Catalog (`catalog.ts`): hidden note `noted-catalog` (notebooks, `notebookParents` = sub-notebooks,
+  tags, vault, prefs, reminders). **`isSystemNote(id)` must keep it out of every list.** Create entries one at a time.
 
 ## Editor
 

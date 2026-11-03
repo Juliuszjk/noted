@@ -6,7 +6,8 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { generateKey, seal } from '@noted/crypto';
 import {
-  buildNoteMeta, CATALOG_ID, encodeNoteMeta, ensureCatalogEntry, lockNote, sealDoc, setNoteBodyJson, setNoteNotebook, setTitle,
+  buildNoteMeta, CATALOG_ID, docFromSealed, encodeNoteMeta, ensureCatalogEntry, ensureChildNotebook, getNoteCreatedBy, listNotebookTree, lockNote,
+  sealDoc, setNoteBodyJson, setNoteNotebook, setTitle,
 } from '@noted/sync';
 import { createNotes } from './notes';
 import { blobCache, openStore } from './store';
@@ -40,7 +41,9 @@ beforeEach(async () => {
   const catalog = new Y.Doc();
   const secret = ensureCatalogEntry(catalog, 'notebooks', 'Protected', () => 'nb-secret');
   const school = ensureCatalogEntry(catalog, 'notebooks', 'Studia', () => 'nb-school');
+  const bank = ensureChildNotebook(catalog, secret.id, 'Bank', () => 'nb-bank');
   await put(stores, CATALOG_ID, catalog);
+  await put(stores, 'n-bank', note('PIN', 'tajny pin', [bank.id]), 5);
   ids = { lecture: 'n-lecture', secret: 'n-secret', locked: 'n-locked' };
   await put(stores, ids.lecture, note('Wykład 3', 'Grafy: wierzchołki i krawędzie', [school.id]), 2);
   await put(stores, ids.secret, note('Hasła', 'tajne rzeczy', [secret.id]), 3);
@@ -120,5 +123,46 @@ describe('MCP tools', () => {
     expect(read.text).toContain('⟦drawing 1⟧');
     expect(read.content.some((c) => c.type === 'image')).toBe(true);
   });
-});
 
+  it('marks notes it creates and works with sub-notebooks as paths', async () => {
+    const created = await call('create_note', { title: 'TODO', markdown: 'x', notebooks: ['Studia/Semestr 5/Algorithms'] });
+    const id = /id: ([\w-]+)/.exec(created.text)![1];
+    const record = await stores.notes.get(id);
+    expect(getNoteCreatedBy(docFromSealed(key, record!.yjs_state))).toBe('claude');
+    const catalog = docFromSealed(key, (await stores.notes.get(CATALOG_ID))!.yjs_state);
+    expect(listNotebookTree(catalog).find((e) => e.name === 'Algorithms')?.path).toEqual(['Studia', 'Semestr 5', 'Algorithms']);
+    expect((await call('read_note', { id })).text).toContain('notebooks: Studia/Semestr 5/Algorithms');
+    const tree = (await call('list_notebooks_tags')).text;
+    expect(tree).toContain('- Studia (1, 2 with sub-notebooks)\n  - Semestr 5 (0, 1 with sub-notebooks)\n    - Algorithms (1)');
+    expect((await call('list_notes', { notebook: 'Studia' })).text).toContain('TODO');
+    expect((await call('list_notes', { notebook: 'Semestr 5/Algorithms' })).text).not.toContain('Wykład 3');
+    // The same path again reuses the notebooks; a name alone finds a sub-notebook.
+    await call('update_note_properties', { id: ids.lecture, add_notebooks: ['studia/semestr 5'] });
+    expect((await call('read_note', { id: ids.lecture })).text).toMatch(/notebooks: .*Studia\/Semestr 5/);
+    await call('update_note_properties', { id: ids.lecture, remove_notebooks: ['Semestr 5'] });
+    expect((await call('read_note', { id: ids.lecture })).text).not.toContain('Semestr 5');
+  });
+
+  it('asks for a path when several sub-notebooks share a name', async () => {
+    await call('create_note', { title: 'A', markdown: 'x', notebooks: ['Semestr 5/Lab'] });
+    await call('create_note', { title: 'B', markdown: 'x', notebooks: ['Semestr 6/Lab'] });
+    const ambiguous = await call('list_notes', { notebook: 'Lab' });
+    expect(ambiguous.isError).toBe(true);
+    expect(ambiguous.text).toContain('"Semestr 5/Lab"');
+    expect((await call('create_note', { title: 'C', markdown: 'x', notebooks: ['Lab'] })).isError).toBe(true);
+    expect((await call('list_notes', { notebook: 'Semestr 6/Lab' })).text).toContain('B');
+    await call('create_note', { title: 'D', markdown: 'x', notebooks: ['Studia/Lab/X'] });
+    expect((await call('create_note', { title: 'E', markdown: 'x', notebooks: ['Lab/X'] })).isError).toBe(true);
+  });
+
+  it('hides notebooks inside a protected one', async () => {
+    expect((await call('list_notes')).text).not.toContain('PIN');
+    expect((await call('read_note', { id: 'n-bank' })).isError).toBe(true);
+    expect((await call('list_notebooks_tags')).text).not.toContain('Bank');
+    for (const name of ['Bank', 'Protected/Bank', 'Protected/New']) {
+      expect((await call('create_note', { title: 'x', markdown: 'y', notebooks: [name] })).isError).toBe(true);
+    }
+    const catalog = docFromSealed(key, (await stores.notes.get(CATALOG_ID))!.yjs_state);
+    expect(listNotebookTree(catalog).map((e) => e.name)).not.toContain('New');
+  });
+});

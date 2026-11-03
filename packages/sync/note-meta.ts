@@ -40,6 +40,10 @@ export interface NoteMeta {
   // Reminder chips in the body, with the text of their line (the Reminders view). Absent in
   // meta saved before reminders were indexed (refreshStaleNoteMeta rebuilds those).
   reminders?: NoteReminder[];
+  // Who made the note when it was not the user (settings `createdBy`, e.g. 'claude' for notes
+  // made through the MCP). Always written (null = the user); absent in meta saved by older
+  // versions (refreshStaleNoteMeta rebuilds those).
+  createdBy?: string | null;
 }
 
 export interface NoteReminder {
@@ -195,6 +199,17 @@ export const markNoteCreated = (doc: Y.Doc, at: number = Date.now(), origin?: un
   doc.transact(() => getNoteSettings(doc).set('createdAt', at), origin);
 };
 
+// Who created the note, when it was not the user ('claude': made through the MCP). A plain key
+// of the settings map: older versions keep it untouched.
+export const getNoteCreatedBy = (doc: Y.Doc): string | null => {
+  const value = getNoteSettings(doc).get('createdBy');
+  return typeof value === 'string' && value ? value : null;
+};
+
+export const setNoteCreatedBy = (doc: Y.Doc, author: string, origin?: unknown): void => {
+  doc.transact(() => getNoteSettings(doc).set('createdBy', author), origin);
+};
+
 type Walk = { text: string; links: Set<string>; reminders: NoteReminder[] };
 
 // Plain text of a text block (paragraph, heading): its own text, not that of nested blocks.
@@ -268,6 +283,7 @@ export function buildNoteMeta(doc: Y.Doc): NoteMeta {
     published: getNotePublish(doc) !== null,
     ...(getNotePublish(doc)?.live ? { live: true } : {}),
     reminders: acc.reminders,
+    createdBy: getNoteCreatedBy(doc),
   };
 }
 
@@ -317,6 +333,7 @@ export function decodeNoteMeta(plain: string | null | undefined): NoteMeta {
           published: data.published === true,
           ...(data.live === true ? { live: true } : {}),
           ...(Array.isArray(data.reminders) ? { reminders: data.reminders.map(parseNoteReminder).filter(Boolean) as NoteReminder[] } : {}),
+          ...('createdBy' in data ? { createdBy: typeof data.createdBy === 'string' && data.createdBy ? data.createdBy : null } : {}),
         };
       }
     } catch {

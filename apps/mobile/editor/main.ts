@@ -196,7 +196,9 @@ let drawingToolsText: string | null = null;
 let drawingBar: ReturnType<typeof createDrawingBar> | null = null;
 
 // Notebook and tag names, sent by React Native (it owns the catalog and creates entries).
-type Entry = { id: string; name: string };
+// Notebooks: `name` is the full path ("Linux / TODO"), `label` the notebook's own name and
+// `depth` its place in the tree (the list comes in tree order).
+type Entry = { id: string; name: string; label?: string; depth?: number };
 let catalog: { notebooks: Entry[]; tags: Entry[] } = { notebooks: [], tags: [] };
 const entryRequests = new Map<string, (entry: Entry | null) => void>();
 let requestCounter = 0;
@@ -267,6 +269,7 @@ const reportNoteState = () => post({
   tags: getNoteTags(ydoc),
   published: getNotePublish(ydoc),
   locked: typeof getNoteSettings(ydoc).get('locked') === 'string',
+  claude: getNoteSettings(ydoc).get('createdBy') === 'claude',
 });
 const NOTE_FLAGS = new Set(['pinned', 'favorite', 'archived', 'readOnly', 'noSpellcheck']);
 
@@ -527,7 +530,7 @@ const startEditor = () => {
     toggleTag: (id) => setNoteTag(ydoc, id, !getNoteTags(ydoc).includes(id)),
     createEntry,
     createNote: async (title) => {
-      const reply = await askReactNative<{ id: string } | null>({ type: 'createNote', title, notebooks: getNoteNotebooks(ydoc) });
+      const reply = await askReactNative<{ id: string } | null>({ type: 'createNote', title, notebooks: getNoteNotebooks(ydoc), tags: getNoteTags(ydoc) });
       if (!reply?.id) return null;
       // The link shows the title at once (React Native sends the full list later).
       titles = { ...titles, [reply.id]: title };
@@ -778,7 +781,7 @@ const receive = (raw: string) => {
     if (editor) showBackup(msg);
     else pendingBackup = msg;
   } else if (msg.type === 'getText') {
-    // Copy / share from the note menu: the title and the text of the note.
+    // Copy from the note menu: the title and the text of the note.
     const title = getTitleText(ydoc).toString().trim();
     const body = editor?.getText({ blockSeparator: '\n' }) ?? '';
     post({ type: 'text', purpose: msg.purpose, title, text: title ? `${title}\n\n${body}` : body });

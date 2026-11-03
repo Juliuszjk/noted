@@ -97,8 +97,8 @@ const openContent = (masterKey: Uint8Array, content: string | null): string | nu
   }
 };
 
-// Rebuilds the meta of notes whose stored meta has no `reminders` yet (saved by an older
-// version). Only the local `content` column changes: the doc and the timestamp stay, so
+// Rebuilds the meta of notes whose stored meta has no `reminders` or `createdBy` yet (saved by
+// an older version). Only the local `content` column changes: the doc and the timestamp stay, so
 // nothing is uploaded again (another device indexes its own copy the same way).
 // Returns how many notes were updated.
 export const refreshStaleNoteMeta = async (masterKey: Uint8Array, store: LocalNoteStore): Promise<number> => {
@@ -108,7 +108,7 @@ export const refreshStaleNoteMeta = async (masterKey: Uint8Array, store: LocalNo
     try {
       const plain = openContent(masterKey, record.content);
       const meta = decodeNoteMeta(plain);
-      if (meta.reminders || meta.deleted) continue;
+      if ((meta.reminders && meta.createdBy !== undefined) || meta.deleted) continue;
       const fresh = buildNoteMeta(docFromSealed(masterKey, record.yjs_state));
       await store.save(record.id, seal(masterKey, new TextEncoder().encode(encodeNoteMeta(fresh))), record.yjs_state, record.updated_at);
       updated++;

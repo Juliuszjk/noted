@@ -119,6 +119,33 @@ changing a feature. Full pre-trim copies: `docs/private/claude-md-full-*.md` (no
   `StatusBar` (online dot from a 5 s `GET /` probe, sync, width, focus mode, zoom, word count,
   dates). Columns resize / hide / collapse to a rail (`Resizer`, widths in prefs).
   Logic in `note-list.ts`, `link-tree.ts` (tested). Device prefs in localStorage (`prefs.ts`).
+- **Sub-notebooks** (2026-11-03, mockup variant A): catalog Y.Map `notebookParents` (notebook id ->
+  parent id, catalog.ts `listNotebookTree` / `notebookParents` / `setNotebookParent` /
+  `ensureChildNotebook` / `ensureNotebookPath` / `removeNotebook`). A separate map, not a field of
+  the entry value: older versions rewrite entry values on rename, and a rename + a move on two
+  devices must both survive. Older versions never read it (flat list, own notes only); a missing
+  parent or a loop (concurrent moves) reads as top level (loop cut at the smallest id, same on
+  every device). NavPanel: chevron tree (16 px per level), unfolded ids per device (prefs
+  `navOpen`; the viewed notebook's parents open by themselves), counts roll up, right-click New
+  sub-notebook / Move to… (tree picker: itself and its children disabled, "Top level") / Rename /
+  Delete (AppDialog confirm: sub-notebooks AND notes move up into its parent; at the top level
+  notes only leave it, as before), + = top level, mouse drag onto another notebook nests it (no
+  HTML drag and drop). A parent's view lists its notes, then one section per sub-notebook (keys
+  `nbown:` / `nbsub:`, open by default; `RowOptions.notebook`); `notesInView(items, view, subtree)`.
+  List title = path with ›, chips / properties = "A / B / C", Notes view groups under full paths.
+  CatalogPicker shows the tree (paths while typing); typing "Linux/TODO" creates the levels, so
+  does the sidebar's New notebook (rename refuses a "/"). Deleting a tag asks first. A bare name
+  resolves (`ensureNotebookPath`) to a top-level notebook, else the only match, else a new one.
+  Note list menu: Copy (title + plain text; not for locked notes) and Duplicate ("… (copy)",
+  new tab; a copy never keeps `published`). The MCP refuses an ambiguous bare notebook name.
+- Note author (2026-11-03): settings `createdBy` ('claude' for notes made through the MCP), meta
+  `createdBy` (always written, null = the user; meta without the key = older version, rebuilt by
+  `refreshStaleNoteMeta`). List: sparkle (mdiCreationOutline, primary, tooltip "Created by
+  Claude") before the title; Home row "From Claude" (view `claude`, only once there is one);
+  tab bar chip "Claude" (opens that view).
+- A note made from a `[[` link (main editor and split pane, `createLinkedNote` in App.tsx) gets
+  the linking note's notebooks AND tags; then the tag picker opens at the caret for the new note
+  (heading "Tags of “…”"; Esc / click away skips it and gives the editor its focus back).
 - Keyboard shortcuts: registry `packages/ui/src/shortcuts.ts` (`SHORTCUT_ACTIONS` with
   defaults, combos like "Ctrl+Shift+[" from e.code, `matchesShortcut(e, id)`,
   `handleEditorShortcut` runs CHANGED formatting shortcuts and swallows their old defaults;
@@ -174,6 +201,20 @@ changing a feature. Full pre-trim copies: `docs/private/claude-md-full-*.md` (no
   the header (sync runs on its own): the Drawer shows a dot (online primary / offline red) and
   the state under "Noted", a tap syncs now,
   `Drawer.tsx` (views, notebooks / tags with create, rename, delete), tabs (`TabsSheet.tsx`),
+  sub-notebooks (2026-11-03): the drawer shows the tree indented and folded like the desktop
+  (arrows, open ids in SecureStore `noted_drawer_open_notebooks`), counts roll up,
+  a parent's view has the per-sub-notebook sections (shared note-groups), its header title is
+  the path with › (parents muted, cut at the start); hold a notebook still and let go = Sheet
+  menu New sub-notebook / Move to… (Sheet tree: itself and its children greyed, "Top level") /
+  Rename / Delete (appAlert with the desktop's text; sub-notebooks and notes move up); hold and
+  move the finger = drag (raw touch events on the drawer root, like TabsSheet; the drawer's
+  ScrollView is disabled while a drag is on, no auto-scroll): onto another notebook nests it
+  (primary ring on the target), onto empty panel space = top level. Tags: hold = Sheet Rename /
+  Delete (confirmed, like the desktop). A notebook typed as "A/B" in the drawer or the pickers
+  creates the path (the drawer's top-level + makes a new top-level one, never reuses a nested
+  one); the note's notebook picker is an indented tree (paths while typing); the editor's pickers and chips get full paths ("A / B"). Claude's notes: sparkle in the list, "From Claude" in the drawer, a "Claude" badge in the
+  editor header. Lock / Unlock also from the list (long press, or More with one note selected). A note made from a
+  link inherits notebooks and tags (page sends `tags` in `createNote`), no tag popup.
   split view (two editors, draggable divider, swap / turn). The editor is an overlay over the
   always-mounted list: Back hides it at once, the hidden EditorScreen flushes and saves first.
 - The editor is a WebView page (`apps/mobile/editor/`), RN <-> page messages
@@ -194,8 +235,8 @@ changing a feature. Full pre-trim copies: `docs/private/claude-md-full-*.md` (no
   `wantFocus` -> RN `requestFocus()`.
 - Back: EditorScreen sends `{type:'back'}`; the page closes viewer / history / find / sheet first
   (`backResult`). NotesScreen Back closes the drawer.
-- Note menu (`NoteMenu.tsx`, layout editable in Settings, `note-menu-layout.ts`): switches in
-  pages, actions, attached files, history (`src/history.ts` + `editor/history-view.ts`), publish,
+- Note menu (`NoteMenu.tsx`, layout editable in Settings, `note-menu-layout.ts`; no Share tile
+  since 2026-11-03, a stored layout drops unknown ids): switches in pages, actions, attached files, history (`src/history.ts` + `editor/history-view.ts`), publish,
   export. Dialogs: `src/Dialog.tsx` `appAlert` (never `Alert.alert`).
 - Files: Open = decrypted cache copy + VIEW intent; Save / export = download folder (SAF, asked
   once); share is a separate action.
@@ -470,6 +511,11 @@ drawer say "This device / phone only".
   increasing run, `edits.ts applyRewrite`). Small edits work in the Y.Doc (`replaceText` keeps
   the formatting, `insertBlocks` joins a following list, `setTaskDone`). `$…$`, `$$…$$`, `==…==`,
   `> [!NOTE]` are converted before the editor's HTML parser (happy-dom globals in `dom.ts`).
+- Sub-notebooks: notebook names are paths "Linux/TODO" (create_note / update_note_properties
+  create missing levels; a single name is found anywhere in the tree), `list_notebooks_tags` is
+  an indented tree with "N with sub-notebooks", `list_notes notebook` includes sub-notebooks.
+  Everything inside a protected notebook is protected too (checked before any catalog write).
+  create_note sets settings `createdBy: 'claude'`.
 - Images: `read_note images: true` decrypts images (blob cache `~/.local/share/noted-mcp/blobs`)
   and draws drawings as PNG (resvg-wasm). Reminders: list / add (own in the catalog, or a chip in
   a note line) / update (done = `completeReminder`, snooze). `undo_last_change`: snapshot of
@@ -548,13 +594,13 @@ Data model:
   with a minimal diff).
 - Y.Map `settings` (absent = off): `pinned`, `favorite`, `archived`, `readOnly`, `noSpellcheck`
   (`getNoteFlag` / `setNoteFlag`), `trashedAt`, `deleted` (`deleteNoteForever` -> tombstone),
-  `font`, `createdAt`, `published`, `locked`, `autoTitled`, legacy `notebook`.
+  `font`, `createdAt`, `published`, `locked`, `autoTitled`, `createdBy`, legacy `notebook`.
 - Y.Map `tags` and Y.Map `notebooks` (id -> true; several notebooks per note;
   `setNoteNotebook(doc, id, on)`).
 - The sealed `content` column holds **note meta JSON** from `buildNoteMeta(doc)` (`{v:1, title,
   excerpt, links, ...flags, notebooks, tags, published, locked}`); every writer stores meta,
   never HTML (`decodeNoteMeta` still reads old HTML).
-- Catalog (`catalog.ts`): hidden note `noted-catalog`, Y.Maps `notebooks`, `tags`, `vault`,
+- Catalog (`catalog.ts`): hidden note `noted-catalog`, Y.Maps `notebooks`, `notebookParents`, `tags`, `vault`,
   `prefs`. **`isSystemNote(id)` must keep it out of every list.** `ensureCatalogEntry` reuses
   names case/accent-insensitively; create entries one at a time.
 

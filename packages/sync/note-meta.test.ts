@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as Y from 'yjs';
-import { buildNoteMeta, decodeNoteMeta, displayTitle, encodeNoteMeta, getTitleText, setTitle } from './note-meta';
+import { buildNoteMeta, decodeNoteMeta, displayTitle, encodeNoteMeta, getNoteCreatedBy, getTitleText, setNoteCreatedBy, setTitle } from './note-meta';
 
 // Builds a body like y-prosemirror stores it: paragraph(text) + paragraph(text, noteLink).
 const docWithBody = () => {
@@ -140,5 +140,25 @@ describe('note properties', () => {
     deleteNoteForever(b);
     Y.applyUpdate(a, Y.encodeStateAsUpdate(b));
     expect(buildNoteMeta(a)).toMatchObject({ title: '', excerpt: '', links: [], tags: [], deleted: true, created: 7 });
+  });
+});
+
+describe('note author', () => {
+  it('keeps who made the note in meta; meta of older versions has no answer yet', () => {
+    const doc = new Y.Doc();
+    expect(buildNoteMeta(doc).createdBy).toBe(null);
+    setNoteCreatedBy(doc, 'claude');
+    expect(getNoteCreatedBy(doc)).toBe('claude');
+    expect(decodeNoteMeta(encodeNoteMeta(buildNoteMeta(doc))).createdBy).toBe('claude');
+    expect(decodeNoteMeta(encodeNoteMeta(buildNoteMeta(new Y.Doc()))).createdBy).toBe(null);
+    // Written by a version that did not know the field: undefined (rebuilt from the doc).
+    const old = JSON.stringify({ v: 1, title: 'x', excerpt: '', links: [], notebooks: [], tags: [] });
+    expect(decodeNoteMeta(old).createdBy).toBeUndefined();
+    // An old version editing the doc keeps the settings key (it never touches it).
+    const other = new Y.Doc();
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(doc));
+    other.getMap('settings').set('pinned', true);
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(other));
+    expect(getNoteCreatedBy(doc)).toBe('claude');
   });
 });

@@ -58,6 +58,13 @@ describe('views and sorting', () => {
     expect(ids(notesInView(items, { kind: 'tag', id: 't' }))).toEqual(['live']);
   });
 
+  it('shows the notes Claude made and the notes of sub-notebooks', () => {
+    const more = [...items, { ...note('claude', 5), createdBy: 'claude', notebooks: ['sub'] }, { ...note('old', 6), createdBy: 'claude', archived: true }];
+    expect(ids(notesInView(more, { kind: 'claude' }))).toEqual(['claude']);
+    expect(ids(notesInView(more, { kind: 'notebook', id: 'nb' }))).toEqual(['live', 'arch']);
+    expect(ids(notesInView(more, { kind: 'notebook', id: 'nb' }, () => new Set(['nb', 'sub'])))).toEqual(['live', 'arch', 'claude']);
+  });
+
   it('sorts by edit, creation or title', () => {
     expect(ids(sortNotes(items.slice(0, 2), 'edited'))).toEqual(['live', 'fav']);
     expect(ids(sortNotes(items.slice(0, 2), 'created'))).toEqual(['fav', 'live']);

@@ -10,6 +10,8 @@ export interface Prefs {
   grouping: NoteGrouping;
   // Folded / unfolded groups and branches of the list (flipped against their defaults).
   listFolds: string[];
+  // Notebooks unfolded in the navigation tree (their sub-notebooks shown).
+  navOpen: string[];
   // Note properties panel open.
   propsOpen: boolean;
   // Columns: navigation and note list, each can be hidden and resized.
@@ -42,19 +44,20 @@ export const PROPS_MAX_WIDTH = 560;
 export const PDF_MIN_WIDTH = 280;
 export const PDF_MAX_WIDTH = 1400;
 
-const DEFAULTS: Prefs = { view: { kind: 'notes' }, sort: 'edited', grouping: 'notebook', listFolds: [], propsOpen: false, navHidden: false, navCompact: false, listHidden: false, navWidth: 236, listWidth: 290, propsWidth: 300, pdfWidth: 560, fullWidth: false, focusMode: false, zoom: 1, toolbar: 'top', tableMenu: 'floating', drawingMenu: 'floating', tabs: [], activeTab: null };
+const DEFAULTS: Prefs = { view: { kind: 'notes' }, sort: 'edited', grouping: 'notebook', listFolds: [], navOpen: [], propsOpen: false, navHidden: false, navCompact: false, listHidden: false, navWidth: 236, listWidth: 290, propsWidth: 300, pdfWidth: 560, fullWidth: false, focusMode: false, zoom: 1, toolbar: 'top', tableMenu: 'floating', drawingMenu: 'floating', tabs: [], activeTab: null };
 
 export const loadPrefs = (): Prefs => {
   try {
     const data = JSON.parse(localStorage.getItem(KEY) ?? '{}');
     const view = data.view && typeof data.view.kind === 'string' ? data.view : DEFAULTS.view;
     return {
-      view: ['notes', 'favorites', 'archive', 'trash', 'tree', 'published'].includes(view.kind) || (['notebook', 'tag'].includes(view.kind) && typeof view.id === 'string') ? view : DEFAULTS.view,
+      view: ['notes', 'favorites', 'archive', 'trash', 'tree', 'published', 'claude'].includes(view.kind) || (['notebook', 'tag'].includes(view.kind) && typeof view.id === 'string') ? view : DEFAULTS.view,
       // "By notebook" / "By tag" used to be sorts: now groupings, sorted by last edit.
       sort: ['edited', 'created', 'title'].includes(data.sort) ? data.sort : 'edited',
       grouping: ['notebook', 'tag', 'az', 'date'].includes(data.grouping) ? data.grouping
         : data.sort === 'tag' ? 'tag' : 'notebook',
       listFolds: Array.isArray(data.listFolds) ? data.listFolds.filter((k: unknown) => typeof k === 'string').slice(-500) : [],
+      navOpen: Array.isArray(data.navOpen) ? data.navOpen.filter((k: unknown) => typeof k === 'string').slice(-500) : [],
       propsOpen: data.propsOpen === true,
       navHidden: data.navHidden === true,
       navCompact: data.navCompact === true,

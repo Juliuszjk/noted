@@ -15,9 +15,9 @@ import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, PanRespo
 import { appAlert } from './Dialog';
 import * as Y from 'yjs';
 import {
-  mdiPlus, mdiMagnify, mdiPin, mdiMenu, mdiStar, mdiPinOff, mdiStarOutline, mdiArchiveArrowDownOutline,
+  mdiPlus, mdiMagnify, mdiPin, mdiMenu, mdiStar, mdiCreationOutline, mdiPinOff, mdiStarOutline, mdiArchiveArrowDownOutline,
   mdiArchiveArrowUpOutline, mdiTrashCanOutline, mdiRestore, mdiDeleteForeverOutline, mdiDeleteSweepOutline,
-  mdiTabPlus, mdiLock, mdiChevronDown, mdiChevronRight, mdiSwapHorizontal, mdiSwapVertical, mdiViewSplitVertical, mdiViewSplitHorizontal, mdiClose,
+  mdiTabPlus, mdiLock, mdiLockOutline, mdiLockOpenVariantOutline, mdiChevronDown, mdiChevronRight, mdiSwapHorizontal, mdiSwapVertical, mdiViewSplitVertical, mdiViewSplitHorizontal, mdiClose,
   mdiCheckboxMarkedCircle, mdiCheckboxBlankCircleOutline,
   mdiDotsVertical, mdiSelectAll, mdiSortVariant, mdiPencilOutline, mdiCalendarOutline, mdiSortAlphabeticalAscending, mdiBookOutline, mdiPound,
 } from '@mdi/js';
@@ -35,8 +35,8 @@ import {
   LocalNoteStore, LocalBlobStore, runSyncEngine, uploadPendingBlobs, decodeNoteMeta, displayTitle, markNoteCreated,
   isSystemNote, setNoteFlag, setNoteTrashed, deleteNoteForever, unpublishQuietly, cleanUpGuestFilesHourly, setNoteNotebook, setNoteTag, purgeExpiredTrash,
   refreshStaleNoteMeta, listOwnReminders, setOwnReminder, deleteOwnReminder, updateReminderInDoc,
-  CATALOG_ID, docFromSealed, noteBodyJson, noteBodyText, listCatalog, getSharedEditorPrefs, setSharedEditorPrefs, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, setTitle, buildNoteMeta, encodeNoteMeta, getNoteSettings,
-  currentAuthToken, sessionStillValid, getVaultSetup, createVault, changeVaultPassword, openVault,
+  CATALOG_ID, docFromSealed, noteBodyJson, noteBodyText, listCatalog, getSharedEditorPrefs, setSharedEditorPrefs, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, setTitle, listNotebookTree, notebookSubtree, notebookParents, removeNotebook, ensureNotebookPath, splitNotebookPath, ensureChildNotebook, setNotebookParent, buildNoteMeta, encodeNoteMeta, getNoteSettings,
+  currentAuthToken, sessionStillValid, getVaultSetup, createVault, changeVaultPassword, openVault, lockNote, unlockNote,
 } from '@noted/sync';
 import { deriveKeyInWebView } from './kdf';
 import { setVaultKey, getVaultKey } from './vault-session';
@@ -46,7 +46,7 @@ import {
   deletedNoteIds, findUnusedBlobs, purgeDeletedNotes, deleteServerBlobs, usedBlobIds, BLOB_GRACE_MS, noteBlobIds,
 } from '@noted/sync';
 import { SettingsScreen } from './SettingsScreen';
-import type { NoteMeta, CatalogKind, CatalogEntry, SharedEditorPrefs, OwnReminder } from '@noted/sync';
+import type { NoteMeta, CatalogKind, CatalogEntry, NotebookNode, SharedEditorPrefs, OwnReminder } from '@noted/sync';
 import { NoteRecord } from '@noted/types';
 import { wsUrl, hasServer, SYNC_INTERVAL_MS, WS_STALE_MS } from '@noted/config';
 import { EditorScreen } from './EditorScreen';
@@ -59,6 +59,7 @@ import { TabsSheet } from './TabsSheet';
 import type { SplitSide } from './SplitIcon';
 import type { SheetRow } from './Sheet';
 import { updateNoteRecord } from './note-actions';
+import { VaultPrompt } from './VaultPrompt';
 import { randomUUID } from './uuid';
 import { T, Icon, themed, useThemeVersion } from './ui';
 
@@ -330,15 +331,25 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     return null;
   };
   const catalog = useMemo(() => {
-    if (!catalogRecord?.yjs_state) return { notebooks: [] as CatalogEntry[], tags: [] as CatalogEntry[], shared: {} as SharedEditorPrefs, reminders: [] as OwnReminder[] };
+    const empty = { notebooks: [] as CatalogEntry[], tree: [] as NotebookNode[], tags: [] as CatalogEntry[], shared: {} as SharedEditorPrefs, reminders: [] as OwnReminder[] };
+    if (!catalogRecord?.yjs_state) return empty;
     try {
       const doc = docFromSealed(masterKey, catalogRecord.yjs_state);
-      return { notebooks: listCatalog(doc, 'notebooks'), tags: listCatalog(doc, 'tags'), shared: getSharedEditorPrefs(doc), reminders: listOwnReminders(doc) };
+      // Sub-notebooks (made on the desktop): `tree` in tree order, for the drawer and the views.
+      return { notebooks: listCatalog(doc, 'notebooks'), tree: listNotebookTree(doc), tags: listCatalog(doc, 'tags'), shared: getSharedEditorPrefs(doc), reminders: listOwnReminders(doc) };
     } catch {
-      return { notebooks: [], tags: [], shared: {}, reminders: [] };
+      return empty;
     }
   }, [catalogRecord?.yjs_state, masterKey]);
   useEffect(() => { setSharedPrefsCache(catalog.shared); }, [catalog]);
+  // The latest notes, for work that runs after a dialog (the render that opened it may be stale).
+  const metasRef = useRef(metas);
+  metasRef.current = metas;
+  // A notebook covers the notebooks below it (its view and count include their notes).
+  const subtreeOf = useCallback((id: string) => notebookSubtree(catalog.tree, id), [catalog]);
+  // The editor's pickers and chips: notebooks under their full names ("Studia / Semestr 5"), in tree
+  // order, with their own name and depth (the notebook picker draws the tree).
+  const editorCatalog = useMemo(() => ({ notebooks: catalog.tree.map((n) => ({ id: n.id, name: n.path.join(' / '), label: n.name, depth: n.depth, createdAt: n.createdAt })), tags: catalog.tags }), [catalog]);
   // Where each note is (notebooks, tags, linking note): under titles in the note pickers.
   const places = useMemo(() => notePlaces(
     [...metas.entries()].filter(([, meta]) => !meta.trashedAt).map(([id, meta]) => ({
@@ -372,6 +383,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     id, title: displayTitle(meta), excerpt: meta.excerpt, pinned: meta.pinned,
     updatedAt: notes.find((n) => n.id === id)?.updated_at ?? 0, created: meta.created, favorite: meta.favorite,
     archived: meta.archived, trashedAt: meta.trashedAt, notebooks: meta.notebooks, tags: meta.tags, locked: meta.locked, published: meta.published,
+    createdBy: meta.createdBy ?? null,
   })), [metas, notes]);
 
   // ---- views, search ----
@@ -388,7 +400,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, []);
-  const viewItems = useMemo(() => notesInView(items, view), [items, view]);
+  const viewItems = useMemo(() => notesInView(items, view, subtreeOf), [items, view, subtreeOf]);
   // Links tree view: notes outside the archive and the trash, drawn like `tree`.
   const treeRows = useMemo(() => buildLinkTree(items.filter((n) => !n.trashedAt && !n.archived)
     .map((n) => ({ id: n.id, title: n.title, links: metas.get(n.id)?.links ?? [] }))), [items, metas]);
@@ -440,19 +452,25 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
   const toggledFolds = useMemo(() => new Set(folds), [folds]);
   const [sortOpen, setSortOpen] = useState(false);
   const catalogNames = useMemo(() => ({
-    notebooks: new Map(catalog.notebooks.map((e) => [e.id, e.name])),
+    notebooks: new Map(editorCatalog.notebooks.map((e) => [e.id, e.name])),
     tags: new Map(catalog.tags.map((e) => [e.id, e.name])),
   }), [catalog]);
   // Pinned / Recent / groups with trees from note links (note-groups.ts, like the desktop);
   // searching: title matches first, then notes with the words in their text.
   const linksOf = useCallback((id: string) => metas.get(id)?.links ?? [], [metas]);
   const rows = useMemo<ListRow[]>(() => {
-    if (!query.trim()) return buildNoteRows(viewItems, { view, grouping, sort, now, names: catalogNames, linksOf, toggled: toggledFolds });
+    if (!query.trim()) {
+      // A notebook with sub-notebooks: its own notes, then a section per sub-notebook.
+      const node = view.kind === 'notebook' ? catalog.tree.find((n) => n.id === view.id) : undefined;
+      const children = node ? catalog.tree.filter((n) => n.parent === node.id) : [];
+      const notebook = node && children.length ? { name: node.name, children: children.map((c) => ({ id: c.id, name: c.name, ids: subtreeOf(c.id) })) } : undefined;
+      return buildNoteRows(viewItems, { view, grouping, sort, now, names: catalogNames, linksOf, toggled: toggledFolds, notebook });
+    }
     return searchSections(viewItems, query, sort, textOf).flatMap((sec) => [
       { kind: 'header' as const, key: `search:${sec.title}`, title: sec.title, count: sec.items.length, collapsed: false },
       ...sec.items.map((n) => ({ kind: 'note' as const, key: `search:${sec.title}/${n.id}`, item: n, depth: 0, hasChildren: false, collapsed: false, foldKey: '' })),
     ]);
-  }, [viewItems, query, now, sort, grouping, view, catalogNames, linksOf, toggledFolds]);
+  }, [viewItems, query, now, sort, grouping, view, catalogNames, linksOf, toggledFolds, catalog, subtreeOf]);
   // ---- reminders: chips of every note and reminders of their own (catalog) ----
   const reminderList = useMemo(() => reminderEntries(
     [...metas.entries()].map(([id, meta]) => ({ id, title: displayTitle(meta), reminders: meta.reminders, trashedAt: meta.trashedAt })),
@@ -534,11 +552,13 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     trash: notesInView(items, { kind: 'trash' }).length,
     tree: treeRows.filter((r) => r.depth === 0).length,
     published: notesInView(items, { kind: 'published' }).length,
+    claude: notesInView(items, { kind: 'claude' }).length,
     reminders: dueReminderCount(reminderList, new Date(now)),
   }), [items, treeRows, reminderList, now]);
+  const viewPath = view.kind === 'notebook' ? catalog.tree.find((n) => n.id === view.id)?.path : undefined;
   const viewTitle = view.kind === 'notebook' ? catalog.notebooks.find((n) => n.id === view.id)?.name ?? 'Notebook'
     : view.kind === 'tag' ? `#${catalog.tags.find((t) => t.id === view.id)?.name ?? 'tag'}`
-    : { notes: 'Notes', favorites: 'Favorites', archive: 'Archive', trash: 'Trash', tree: 'Links tree', published: 'Published', reminders: 'Reminders' }[view.kind];
+    : { notes: 'Notes', favorites: 'Favorites', archive: 'Archive', trash: 'Trash', tree: 'Links tree', published: 'Published', reminders: 'Reminders', claude: 'From Claude' }[view.kind];
 
   // ---- open notes: tabs, back history, editors, split view ----
   // The editor lies over the list. Leaving it hides it at once; it stays mounted (hidden) until
@@ -692,6 +712,9 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     setTitle(doc, `${displayTitle(buildNoteMeta(doc))} (copy)`);
     getNoteSettings(doc).set('createdAt', Date.now());
     getNoteSettings(doc).delete('trashedAt');
+    // The published link (static or live) stays with the original note only; the user made the copy.
+    getNoteSettings(doc).delete('published');
+    getNoteSettings(doc).delete('createdBy');
     const newId = randomUUID();
     const content = seal(masterKey, new TextEncoder().encode(encodeNoteMeta(buildNoteMeta(doc))));
     await dbStore.save(newId, content, seal(masterKey, Y.encodeStateAsUpdate(doc)), Date.now());
@@ -745,12 +768,13 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     await loadNotes();
     syncWithServer();
   };
-  // A note made from the note link picker: titled, in the linking note's notebooks.
-  const createLinkedNote = async (title: string, notebooks: string[]): Promise<string | null> => {
+  // A note made from the note link picker: titled, in the linking note's notebooks, with its tags.
+  const createLinkedNote = async (title: string, notebooks: string[], tags: string[] = []): Promise<string | null> => {
     const ydoc = new Y.Doc();
     markNoteCreated(ydoc);
     setTitle(ydoc, title);
     for (const id of notebooks) setNoteNotebook(ydoc, id, true);
+    for (const id of tags) setNoteTag(ydoc, id, true);
     const newId = randomUUID();
     const content = seal(masterKey, new TextEncoder().encode(encodeNoteMeta(buildNoteMeta(ydoc))));
     await dbStore.save(newId, content, seal(masterKey, Y.encodeStateAsUpdate(ydoc)), Date.now());
@@ -764,7 +788,9 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     syncWithServer();
   };
   const createEntry = async (kind: CatalogKind, name: string): Promise<CatalogEntry | undefined> => {
-    const entry = await updateNoteRecord(masterKey, dbStore, CATALOG_ID, (doc) => ensureCatalogEntry(doc, kind, name, randomUUID));
+    // A notebook may be a path ("Linux/TODO"): missing levels are created.
+    const entry = await updateNoteRecord(masterKey, dbStore, CATALOG_ID, (doc) => (kind === 'notebooks'
+      ? ensureNotebookPath(doc, splitNotebookPath(name), randomUUID) : ensureCatalogEntry(doc, kind, name, randomUUID)));
     await loadNotes();
     syncWithServer();
     return entry;
@@ -774,6 +800,27 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: run },
     ]);
+
+  // Lock / Unlock from the list (like the note menu's Lock). A note open in a tab is locked from its
+  // own menu: that editor still holds edits it would save over the change.
+  const [vaultPrompt, setVaultPrompt] = useState<{ then: (key: Uint8Array) => void } | null>(null);
+  const setNoteLock = (id: string, on: boolean) => {
+    if (editors.some((e) => e.id === id)) {
+      appAlert(on ? 'Lock' : 'Unlock', `This note is open. ${on ? 'Lock' : 'Unlock'} it from its menu (⋮).`);
+      return;
+    }
+    const run = (key: Uint8Array) => {
+      updateNoteRecord(masterKey, dbStore, id, (doc) => (on ? lockNote(doc, key) : unlockNote(doc, key)))
+        .then(() => { loadNotes(); syncWithServer(); }, (e) => appAlert(on ? 'Lock' : 'Unlock', String(e)));
+    };
+    const key = getVaultKey();
+    if (key) run(key);
+    else setVaultPrompt({ then: run });
+  };
+  const lockRow = (id: string, locked: boolean, after?: () => void): SheetRow => ({
+    key: 'lock', label: locked ? 'Unlock' : 'Lock', icon: locked ? mdiLockOpenVariantOutline : mdiLockOutline,
+    onPress: () => { after?.(); setNoteLock(id, !locked); },
+  });
 
   const actionRows = (id: string): SheetRow[] => {
     const meta = metas.get(id);
@@ -789,6 +836,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
       { key: 'pin', label: meta.pinned ? 'Unpin' : 'Pin', icon: meta.pinned ? mdiPinOff : mdiPin, onPress: () => changeNote(id, (d) => setNoteFlag(d, 'pinned', !meta.pinned)) },
       { key: 'fav', label: meta.favorite ? 'Remove from favorites' : 'Add to favorites', icon: meta.favorite ? mdiStar : mdiStarOutline, onPress: () => changeNote(id, (d) => setNoteFlag(d, 'favorite', !meta.favorite)) },
       { key: 'archive', label: meta.archived ? 'Unarchive' : 'Archive', icon: meta.archived ? mdiArchiveArrowUpOutline : mdiArchiveArrowDownOutline, onPress: () => archiveTree([id], !meta.archived) },
+      lockRow(id, meta.locked),
       { key: 'trash', label: 'Move to trash', icon: mdiTrashCanOutline, danger: true, onPress: () => { closeTab(id); changeNote(id, (d) => setNoteTrashed(d, true)); } },
     ];
   };
@@ -826,6 +874,8 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
       ...(shown.length > ids.length ? [{ key: 'all', label: 'Select all', icon: mdiSelectAll, onPress: () => { setSelectionSheet(false); setSelected(shown); } }] : []),
       ...(ids.length === 1 ? [{ key: 'tab', label: 'Open in new tab', icon: mdiTabPlus, onPress: () => { setSelectionSheet(false); setSelected([]); openFromLink(ids[0]); } }] : []),
       { key: 'archive', label: allArchived ? 'Unarchive' : 'Archive', icon: allArchived ? mdiArchiveArrowUpOutline : mdiArchiveArrowDownOutline, onPress: () => { setSelectionSheet(false); setSelected([]); archiveTree(ids, !allArchived); } },
+      // One note only (several would ask about the vault once each way and mix locked ones).
+      ...(ids.length === 1 && metasOf.length === 1 ? [lockRow(ids[0], metasOf[0].locked, () => { setSelectionSheet(false); setSelected([]); })] : []),
       { key: 'trash', label: `Move ${ids.length === 1 ? 'it' : `${ids.length} notes`} to trash`, icon: mdiTrashCanOutline, danger: true, onPress: () => { ids.forEach(closeTab); close(changeNotes(ids, (d) => setNoteTrashed(d, true))); } },
     ];
   };
@@ -863,7 +913,13 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
         <TouchableOpacity onPress={() => setDrawerOpen(true)} style={styles.iconBtn} accessibilityLabel="Menu">
           <Icon path={mdiMenu} size={26} />
         </TouchableOpacity>
-        <Text style={styles.title} numberOfLines={1}>{viewTitle}</Text>
+        {viewPath && viewPath.length > 1 ? (
+          // A sub-notebook: its path with ›, parents muted (like the desktop list title); a long
+          // path is cut at the start so the notebook's own name stays.
+          <Text style={styles.title} numberOfLines={1} ellipsizeMode="head">
+            <Text style={{ color: T.on_surface_variant, fontWeight: '500' }}>{viewPath.slice(0, -1).join(' › ')} › </Text>{viewPath[viewPath.length - 1]}
+          </Text>
+        ) : <Text style={styles.title} numberOfLines={1}>{viewTitle}</Text>}
         {view.kind === 'trash' && viewItems.length > 0 ? (
           <TouchableOpacity onPress={emptyTrash} style={styles.iconBtn} accessibilityLabel="Empty trash">
             <Icon path={mdiDeleteSweepOutline} size={24} color={T.error} />
@@ -968,6 +1024,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
                 {item.pinned ? <Icon path={mdiPin} size={14} color={T.primary} /> : null}
                 {item.favorite ? <Icon path={mdiStar} size={14} color={T.primary} /> : null}
                 {item.locked ? <Icon path={mdiLock} size={14} color={T.on_surface_variant} /> : null}
+                {item.createdBy === 'claude' ? <Icon path={mdiCreationOutline} size={14} color={T.primary} /> : null}
                 <Text style={[styles.noteTitle, row.hasChildren && { fontWeight: row.depth === 0 ? '700' : '600' }, row.depth > 0 && !row.hasChildren && { color: T.on_surface_variant }]} numberOfLines={1}>{marked(item.title)}</Text>
                 <Text style={styles.noteAge}>{relativeTime(item.updatedAt, now)}</Text>
               </View>
@@ -992,12 +1049,48 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
         <Drawer
           view={view}
           counts={counts}
-          notebooks={catalog.notebooks.map((e) => ({ ...e, count: notesInView(items, { kind: 'notebook', id: e.id }).length }))}
+          notebooks={catalog.tree.map((e) => ({ id: e.id, name: e.name, parent: e.parent, depth: e.depth, count: notesInView(items, { kind: 'notebook', id: e.id }, subtreeOf).length }))}
           tags={catalog.tags.map((e) => ({ ...e, count: notesInView(items, { kind: 'tag', id: e.id }).length }))}
           onView={setView}
-          onCreate={(kind, name) => { createEntry(kind, name); }}
-          onRename={(kind, id, name) => { changeCatalog((doc) => renameCatalogEntry(doc, kind, id, name)); }}
+          onCreate={(kind, name, parent) => {
+            // The "+" at the top makes a top-level notebook (like the desktop), never reusing a
+            // same-named notebook somewhere below; "A/B" is a path below `parent`.
+            if (kind === 'notebooks') changeCatalog((doc) => { ensureChildNotebook(doc, parent ?? null, name, randomUUID); });
+            else createEntry(kind, name);
+          }}
+          onMove={(id, parent) => { changeCatalog((doc) => { setNotebookParent(doc, id, parent); }); }}
+          onRename={(kind, id, name) => {
+            // Pickers and the MCP read "/" in a notebook name as a path (same text as the desktop).
+            if (kind === 'notebooks' && name.includes('/')) { appAlert('A notebook name cannot contain "/"', 'To put it inside another notebook, use Move to… or drag it there.'); return; }
+            changeCatalog((doc) => renameCatalogEntry(doc, kind, id, name));
+          }}
           onDelete={(kind, id) => {
+            if (kind === 'notebooks') {
+              // After asking (same text as the desktop): sub-notebooks and notes move up into the
+              // parent (at the top level the notes only leave it).
+              const node = catalog.tree.find((n) => n.id === id);
+              if (!node) return;
+              const parentNode = node.parent ? catalog.tree.find((n) => n.id === node.parent) : undefined;
+              const parent = parentNode?.id ?? null;
+              const kids = catalog.tree.filter((n) => n.parent === id).length;
+              const inIt = [...metas.entries()].filter(([, m]) => m.notebooks.includes(id)).map(([noteId]) => noteId);
+              const notesPart = inIt.length === 0 ? '' : parentNode
+                ? `Its ${inIt.length === 1 ? 'note moves' : `${inIt.length} notes move`} to “${parentNode.name}”.`
+                : `${inIt.length === 1 ? 'Its note is' : `Its ${inIt.length} notes are`} not deleted; they only leave this notebook.`;
+              const kidsPart = kids === 0 ? '' : `Its ${kids === 1 ? 'sub-notebook moves' : `${kids} sub-notebooks move`} ${parentNode ? `into “${parentNode.name}”` : 'to the top level'}.`;
+              appAlert(`Delete the notebook “${node.name}”?`, [kidsPart, notesPart, 'On every device.'].filter(Boolean).join(' '), [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => {
+                  // Parent and notes as they are now (sync may have changed them while asking).
+                  let parentNow: string | null = null;
+                  const notesNow = [...metasRef.current.entries()].filter(([, m]) => m.notebooks.includes(id)).map(([noteId]) => noteId);
+                  changeCatalog((doc) => { parentNow = notebookParents(doc).get(id) ?? null; removeNotebook(doc, id); })
+                    .then(() => (parentNow && notesNow.length ? changeNotes(notesNow, (d) => { setNoteNotebook(d, id, false); setNoteNotebook(d, parentNow!, true); }) : undefined));
+                  if ('id' in view && view.id === id) setView(parent ? { kind: 'notebook', id: parent } : { kind: 'notes' });
+                } },
+              ]);
+              return;
+            }
             changeCatalog((doc) => removeCatalogEntry(doc, kind, id));
             if ('id' in view && view.id === id) setView({ kind: 'notes' });
           }}
@@ -1025,7 +1118,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
               onEditorFocus={() => setTypingIn(e.id)}
               onClosed={() => setEditors((list) => list.filter((x) => x.key !== e.key))}
               titles={titles}
-              catalog={catalog}
+              catalog={editorCatalog}
               onOpenNote={isSplit ? (id) => { if (metas.has(id)) { addTab(id); showEditors(activeId, { id, side: split!.side }); } } : openFromLink}
               onOpenSplit={openSplit}
               onArchived={(id, on) => archiveTree([id], on, true)}
@@ -1145,6 +1238,23 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
         />
       ) : null}
       {selectionSheet ? <Sheet title={`${selected.length} selected`} rows={selectionSheetRows()} onClose={() => setSelectionSheet(false)} /> : null}
+      {vaultPrompt ? (
+        <VaultPrompt mode={vaultSetup ? 'unlock' : 'create'} onClose={() => setVaultPrompt(null)} onSubmit={async (password) => {
+          let key: Uint8Array | null;
+          if (vaultSetup) {
+            key = openVault(vaultSetup, await deriveKeyInWebView(password, vaultSetup.salt));
+            if (!key) return 'Wrong vault password.';
+          } else {
+            key = await createVaultWith(password);
+            if (!key) return 'Could not create the vault.';
+          }
+          setVaultKey(key);
+          const then = vaultPrompt.then;
+          setVaultPrompt(null);
+          then(key);
+          return null;
+        }} />
+      ) : null}
       {actionsFor ? (
         <Sheet title={titles[actionsFor] ?? displayTitle(metas.get(actionsFor) ?? decodeNoteMeta(''))} rows={actionRows(actionsFor)} onClose={() => setActionsFor(null)} />
       ) : null}

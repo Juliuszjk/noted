@@ -3,7 +3,7 @@ import type { JSONContent } from '@tiptap/core';
 import { seal, unseal } from '@noted/crypto';
 import {
   buildNoteMeta, CATALOG_ID, decodeNoteMeta, docFromSealed, encodeNoteMeta, getNoteFlag, getNoteNotebooks, getNoteTags,
-  getTitleText, isSystemNote, listCatalog, mergingNoteStore, noteBodyJson, refreshStaleNoteMeta, runSyncEngine, sealDoc,
+  getTitleText, isSystemNote, listNotebookTree, mergingNoteStore, notebookSubtree, noteBodyJson, refreshStaleNoteMeta, runSyncEngine, sealDoc,
   setNoteFlag, setNoteNotebook, setNoteTag, setNoteTrashed, setTitle,
 } from '@noted/sync';
 import type { LocalNoteStore, NoteMeta } from '@noted/sync';
@@ -82,7 +82,11 @@ export const createNotes = (key: Uint8Array, stores: ReturnType<typeof openStore
     const record = await store.get(CATALOG_ID);
     return record ? docOf(record) : new Y.Doc();
   };
-  const protectedIds = (cat: Y.Doc) => new Set(listCatalog(cat, 'notebooks').filter((e) => isProtectedName(e.name)).map((e) => e.id));
+  // Protected notebooks and every notebook inside them.
+  const protectedIds = (cat: Y.Doc) => {
+    const tree = listNotebookTree(cat);
+    return new Set(tree.filter((e) => isProtectedName(e.name)).flatMap((e) => [...notebookSubtree(tree, e.id)]));
+  };
 
   // Why Claude may not see a note (null = it may).
   const hiddenReason = (id: string, meta: NoteMeta, prot: Set<string>): string | null => {

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, BackHandler, Keyboard, AppState, Linking, Share, Platform, ToastAndroid, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, BackHandler, Keyboard, AppState, Linking, Platform, ToastAndroid, Dimensions } from 'react-native';
 import { appAlert, onDialogShown } from './Dialog';
 import { hasServer } from '@noted/config';
 import { rememberKeyboardHeight } from './keyboard-height';
@@ -26,7 +26,7 @@ import type { HistoryEntry, HistorySession } from './history';
 import { normalizeLinkUrl } from '@noted/editor/link-utils';
 import type { NoteView } from '@noted/ui/src/note-list';
 import type { CatalogEntry, CatalogKind } from '@noted/sync';
-import { mdiArrowLeft, mdiUndo, mdiRedo, mdiDotsVertical, mdiClose, mdiVectorLink } from '@mdi/js';
+import { mdiArrowLeft, mdiUndo, mdiRedo, mdiDotsVertical, mdiClose, mdiVectorLink, mdiCreationOutline } from '@mdi/js';
 import { T, Icon, themed, useThemeVersion } from './ui';
 import { NoteMenu } from './NoteMenu';
 import type { NoteAttachmentItem } from './NoteMenu';
@@ -58,8 +58,8 @@ interface EditorScreenProps {
   catalog: { notebooks: CatalogEntry[]; tags: CatalogEntry[] };
   onOpenView: (view: NoteView) => void;
   onCreateEntry: (kind: CatalogKind, name: string) => Promise<CatalogEntry | undefined>;
-  // "Create note" in the note link picker: a new note with this title in these notebooks.
-  onCreateLinkedNote: (title: string, notebooks: string[]) => Promise<string | null>;
+  // "Create note" in the note link picker: a new note with this title in these notebooks, with these tags.
+  onCreateLinkedNote: (title: string, notebooks: string[], tags: string[]) => Promise<string | null>;
   tabsCount: number;
   onShowTabs: () => void;
   masterKey: Uint8Array;
@@ -125,8 +125,8 @@ export function EditorScreen({
   const [menuOpen, setMenuOpen] = useState(false);
   // Note menu "Attached files" (the page lists them when the menu opens).
   const [attachments, setAttachments] = useState<NoteAttachmentItem[] | null>(null);
-  const [noteState, setNoteState] = useState<{ flags: NoteFlags; trashed: boolean; created: number | null; notebooks: string[]; tags: string[]; published: NotePublish | null; locked: boolean }>(
-    { flags: NO_FLAGS, trashed: false, created: null, notebooks: [], tags: [], published: null, locked: false },
+  const [noteState, setNoteState] = useState<{ flags: NoteFlags; trashed: boolean; created: number | null; notebooks: string[]; tags: string[]; published: NotePublish | null; locked: boolean; claude: boolean }>(
+    { flags: NO_FLAGS, trashed: false, created: null, notebooks: [], tags: [], published: null, locked: false, claude: false },
   );
   // Automatic publish started by closing the note, and its "sealed" signal.
   const autoPublishRef = useRef<Promise<void> | null>(null);
@@ -338,6 +338,7 @@ export function EditorScreen({
           notebooks: Array.isArray(msg.notebooks) ? msg.notebooks : [], tags: Array.isArray(msg.tags) ? msg.tags : [],
           published: msg.published && typeof msg.published.id === 'string' ? msg.published : null,
           locked: msg.locked === true,
+          claude: msg.claude === true,
         });
       } else if (msg.type === 'lockedBody' && msg.body && typeof msg.body === 'object') {
         // The open locked note's text, sealed with the vault key into the stored note.
@@ -372,8 +373,7 @@ export function EditorScreen({
         if (hasServer()) openMenu('publish');
         else appAlert('Publishing needs a server', 'This phone works without a server, so there is nowhere to publish to. Settings > Sync connects one.');
       } else if (msg.type === 'text' && typeof msg.text === 'string') {
-        if (msg.purpose === 'share') Share.share({ message: msg.text, title: msg.title || undefined }).catch(() => {});
-        else Clipboard.setStringAsync(msg.text);
+        Clipboard.setStringAsync(msg.text);
       } else if (msg.type === 'openView' && msg.view && typeof msg.view.kind === 'string') {
         onOpenView(msg.view as NoteView);
       } else if (msg.type === 'openUrl' && typeof msg.href === 'string') {
@@ -389,7 +389,8 @@ export function EditorScreen({
       } else if (msg.type === 'createNote' && typeof msg.title === 'string') {
         const reply = replyTo(msg.requestId);
         const notebooks = Array.isArray(msg.notebooks) ? msg.notebooks.filter((x: unknown): x is string => typeof x === 'string') : [];
-        onCreateLinkedNote(msg.title, notebooks).then((id) => reply(id ? { id } : null), (e) => reply(undefined, e));
+        const tags = Array.isArray(msg.tags) ? msg.tags.filter((x: unknown): x is string => typeof x === 'string') : [];
+        onCreateLinkedNote(msg.title, notebooks, tags).then((id) => reply(id ? { id } : null), (e) => reply(undefined, e));
       } else if (msg.type === 'storeBlob' && typeof msg.id === 'string' && typeof msg.data === 'string') {
         // A new image, sealed by the page: into the local cache / upload queue.
         const reply = replyTo(msg.requestId);
@@ -782,6 +783,13 @@ export function EditorScreen({
         <TouchableOpacity onPress={handleBack} style={styles.iconBtn} accessibilityLabel={inSplit ? 'Close this pane' : 'Back'}>
           <Icon path={inSplit ? mdiClose : mdiArrowLeft} />
         </TouchableOpacity>
+        {/* Made by Claude (MCP), like the mark in the note list. */}
+        {noteState.claude ? (
+          <View style={styles.claudeBadge} accessibilityLabel="Created by Claude">
+            <Icon path={mdiCreationOutline} size={14} color={T.primary} />
+            <Text style={styles.claudeText}>Claude</Text>
+          </View>
+        ) : null}
         <View style={{ flex: 1 }} />
         {/* Greyed out when there is nothing to undo / redo. */}
         <TouchableOpacity onPress={() => sendToEditor({ type: 'undo' })} disabled={!history.undo} style={styles.iconBtn} accessibilityLabel="Undo">
@@ -892,7 +900,6 @@ export function EditorScreen({
           onPick={(kind) => sendToEditor({ type: 'openCatalog', kind })}
           onOpenNote={onOpenNote}
           onCopy={() => sendToEditor({ type: 'getText', purpose: 'copy' })}
-          onShare={() => sendToEditor({ type: 'getText', purpose: 'share' })}
           onDuplicate={duplicate}
           onTrash={() => { sendToEditor({ type: 'setTrashed', on: true }); onRemoved(); }}
           onRestore={() => sendToEditor({ type: 'setTrashed', on: false })}
@@ -927,6 +934,8 @@ export function EditorScreen({
 
 const styles = themed(() => StyleSheet.create({
   container: { flex: 1, backgroundColor: T.background },
+  claudeBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 4 },
+  claudeText: { fontSize: 13, color: T.primary },
   header: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 8, paddingTop: 48, paddingBottom: 4, backgroundColor: T.background, borderBottomWidth: 1, borderBottomColor: T.outline_variant },
   iconBtn: { padding: 9, borderRadius: 22 },
   tabCount: { minWidth: 28, height: 28, borderRadius: 8, borderWidth: 2, borderColor: T.on_surface, alignItems: 'center', justifyContent: 'center', marginHorizontal: 8 },

@@ -3,11 +3,11 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { JSONContent } from '@tiptap/core';
 import {
-  ensureCatalogEntry, getNoteFlag, getNoteNotebooks, getNoteTags, getSharedEditorPrefs, listCatalog,
-  listOwnReminders, markNoteCreated, noteBodyJson, noteBodyText, setNoteBodyJson, setNoteFlag, setNoteNotebook, setNoteTag,
-  setOwnReminder, setTitle, updateReminderInDoc,
+  ensureCatalogEntry, ensureNotebookPath, getNoteFlag, getNoteNotebooks, getNoteTags, getSharedEditorPrefs, listCatalog, listNotebookTree,
+  listOwnReminders, markNoteCreated, notebookSubtree, noteBodyJson, noteBodyText, resolveNotebookPath, setNoteBodyJson, setNoteCreatedBy, setNoteFlag,
+  setNoteNotebook, setNoteTag, setOwnReminder, setTitle, splitNotebookPath, updateReminderInDoc,
 } from '@noted/sync';
-import type { LocalBlobStore, NoteMeta, OwnReminder } from '@noted/sync';
+import type { LocalBlobStore, NotebookNode, NoteMeta, OwnReminder } from '@noted/sync';
 import { completeReminder, isReminderRepeat, repeatLabel, reminderDue, reminderStatus } from '@noted/editor/reminder-time';
 import type { ReminderRepeat, ReminderState } from '@noted/editor/reminder-time';
 import { reminderEntries } from '@noted/ui/src/reminder-list';
@@ -80,9 +80,32 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
   const names = async () => {
     const cat = await notes.catalog();
     const prot = notes.protectedIds(cat);
-    const notebooks = listCatalog(cat, 'notebooks').filter((e) => !prot.has(e.id));
+    // Sub-notebooks: a tree (depth first); names in notes are paths like "Linux/TODO".
+    const notebooks = listNotebookTree(cat).filter((e) => !prot.has(e.id));
     const tags = listCatalog(cat, 'tags');
-    return { cat, notebooks, tags, notebookName: new Map(notebooks.map((e) => [e.id, e.name])), tagName: new Map(tags.map((e) => [e.id, e.name])) };
+    return {
+      cat, prot, notebooks, tags,
+      notebookName: new Map(notebooks.map((e) => [e.id, e.path.join('/')])), tagName: new Map(tags.map((e) => [e.id, e.name])),
+    };
+  };
+
+  // A notebook Claude may see, by name or path ("Linux/TODO"); a single name is looked up
+  // anywhere in the tree (a top-level one wins; several nested ones with that name need a path).
+  const findNotebook = (list: NotebookNode[], cat: Y.Doc, prot: Set<string>, name: string): NotebookNode | undefined => {
+    const hits = list.filter((e) => fold(e.name.trim()) === fold(name.trim()));
+    const top = hits.filter((e) => e.path.length === 1);
+    if (top.length === 1 || hits.length === 1) return top[0] ?? hits[0];
+    if (hits.length > 1) {
+      throw new Error(`Several notebooks are named "${name.trim()}": ${hits.map((e) => `"${e.path.join('/')}"`).join(', ')}. Use the path.`);
+    }
+    const path = splitNotebookPath(name);
+    const firsts = list.filter((e) => fold(e.name.trim()) === fold(path[0] ?? ''));
+    if (path.length > 1 && firsts.length > 1 && !firsts.some((e) => e.path.length === 1)) {
+      throw new Error(`Several notebooks are named "${path[0]}": ${firsts.map((e) => `"${e.path.join('/')}"`).join(', ')}. Use the full path.`);
+    }
+    const found = resolveNotebookPath(cat, path);
+    const last = found.length === path.length ? found[found.length - 1] : undefined;
+    return last && !prot.has(last.id) ? list.find((e) => e.id === last.id) : undefined;
   };
 
   // Title lookups over the notes Claude may see.
@@ -124,7 +147,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
 
   server.registerTool('list_notes', {
     title: 'List / search notes',
-    description: 'Lists notes, newest edit first. `query` searches titles and text (accents and case ignored); notebook / tag filter by name.',
+    description: 'Lists notes, newest edit first. `query` searches titles and text (accents and case ignored); notebook / tag filter by name (a notebook also by path like "Studia/Semestr 5", including its sub-notebooks).',
     inputSchema: {
       query: z.string().optional(),
       notebook: z.string().optional(),
@@ -139,9 +162,10 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     if (!args.include_trash) list = list.filter((x) => !x.meta.trashedAt);
     if (!args.include_archived) list = list.filter((x) => !x.meta.archived);
     if (args.notebook) {
-      const nb = n.notebooks.find((e) => fold(e.name) === fold(args.notebook!));
-      if (!nb) return text(`No notebook "${args.notebook}". Notebooks: ${n.notebooks.map((e) => e.name).join(', ') || 'none'}.`, true);
-      list = list.filter((x) => x.meta.notebooks.includes(nb.id));
+      const nb = findNotebook(n.notebooks, n.cat, n.prot, args.notebook);
+      if (!nb) return text(`No notebook "${args.notebook}". Notebooks: ${n.notebooks.map((e) => e.path.join('/')).join(', ') || 'none'}.`, true);
+      const ids = notebookSubtree(n.notebooks, nb.id);
+      list = list.filter((x) => x.meta.notebooks.some((id) => ids.has(id)));
     }
     if (args.tag) {
       const tg = n.tags.find((e) => fold(e.name) === fold(args.tag!.replace(/^#/, '')));
@@ -200,29 +224,50 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
 
   server.registerTool('list_notebooks_tags', {
     title: 'Notebooks and tags',
-    description: 'The notebooks and tags with how many notes each has.',
+    description: 'The notebooks (as a tree: sub-notebooks indented under their parent) and tags with how many notes each has.',
     inputSchema: {},
   }, () => run(async () => {
     const n = await names();
     const list = (await notes.list()).filter((x) => !x.meta.trashedAt);
     const count = (pick: (m: NoteMeta) => string[], id: string) => list.filter((x) => pick(x.meta).includes(id)).length;
-    const nb = n.notebooks.map((e) => `- ${e.name} (${count((m) => m.notebooks, e.id)})`);
+    const nb = n.notebooks.map((e) => {
+      const ids = notebookSubtree(n.notebooks, e.id);
+      const all = ids.size > 1 ? list.filter((x) => x.meta.notebooks.some((id) => ids.has(id))).length : null;
+      return `${'  '.repeat(e.depth)}- ${e.name} (${count((m) => m.notebooks, e.id)}${all !== null ? `, ${all} with sub-notebooks` : ''})`;
+    });
     const tg = n.tags.map((e) => `- #${e.name} (${count((m) => m.tags, e.id)})`);
-    return text(`Notebooks:\n${nb.join('\n') || '(none)'}\n\nTags:\n${tg.join('\n') || '(none)'}`);
+    return text(`Notebooks${nb.some((l) => l.startsWith(' ')) ? ' (a sub-notebook is written as a path, e.g. "Parent/Child")' : ''}:\n${nb.join('\n') || '(none)'}\n\nTags:\n${tg.join('\n') || '(none)'}`);
   }));
 
   // ---- writing ----
 
-  // Catalog ids for names (created when missing; protected names refused).
+  // Catalog ids for names (created when missing; protected names refused). Notebooks may be
+  // paths ("Linux/TODO"): missing levels are created.
   const catalogIds = async (kind: 'notebooks' | 'tags', wanted: string[]): Promise<string[]> => {
     if (!wanted.length) return [];
-    if (kind === 'notebooks' && wanted.some(isProtectedName)) throw new Error('That notebook is not available to Claude.');
+    if (kind === 'notebooks') {
+      // Checked before anything is written: no level may be (or sit in) a protected notebook.
+      const { cat, prot, notebooks } = await names();
+      for (const name of wanted) {
+        if (findNotebook(notebooks, cat, prot, name)) continue;
+        const path = splitNotebookPath(name);
+        if (isProtectedName(name) || path.some(isProtectedName) || resolveNotebookPath(cat, path).some((e) => prot.has(e.id))
+          || listCatalog(cat, 'notebooks').some((e) => prot.has(e.id) && fold(e.name.trim()) === fold(name.trim()))) {
+          throw new Error('That notebook is not available to Claude.');
+        }
+      }
+    }
     const ids: string[] = [];
     let changed = false;
     await notes.writeCatalog((cat) => {
+      const prot = notes.protectedIds(cat);
       for (const name of wanted) {
         const before = listCatalog(cat, kind).length;
-        ids.push(ensureCatalogEntry(cat, kind, name.replace(/^#/, ''), () => crypto.randomUUID()).id);
+        if (kind === 'tags') ids.push(ensureCatalogEntry(cat, kind, name.replace(/^#/, ''), () => crypto.randomUUID()).id);
+        else {
+          const visible = listNotebookTree(cat).filter((e) => !prot.has(e.id));
+          ids.push(findNotebook(visible, cat, prot, name)?.id ?? ensureNotebookPath(cat, splitNotebookPath(name), () => crypto.randomUUID()).id);
+        }
         if (listCatalog(cat, kind).length !== before) changed = true;
       }
     });
@@ -232,7 +277,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
 
   server.registerTool('create_note', {
     title: 'Create a note',
-    description: 'Creates a note from Markdown. Notebooks / tags by name (created when missing).',
+    description: 'Creates a note from Markdown. Notebooks / tags by name (created when missing); a notebook may be a path like "Linux/TODO" (missing levels are created).',
     inputSchema: { title: z.string(), markdown: z.string(), notebooks: z.array(z.string()).optional(), tags: z.array(z.string()).optional() },
   }, (args) => run(async () => {
     const { resolveTitle } = titleLookups(await notes.list());
@@ -240,6 +285,8 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     if ('error' in blocks) return text(blocks.error, true);
     const doc = new Y.Doc();
     markNoteCreated(doc);
+    // Shown in the apps as made by Claude (list mark, "From Claude" view).
+    setNoteCreatedBy(doc, 'claude');
     setTitle(doc, args.title.trim());
     setNoteBodyJson(doc, { type: 'doc', content: blocks.blocks.length ? blocks.blocks : [{ type: 'paragraph' }] });
     for (const id of await catalogIds('notebooks', args.notebooks ?? [])) setNoteNotebook(doc, id, true);
@@ -314,7 +361,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
 
   server.registerTool('update_note_properties', {
     title: 'Change note properties',
-    description: 'Title, notebooks / tags (by name, created when missing), pinned, favorite, archived.',
+    description: 'Title, notebooks / tags (by name, created when missing; a notebook may be a path like "Linux/TODO"), pinned, favorite, archived.',
     inputSchema: {
       id: z.string(),
       title: z.string().optional(),
@@ -333,7 +380,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     for (const id of await catalogIds('notebooks', args.add_notebooks ?? [])) setNoteNotebook(doc, id, true);
     for (const id of await catalogIds('tags', args.add_tags ?? [])) setNoteTag(doc, id, true);
     for (const name of args.remove_notebooks ?? []) {
-      const e = n.notebooks.find((x) => fold(x.name) === fold(name));
+      const e = findNotebook(n.notebooks, n.cat, n.prot, name);
       if (e && getNoteNotebooks(doc).includes(e.id)) setNoteNotebook(doc, e.id, false);
     }
     for (const name of args.remove_tags ?? []) {

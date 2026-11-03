@@ -59,7 +59,6 @@ interface Props {
   onPick: (kind: 'notebooks' | 'tags') => void;
   onOpenNote: (id: string) => void;
   onCopy: () => void;
-  onShare: () => void;
   onDuplicate: () => void;
   onTrash: () => void;
   onRestore: () => void;
@@ -412,7 +411,6 @@ export function NoteMenu(p: Props) {
                   case 'tag': return tile('tag', 'Add tag', mdiPound, act(() => p.onPick('tags')));
                   case 'links': return tile('links', `Links (${p.links.length + p.backlinks.length})`, mdiVectorLink, () => setPage('links'));
                   case 'copy': return tile('copy', 'Copy', mdiContentCopy, act(p.onCopy));
-                  case 'share': return tile('share', 'Share', mdiShareVariantOutline, act(p.onShare));
                   case 'duplicate': return tile('dup', 'Duplicate', mdiContentDuplicate, act(p.onDuplicate));
                   case 'find': return tile('find', 'Find in note', mdiMagnify, act(p.onFind));
                   case 'export': return tile('export', 'Export', mdiExportVariant, () => setPage('export'));

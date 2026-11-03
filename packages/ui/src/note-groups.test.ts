@@ -96,4 +96,27 @@ describe('note groups', () => {
     expect(view(byTag).slice(0, 3)).toEqual(['[#informatyka medyczna]', 'Informatyka medyczna', '  Lab 1']);
     expect(view(byTag)).toContain('[No tags+]');
   });
+
+  it('lists a parent notebook as its own notes, then one open section per sub-notebook', () => {
+    const tree = [
+      note('p1', 'Plan', { notebooks: ['st'] }),
+      note('a1', 'Wykład 6', { notebooks: ['algo'] }),
+      note('d1', 'SQL', { notebooks: ['dbs'] }),
+      note('d2', 'Deep', { notebooks: ['deep'] }),
+      note('o', 'Elsewhere', { notebooks: ['other'] }),
+    ];
+    const rows = buildNoteRows(tree.filter((n) => n.id !== 'o'), {
+      view: { kind: 'notebook', id: 'st' }, grouping: 'notebook', sort: 'title', now: NOW, linksOf: () => [], toggled: new Set(),
+      notebook: { name: 'Studia', children: [
+        { id: 'algo', name: 'Algorithms', ids: new Set(['algo']) },
+        { id: 'dbs', name: 'Databases', ids: new Set(['dbs', 'deep']) },
+      ] },
+    });
+    expect(view(rows)).toEqual(['[Studia]', 'Plan', '[Algorithms]', 'Wykład 6', '[Databases]', 'Deep', 'SQL']);
+    const folded = buildNoteRows(tree, {
+      view: { kind: 'notebook', id: 'st' }, grouping: 'notebook', sort: 'title', now: NOW, linksOf: () => [], toggled: new Set(['nbsub:algo']),
+      notebook: { name: 'Studia', children: [{ id: 'algo', name: 'Algorithms', ids: new Set(['algo']) }] },
+    });
+    expect(view(folded)).toEqual(['[Studia]', 'Plan', '[Algorithms+]']);
+  });
 });

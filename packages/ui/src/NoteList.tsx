@@ -4,21 +4,21 @@ import type { CSSProperties } from 'react';
 import {
   mdiMagnify, mdiClose, mdiLock, mdiLockOpenVariantOutline, mdiPin, mdiPinOff, mdiTabPlus, mdiStar, mdiStarOutline, mdiArchiveArrowDownOutline,
   mdiArchiveArrowUpOutline, mdiTrashCanOutline, mdiRestore, mdiDeleteForeverOutline, mdiSortVariant, mdiCheck, mdiChevronDoubleLeft,
-  mdiDeleteSweepOutline, mdiChevronDown, mdiChevronRight,
+  mdiDeleteSweepOutline, mdiChevronDown, mdiChevronRight, mdiCreationOutline, mdiContentCopy, mdiContentDuplicate,
 } from '@mdi/js';
 import { Icon } from './Icon';
 import { IconBtn, popoverStyle } from './menu-parts';
 import { searchSections, searchHighlights, relativeTime } from './note-list';
 import type { CatalogNames, NoteListItem, NoteSort, NoteView } from './note-list';
 import { buildNoteRows } from './note-groups';
-import type { ListRow, NoteGrouping } from './note-groups';
+import type { ListRow, NoteGrouping, RowOptions } from './note-groups';
 
 export type NoteAction =
   | 'pin' | 'unpin' | 'favorite' | 'unfavorite' | 'archive' | 'unarchive' | 'trash' | 'restore' | 'deleteForever' | 'newTab'
-  | 'lock' | 'unlock';
+  | 'lock' | 'unlock' | 'copy' | 'duplicate';
 
 interface Props {
-  title: string;
+  title: React.ReactNode;
   items: NoteListItem[];
   activeId: string | null;
   sort: NoteSort;
@@ -36,6 +36,8 @@ interface Props {
   onDragNote?: (id: string, e: React.MouseEvent) => void;
   // Names for grouping by notebook / tag.
   names?: CatalogNames;
+  // A notebook with sub-notebooks: its own notes, then a section per sub-notebook.
+  notebook?: RowOptions['notebook'];
   // Plain click: open in the current tab. Middle click: new tab. Ctrl+click / Shift+click
   // select several notes; the right-click menu then acts on all of them.
   onOpen: (id: string, newTab: boolean) => void;
@@ -65,7 +67,7 @@ const menuRow = (danger = false): CSSProperties => ({
 });
 
 // Note list column: title of the current view, search, sort, sections with compact ages.
-export function NoteList({ title, items, activeId, sort, onSort, view, grouping, onGrouping, linksOf, folds, onFolds, onDragNote, names, onOpen, onAction, onEmptyTrash, onHide, onMinWidth, textOf }: Props) {
+export function NoteList({ title, items, activeId, sort, onSort, view, grouping, onGrouping, linksOf, folds, onFolds, onDragNote, names, notebook, onOpen, onAction, onEmptyTrash, onHide, onMinWidth, textOf }: Props) {
   const header = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = header.current;
@@ -106,12 +108,12 @@ export function NoteList({ title, items, activeId, sort, onSort, view, grouping,
   // Searching: title matches, then text matches (flat). Otherwise Pinned / Recent / groups
   // with trees (note-groups.ts).
   const rows = useMemo<ListRow[]>(() => {
-    if (!query.trim()) return buildNoteRows(items, { view, grouping, sort, now, names, linksOf, toggled });
+    if (!query.trim()) return buildNoteRows(items, { view, grouping, sort, now, names, linksOf, toggled, notebook });
     return searchSections(items, query, sort, textOf).flatMap((sec) => [
       { kind: 'header' as const, key: `search:${sec.title}`, title: sec.title, count: sec.items.length, collapsed: false },
       ...sec.items.map((n) => ({ kind: 'note' as const, key: `search:${sec.title}/${n.id}`, item: n, depth: 0, hasChildren: false, collapsed: false, foldKey: '' })),
     ]);
-  }, [items, query, now, sort, names, textOf, view, grouping, linksOf, toggled]);
+  }, [items, query, now, sort, names, textOf, view, grouping, linksOf, toggled, notebook]);
   // Notes in the order shown (for Shift+click ranges), each once.
   const shown = useMemo(() => [...new Set(rows.flatMap((r) => (r.kind === 'note' ? [r.item.id] : [])))], [rows]);
   // Selections never outlive the notes they point to (another view, deleted notes).
@@ -178,6 +180,9 @@ export function NoteList({ title, items, activeId, sort, onSort, view, grouping,
     }
     return [
       { icon: mdiTabPlus, label: 'Open in new tab', action: 'newTab' },
+      // A locked note's text cannot be read from the list: Copy is only offered for the others.
+      ...(n.locked ? [] : [{ icon: mdiContentCopy, label: 'Copy', action: 'copy' as const }]),
+      { icon: mdiContentDuplicate, label: 'Duplicate', action: 'duplicate' },
       n.pinned ? { icon: mdiPinOff, label: 'Unpin', action: 'unpin' } : { icon: mdiPin, label: 'Pin', action: 'pin' },
       n.favorite ? { icon: mdiStar, label: 'Remove from favorites', action: 'unfavorite' } : { icon: mdiStarOutline, label: 'Add to favorites', action: 'favorite' },
       n.archived ? { icon: mdiArchiveArrowUpOutline, label: 'Unarchive', action: 'unarchive' } : { icon: mdiArchiveArrowDownOutline, label: 'Archive', action: 'archive' },
@@ -296,6 +301,9 @@ export function NoteList({ title, items, activeId, sort, onSort, view, grouping,
               </span>
               {n.favorite && <Icon path={mdiStar} size={13} style={{ color: 'var(--primary)' }} />}
               {n.locked && <Icon path={mdiLock} size={13} style={{ color: 'var(--text-muted)' }} />}
+              {n.createdBy === 'claude' && (
+                <span title="Created by Claude" style={{ display: 'flex', flexShrink: 0, color: highlighted ? 'inherit' : 'var(--primary)' }}><Icon path={mdiCreationOutline} size={14} /></span>
+              )}
               <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: weight, color: muted ? 'var(--text-muted)' : undefined }}>{marked(n.title)}</span>
                 {/* While searching: the text around the match. */}

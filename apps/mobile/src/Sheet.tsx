@@ -8,6 +8,10 @@ export interface SheetRow {
   icon?: string;
   danger?: boolean;
   active?: boolean;
+  // Shown greyed out; a tap does nothing.
+  disabled?: boolean;
+  // Indent (a tree of notebooks).
+  depth?: number;
   onPress: () => void;
   // Small button at the end of the row (e.g. close a tab).
   trailing?: { icon: string; label: string; onPress: () => void };
@@ -23,7 +27,7 @@ export function Sheet({ title, rows, footer, onClose }: { title: string; rows: S
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
         <ScrollView style={{ maxHeight: 420 }}>
           {rows.map((row) => (
-            <TouchableOpacity key={row.key} style={[styles.row, row.active && styles.active]} onPress={() => { onClose(); row.onPress(); }}>
+            <TouchableOpacity key={row.key} disabled={row.disabled} style={[styles.row, row.active && styles.active, !!row.depth && { paddingLeft: 16 + row.depth * 20 }, row.disabled && { opacity: 0.4 }]} onPress={() => { onClose(); row.onPress(); }}>
               {row.icon ? <Icon path={row.icon} size={22} color={row.danger ? T.error : T.on_surface_variant} /> : null}
               <Text style={[styles.label, row.danger && { color: T.error }]} numberOfLines={1}>{row.label}</Text>
               {row.trailing ? (

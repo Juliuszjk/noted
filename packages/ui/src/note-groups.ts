@@ -23,6 +23,9 @@ export interface RowOptions {
   // Keys the user folded / unfolded: each key is flipped against its default (group headers
   // start folded, Pinned / Recent and tree branches start open).
   toggled: ReadonlySet<string>;
+  // A notebook view of a notebook with sub-notebooks (grouped by notebook): its name and its
+  // sub-notebooks, each with the ids of the notebooks it covers (itself and those below).
+  notebook?: { name: string; children: { id: string; name: string; ids: ReadonlySet<string> }[] };
 }
 
 export const RECENT_DAYS = 7;
@@ -99,7 +102,20 @@ export const buildNoteRows = (items: NoteListItem[], o: RowOptions): ListRow[] =
   // One notebook / tag: grouped by that same kind = just its tree; by the other kind / A-Z /
   // date = those groups inside it (no Pinned / Recent there).
   const inside = view.kind === 'notebook' || view.kind === 'tag';
-  if (inside && o.grouping === view.kind) return treeRows(`${view.kind}:${view.id}`, items, sort, linksOf, toggled);
+  if (inside && o.grouping === view.kind) {
+    // A notebook with sub-notebooks: its own notes, then one section per sub-notebook (with
+    // the notes of everything below it). These sections start open.
+    if (view.kind === 'notebook' && o.notebook?.children.length) {
+      const own = items.filter((n) => (n.notebooks ?? []).includes(view.id));
+      group(rows, `nbown:${view.id}`, o.notebook.name, own, () => treeRows(`nbown:${view.id}`, own, sort, linksOf, toggled), toggled);
+      for (const child of o.notebook.children) {
+        const list = items.filter((n) => (n.notebooks ?? []).some((id) => child.ids.has(id)));
+        group(rows, `nbsub:${child.id}`, child.name, list, () => treeRows(`nbsub:${child.id}`, list, sort, linksOf, toggled), toggled);
+      }
+      return rows;
+    }
+    return treeRows(`${view.kind}:${view.id}`, items, sort, linksOf, toggled);
+  }
   // The trash: by date as before.
   if (view.kind === 'trash') {
     for (const s of groupNotes(items, o.now, sort === 'title' ? 'title' : sort)) group(rows, `date:${s.title}`, s.title, s.items, () => flat(`date:${s.title}`, s.items), toggled);

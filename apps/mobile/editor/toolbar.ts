@@ -67,7 +67,8 @@ export interface ToolbarContext {
   noteFont: () => 'sans' | 'serif' | 'mono';
   setNoteFont: (font: 'sans' | 'serif' | 'mono') => void;
   // Notebook / tags of this note and the catalog of names (React Native creates entries).
-  catalog: () => { notebooks: { id: string; name: string }[]; tags: { id: string; name: string }[] };
+  // Notebooks in tree order: full path as `name`, own name as `label`, `depth` in the tree.
+  catalog: () => { notebooks: { id: string; name: string; label?: string; depth?: number }[]; tags: { id: string; name: string }[] };
   noteNotebooks: () => string[];
   noteTags: () => string[];
   toggleNotebook: (id: string) => void;
@@ -603,7 +604,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   };
 
   // Notebooks or tags of this note (several of each). The sheet stays open while ticking them;
-  // typing a new name creates it.
+  // typing a new name creates it. Notebooks show as a tree; while typing, matches show their full path.
   const catalogSheet = (kind: 'notebooks' | 'tags') => showSheet(`catalog-${kind}`, kind === 'notebooks' ? 'Notebooks' : 'Tags', (body) => {
     const input = h('input', 'tb-input');
     input.placeholder = kind === 'notebooks' ? 'Search or create a notebook' : 'Search or create a tag';
@@ -614,14 +615,21 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       const entries = kind === 'notebooks' ? ctx.catalog().notebooks : ctx.catalog().tags;
       const q = fold(input.value.replace(/^#/, ''));
       const selected = kind === 'notebooks' ? ctx.noteNotebooks() : ctx.noteTags();
-      const matches = entries.filter((e) => fold(e.name).includes(q));
+      // Notebook names here are full paths ("Linux / TODO"): "linux/todo" matches it too, and a
+      // name that exists anywhere is not offered for creation (like the desktop picker).
+      const pathKey = (t: string) => fold(t).split('/').map((p) => p.trim()).join('/');
+      const bare = (e: { name: string }) => fold((e as { label?: string }).label ?? e.name);
+      const matches = entries.filter((e) => fold(e.name).includes(q) || pathKey(e.name).includes(pathKey(q)));
       list.replaceChildren(...matches.map((e) => {
         const on = selected.includes(e.id);
-        return row(kind === 'tags' ? `#${e.name}` : e.name, () => { toggle(e.id); render(); }, {
+        const tree = kind === 'notebooks' && !q ? e as { label?: string; depth?: number } : null;
+        const b = row(kind === 'tags' ? `#${e.name}` : tree?.label ?? e.name, () => { toggle(e.id); render(); }, {
           icon: on ? mdiCheck : kind === 'notebooks' ? mdiBookOutline : mdiPound, active: on,
         });
+        if (tree?.depth) b.style.paddingLeft = `${12 + tree.depth * 20}px`;
+        return b;
       }));
-      if (q && !entries.some((e) => fold(e.name) === q)) {
+      if (q && !entries.some((e) => bare(e) === q || pathKey(e.name) === pathKey(q))) {
         list.append(row(`Create “${input.value.replace(/^#/, '').trim()}”`, async () => {
           const entry = await ctx.createEntry(kind, input.value.replace(/^#/, '').trim());
           if (!entry) return;

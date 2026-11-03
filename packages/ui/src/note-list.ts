@@ -14,29 +14,36 @@ export interface NoteListItem {
   tags?: string[];
   locked?: boolean;
   published?: boolean;
+  // 'claude' for notes made through the MCP (note meta `createdBy`).
+  createdBy?: string | null;
 }
 
 // What the list shows: the main views of the navigation, or one notebook / tag. 'tree' shows
 // the note links as a tree (link-tree.ts) instead of a list, 'reminders' the reminders
-// (reminder-list.ts).
+// (reminder-list.ts), 'claude' the notes Claude made.
 export type NoteView =
-  | { kind: 'notes' | 'favorites' | 'archive' | 'trash' | 'tree' | 'published' | 'reminders' }
+  | { kind: 'notes' | 'favorites' | 'archive' | 'trash' | 'tree' | 'published' | 'reminders' | 'claude' }
   | { kind: 'notebook' | 'tag'; id: string };
 
 // edited / created / title sort; notebook / tag group the list by them (newest first inside).
 export type NoteSort = 'edited' | 'created' | 'title' | 'notebook' | 'tag';
 
-// Notes view: everything not archived or trashed. Archive and Trash show only theirs.
-export const notesInView = (items: NoteListItem[], view: NoteView): NoteListItem[] => {
+// Notes view: everything not archived or trashed. Archive and Trash show only theirs. A notebook
+// shows the notes of its sub-notebooks too when `subtree` gives them (catalog notebookSubtree).
+export const notesInView = (items: NoteListItem[], view: NoteView, subtree?: (notebookId: string) => ReadonlySet<string>): NoteListItem[] => {
   const live = (n: NoteListItem) => !n.trashedAt && !n.archived;
   switch (view.kind) {
     case 'notes':
     case 'tree': return items.filter(live);
     case 'favorites': return items.filter((n) => live(n) && n.favorite);
+    case 'claude': return items.filter((n) => live(n) && n.createdBy === 'claude');
     case 'published': return items.filter((n) => !n.trashedAt && n.published);
     case 'archive': return items.filter((n) => !n.trashedAt && n.archived);
     case 'trash': return items.filter((n) => !!n.trashedAt);
-    case 'notebook': return items.filter((n) => !n.trashedAt && (n.notebooks ?? []).includes(view.id));
+    case 'notebook': {
+      const ids = subtree?.(view.id) ?? new Set([view.id]);
+      return items.filter((n) => !n.trashedAt && (n.notebooks ?? []).some((id) => ids.has(id)));
+    }
     case 'tag': return items.filter((n) => !n.trashedAt && (n.tags ?? []).includes(view.id));
     case 'reminders': return [];
   }
