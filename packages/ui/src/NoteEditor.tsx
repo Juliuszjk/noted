@@ -491,18 +491,37 @@ export function NoteEditor({
         name: 'mediaHandler',
         addProseMirrorPlugins() {
           const editor = this.editor;
+          // A note link opened by this press (handleClickOn): its DOM click must not open it again.
+          let openedOnPress = false;
           return [
             new Plugin({
               key: new PluginKey('mediaHandler'),
               props: {
+                // A plain click on a note link opens that note, as soon as ProseMirror takes the
+                // press as a click on it (mouseup). WebKitGTK drops the DOM click when the link's
+                // DOM changes while the button is down, and the link was only selected.
+                handleClickOn(_view, _pos, node, _nodePos, event, direct) {
+                  if (!direct || node.type.name !== 'noteLink' || event.button !== 0 || !node.attrs.noteId) return false;
+                  // Modified clicks keep the old path (the DOM click below).
+                  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return false;
+                  openedOnPress = true;
+                  openNoteRef.current?.(node.attrs.noteId);
+                  return true;
+                },
                 handleDOMEvents: {
+                  mousedown() {
+                    openedOnPress = false;
+                    return false;
+                  },
                   // Plain click keeps editing the link text; Ctrl/Cmd+click opens it.
                   click(_view, event) {
-                    // A plain click on a note link opens that note.
+                    const opened = openedOnPress;
+                    openedOnPress = false;
+                    // A click ProseMirror did not take as one (the mouse moved a little).
                     const noteLink = (event.target as HTMLElement | null)?.closest?.('[data-note-link]');
                     if (noteLink) {
                       const id = noteLink.getAttribute('data-note-id');
-                      if (id) openNoteRef.current?.(id);
+                      if (id && !opened) openNoteRef.current?.(id);
                       return true;
                     }
                     const anchor = (event.target as HTMLElement | null)?.closest?.('a[href]');

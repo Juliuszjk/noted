@@ -3,7 +3,7 @@ import { it, expect } from 'vitest';
 import { Editor } from '@tiptap/core';
 import * as Y from 'yjs';
 import { createSchemaExtensions } from './extensions';
-import { hasMarkdownMath, looksLikeMarkdown, markdownToHtml, pastedMathHtml } from './markdown-paste';
+import { hasMarkdownMath, looksLikeMarkdown, markdownToHtml, normalizeTaskListHtml, pastedMathHtml } from './markdown-paste';
 
 const SAMPLE = '# 📝 Plan\n\n**Data:** today  \n**Tagi:** `#a`\n\n---\n\n## ✅ Lista\n- [x] done\n- [ ] todo\n\n1. one\n2. [doc](https://x.org/)\n\n```python\ndef f():\n    return 1\n';
 
@@ -103,4 +103,11 @@ it('pastes a copy from a note as its HTML, not as the Markdown of its text', () 
   // An AI chat's copy whose HTML lost the formulas still goes through Markdown.
   expect(paste({ 'text/plain': text, 'text/html': '<h1>Zadanie 1</h1><p>Sygnał f_max</p>' })).toBe(true);
   editor.destroy();
+});
+
+it('splits a numbered list holding tasks into numbered runs that keep counting and a task <ul>', () => {
+  const html = normalizeTaskListHtml(markdownToHtml('1. a\n2. [ ] b\n3. c'));
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const lists = [...doc.body.children].map((el) => `${el.tagName}:${el.getAttribute('data-type') ?? ''}:${el.getAttribute('start') ?? ''}`);
+  expect(lists).toEqual(['OL::', 'UL:taskList:', 'OL::3']);
 });

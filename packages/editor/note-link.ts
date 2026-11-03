@@ -75,7 +75,9 @@ export const NoteLink = Node.create<Record<string, never>, NoteLinkStorage>({
           const id = node.attrs.noteId as string | null;
           const title = id ? this.storage.titles.get(id) : undefined;
           dom.setAttribute('data-note-id', id ?? '');
-          dom.textContent = title ?? MISSING_LABEL;
+          // Replacing the text node while the mouse is down makes WebKitGTK drop the click.
+          const label = title ?? MISSING_LABEL;
+          if (dom.textContent !== label) dom.textContent = label;
           dom.classList.toggle('note-link--missing', title === undefined);
         },
       };

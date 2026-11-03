@@ -12,10 +12,12 @@ import { marked } from 'marked';
 // editor's task list markup. Also used by the importer.
 export const normalizeTaskListHtml = (html: string): string => {
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-  const isChecklist = (ul: Element | null) => !!ul && (/checklist/i.test(ul.getAttribute('class') ?? '') || /^(taskList|checkList)$/i.test(ul.getAttribute('data-type') ?? ''));
+  const isChecklist = (ul: Element) => /checklist/i.test(ul.getAttribute('class') ?? '') || /^(taskList|checkList)$/i.test(ul.getAttribute('data-type') ?? '');
+  // Read before the loop marks lists: a list made a task list by its checkboxes keeps its plain items.
+  const checklists = new Set([...doc.querySelectorAll('ul, ol')].filter(isChecklist));
   doc.querySelectorAll('li').forEach((li) => {
     const box = li.querySelector(':scope > input[type=checkbox], :scope > p > input[type=checkbox], :scope > label > input[type=checkbox], :scope > div > input[type=checkbox]');
-    if (!box && !isChecklist(li.parentElement)) return;
+    if (!box && !(li.parentElement && checklists.has(li.parentElement))) return;
     const checked = box ? (box as HTMLInputElement).hasAttribute('checked') : /\bchecked\b/.test(li.getAttribute('class') ?? '') || li.getAttribute('data-checked') === 'true';
     // Checkbox inputs and their labels / wrappers carry no text.
     li.querySelectorAll(':scope > input[type=checkbox], :scope > p > input[type=checkbox], :scope > label, :scope > div > input[type=checkbox]').forEach((el) => {
@@ -30,6 +32,31 @@ export const normalizeTaskListHtml = (html: string): string => {
       li.insertBefore(p, li.firstChild);
     }
     li.parentElement?.setAttribute('data-type', 'taskList');
+  });
+  // Markdown bullets and tasks with no blank line between them are one list: split it into
+  // runs of plain items (a bullet / numbered list) and of tasks (a task list).
+  doc.querySelectorAll('ul[data-type=taskList], ol[data-type=taskList]').forEach((list) => {
+    const isTask = (li: Element) => li.getAttribute('data-type') === 'taskItem';
+    const items = [...list.children];
+    if (items.every(isTask)) return;
+    const start = Number(list.getAttribute('start') ?? 1) || 1;
+    let run: Element | null = null;
+    items.forEach((li, index) => {
+      if (!run || (run.getAttribute('data-type') === 'taskList') !== isTask(li)) {
+        // Task lists are always <ul> (the editor reads only those); a numbered run keeps counting.
+        if (isTask(li)) {
+          run = doc.createElement('ul');
+          run.setAttribute('data-type', 'taskList');
+        } else {
+          run = list.cloneNode(false) as Element;
+          run.removeAttribute('data-type');
+          if (run.tagName === 'OL' && index > 0) run.setAttribute('start', String(start + index));
+        }
+        list.before(run);
+      }
+      run.appendChild(li);
+    });
+    list.remove();
   });
   doc.querySelectorAll('script, style, iframe, object, embed').forEach((el) => el.remove());
   // An empty line written as <p><br></p> (Notesnook, browsers) is one empty paragraph, not two lines.

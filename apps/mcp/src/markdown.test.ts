@@ -127,6 +127,21 @@ describe('note as Markdown', () => {
     expect(blocks[3].content?.map((i) => i.attrs?.checked)).toEqual([true, false]);
   });
 
+  it('splits bullets and tasks written with no blank line between them into two lists', () => {
+    const shape = (blocks: JSONContent[]) => blocks.map((b) => [b.type, b.content?.map((i) => [i.type, i.content?.[0]?.content?.[0]?.text])]);
+    const bullets = ['bulletList', [['listItem', 'bullet a'], ['listItem', 'bullet b']]];
+    const tasks = ['taskList', [['taskItem', 'task 1'], ['taskItem', 'task 2']]];
+    expect(shape(markdownBlocks('- bullet a\n- bullet b\n- [ ] task 1\n- [ ] task 2'))).toEqual([bullets, tasks]);
+    expect(shape(markdownBlocks('- [ ] task 1\n- [ ] task 2\n- bullet a\n- bullet b'))).toEqual([tasks, bullets]);
+    expect(shape(markdownBlocks('## H\n- bullet a\n- bullet b\n- [ ] task 1\n- [ ] task 2')).slice(1)).toEqual([bullets, tasks]);
+    const doc = lecture();
+    const view = renderBody(noteBodyJson(doc), titles);
+    const parsed = parseRewrite(view, `${view.markdown}\n\n- bullet a\n- bullet b\n- [ ] task 1\n- [ ] task 2`, noTitles);
+    if ('error' in parsed) throw new Error(parsed.error);
+    applyRewrite(doc, parsed.items, view.blocks.map((b) => b.json));
+    expect(shape(body(doc).slice(-2))).toEqual([bullets, tasks]);
+  });
+
   it('does not take tokens in new content', () => {
     expect('error' in newBlocks('⟦image 1⟧', noTitles)).toBe(true);
   });
@@ -150,5 +165,15 @@ describe('edits in place', () => {
     const list = body(doc)[4];
     expect(list.content?.map((i) => i.attrs?.checked)).toEqual([true, false]);
     expect(body(doc)).toHaveLength(7);
+  });
+
+  it('joins tasks to the task list they follow and adds the bullets after them as a list of their own', () => {
+    const doc = lecture();
+    const blocks = newBlocks('- [ ] solve problem 4\n- bullet a', noTitles);
+    if ('error' in blocks) throw new Error(blocks.error);
+    insertBlocks(doc, 5, blocks.blocks);
+    expect(body(doc)[4].content?.map((i) => i.content?.[0]?.content?.[0]?.text)).toEqual(['read chapter 2', 'solve problem 4']);
+    expect(body(doc)[5]).toMatchObject({ type: 'bulletList', content: [{ type: 'listItem', content: [{ content: [{ text: 'bullet a' }] }] }] });
+    expect(body(doc)).toHaveLength(8);
   });
 });

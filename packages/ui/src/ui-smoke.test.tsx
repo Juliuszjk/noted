@@ -173,3 +173,40 @@ it('applies a history restore once, never in an editor opened later', async () =
   expect(JSON.stringify(noteBodyJson(other))).toContain('restored');
   act(() => root.unmount());
 });
+
+it('opens a note link on the press ProseMirror takes as a click, once', async () => {
+  const { NoteEditor } = await import('../index');
+  const { setNoteBodyJson } = await import('@noted/sync');
+  const doc = new Y.Doc();
+  setNoteBodyJson(doc, { type: 'doc', content: [{ type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'noteLink', attrs: { noteId: 'lab1' } }] }] }] }] });
+  const opened: string[] = [];
+  let editor: Editor | null = null;
+  const div = document.createElement('div');
+  document.body.appendChild(div);
+  const root = createRoot(div);
+  const notes = [{ id: 'lab1', title: 'Lab1', links: [] }];
+  await act(async () => {
+    root.render(h(NoteEditor as any, { noteId: 'x', ydoc: doc, onUpdate: () => {}, notes, onOpenNote: (id: string) => opened.push(id), onEditor: (e: Editor | null) => { editor = e; } }));
+  });
+  await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+  const view = editor!.view;
+  let at = -1;
+  view.state.doc.descendants((node, pos) => { if (node.type.name === 'noteLink') at = pos; });
+  const link = view.state.doc.nodeAt(at)!;
+  const dom = view.dom.querySelector('[data-note-link]') as HTMLElement;
+  // WebKitGTK sends no DOM click when the link's DOM changed while the button was down:
+  // ProseMirror's mouseup (handleClickOn) alone opens the note.
+  const handled = view.someProp('handleClickOn', (f) => f(view, at, link, at, new MouseEvent('mouseup', { button: 0 }), true));
+  expect(handled).toBe(true);
+  expect(opened).toEqual(['lab1']);
+  // The DOM click that follows the same press does not open it again.
+  dom.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+  expect(opened).toEqual(['lab1']);
+  // A click ProseMirror did not take as one (the mouse moved a little) still opens it.
+  dom.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+  dom.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+  expect(opened).toEqual(['lab1', 'lab1']);
+  // Other buttons do not open it.
+  expect(view.someProp('handleClickOn', (f) => f(view, at, link, at, new MouseEvent('mouseup', { button: 2 }), true))).toBeFalsy();
+  act(() => root.unmount());
+});
