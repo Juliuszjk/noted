@@ -23,6 +23,7 @@ import {
 } from '@mdi/js';
 import { searchSections, searchHighlights, relativeTime, notesInView } from '@noted/ui/src/note-list';
 import { buildNoteRows, linkDescendants } from '@noted/ui/src/note-groups';
+import { archivedNotebooks, visibleNotebooks, notebookArchiveTargets } from '@noted/ui/src/notebook-archive';
 import type { ListRow, NoteGrouping } from '@noted/ui/src/note-groups';
 import { File, Paths } from 'expo-file-system';
 import type { NoteSort } from '@noted/ui/src/note-list';
@@ -385,6 +386,8 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     archived: meta.archived, trashedAt: meta.trashedAt, notebooks: meta.notebooks, tags: meta.tags, locked: meta.locked, published: meta.published,
     createdBy: meta.createdBy ?? null,
   })), [metas, notes]);
+  // Notebooks whose notes are all archived leave the drawer, except in the Archive view.
+  const hiddenNotebooks = useMemo(() => archivedNotebooks(catalog.tree, items), [catalog, items]);
 
   // ---- views, search ----
   const [view, setView] = useState<NoteView>({ kind: 'notes' });
@@ -763,6 +766,21 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
         { text: `${on ? 'Archive' : 'Unarchive'} all ${ids.length + extra.length}`, onPress: () => apply(rootsDone ? extra : [...ids, ...extra]) },
       ]);
   };
+  // "Archive notebook" / "Unarchive notebook" (same text as the desktop): every note in it and
+  // its sub-notebooks; a notebook whose notes are all archived then leaves the drawer.
+  const archiveNotebook = (id: string, on: boolean) => {
+    const node = catalog.tree.find((n) => n.id === id);
+    if (!node) return;
+    const targets = notebookArchiveTargets(items, subtreeOf(id), on);
+    if (!targets.length) { appAlert(on ? 'Nothing to archive' : 'Nothing to unarchive', `“${node.name}” has no ${on ? 'notes that are not archived' : 'archived notes'}.`); return; }
+    const count = `${targets.length} note${targets.length === 1 ? '' : 's'}`;
+    appAlert(`${on ? 'Archive' : 'Unarchive'} ${count} in “${node.name}”?`, on
+      ? 'Notes in its sub-notebooks too. The notebook leaves the side menu once all its notes are archived; the Archive view still shows it.'
+      : 'Notes in its sub-notebooks too. They go back to Notes.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: on ? 'Archive' : 'Unarchive', onPress: () => { changeNotes(targets, (d) => setNoteFlag(d, 'archived', on)).catch((e) => appAlert('Noted', String(e))); } },
+    ]);
+  };
   const changeNote = async (id: string, change: (doc: Y.Doc) => void) => {
     await updateNoteRecord(masterKey, dbStore, id, change);
     await loadNotes();
@@ -1049,7 +1067,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
         <Drawer
           view={view}
           counts={counts}
-          notebooks={catalog.tree.map((e) => ({ id: e.id, name: e.name, parent: e.parent, depth: e.depth, count: notesInView(items, { kind: 'notebook', id: e.id }, subtreeOf).length }))}
+          notebooks={visibleNotebooks(catalog.tree, hiddenNotebooks, view).map((e) => ({ id: e.id, name: e.name, parent: e.parent, depth: e.depth, archived: hiddenNotebooks.has(e.id), count: notesInView(items, { kind: 'notebook', id: e.id }, subtreeOf).length }))}
           tags={catalog.tags.map((e) => ({ ...e, count: notesInView(items, { kind: 'tag', id: e.id }).length }))}
           onView={setView}
           onCreate={(kind, name, parent) => {
@@ -1059,6 +1077,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
             else createEntry(kind, name);
           }}
           onMove={(id, parent) => { changeCatalog((doc) => { setNotebookParent(doc, id, parent); }); }}
+          onArchive={archiveNotebook}
           onRename={(kind, id, name) => {
             // Pickers and the MCP read "/" in a notebook name as a path (same text as the desktop).
             if (kind === 'notebooks' && name.includes('/')) { appAlert('A notebook name cannot contain "/"', 'To put it inside another notebook, use Move to… or drag it there.'); return; }

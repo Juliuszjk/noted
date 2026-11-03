@@ -49,3 +49,24 @@ it('shows notebooks as a folding tree with a Move to… picker', async () => {
   expect(moves).toEqual([['studia', 'todo']]);
   root.unmount();
 });
+
+it('offers Archive notebook, or Unarchive for a notebook whose notes are all archived', async () => {
+  const el = document.createElement('div');
+  document.body.appendChild(el);
+  const root = createRoot(el);
+  const calls: [string, boolean][] = [];
+  const entries = tree.map((e) => ({ ...e, archived: e.id === 'linux' }));
+  await act(async () => root.render(h(NavPanel, {
+    view: { kind: 'notebook', id: 'linux' }, onView: () => {}, counts: { notes: 3, favorites: 1, trash: 0, archive: 0 },
+    notebooks: entries, tags: [], onCreate: () => {}, onRename: () => {}, onDelete: () => {},
+    onArchive: (id, on) => calls.push([id, on]), openNotebooks: [],
+  })));
+  const pick = async (id: string, label: string) => {
+    await act(async () => { el.querySelector(`[data-nb="${id}"]`)!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 10, clientY: 10 })); });
+    await act(async () => { [...el.querySelectorAll('button')].find((b) => b.textContent?.trim() === label)!.click(); });
+  };
+  await pick('studia', 'Archive notebook');
+  await pick('linux', 'Unarchive notebook');
+  expect(calls).toEqual([['studia', true], ['linux', false]]);
+  root.unmount();
+});

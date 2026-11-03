@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import {
   mdiHomeOutline, mdiBookOutline, mdiPound, mdiNoteTextOutline, mdiStarOutline, mdiBellOutline, mdiTrashCanOutline, mdiWeb,
   mdiArchiveOutline, mdiPlus, mdiPencilOutline, mdiDeleteOutline, mdiChevronDoubleLeft, mdiChevronDoubleRight, mdiFileTreeOutline, mdiCogOutline, mdiCreationOutline, mdiChevronDown, mdiChevronRight, mdiBookPlusOutline,
-  mdiFolderMoveOutline, mdiArrowUp, mdiCheck,
+  mdiFolderMoveOutline, mdiArrowUp, mdiCheck, mdiArchiveArrowDownOutline, mdiArchiveArrowUpOutline,
 } from '@mdi/js';
 import { Icon } from './Icon';
 import { IconBtn, popoverStyle } from './menu-parts';
@@ -18,6 +18,8 @@ export interface NavEntry {
   // tree order (catalog listNotebookTree).
   parent?: string | null;
   depth?: number;
+  // Notebooks: every note in it (and below it) is archived (notebook-archive.ts).
+  archived?: boolean;
 }
 
 interface Props {
@@ -32,6 +34,8 @@ interface Props {
   onDelete: (kind: 'notebooks' | 'tags', id: string) => void;
   // Moves a notebook into another one (null = top level).
   onMove?: (id: string, parent: string | null) => void;
+  // Archives (on) or unarchives every note in a notebook and its sub-notebooks.
+  onArchive?: (id: string, on: boolean) => void;
   // Notebooks whose sub-notebooks are shown (per device).
   openNotebooks?: string[];
   onOpenNotebooks?: (ids: string[]) => void;
@@ -80,7 +84,7 @@ function NameInput({ initial, placeholder, onDone, indent = 0 }: { initial: stri
 }
 
 // Left navigation: Home (Notes, Favorites, Trash, Archive), Notebooks and Tags, with counts.
-export function NavPanel({ view, onView, counts, notebooks, tags, onCreate, onRename, onDelete, onMove, openNotebooks = [], onOpenNotebooks, onHide, compact, onExpand, onMinWidth, onSettings }: Props) {
+export function NavPanel({ view, onView, counts, notebooks, tags, onCreate, onRename, onDelete, onMove, onArchive, openNotebooks = [], onOpenNotebooks, onHide, compact, onExpand, onMinWidth, onSettings }: Props) {
   const [tab, setTab] = useState<Tab>(view.kind === 'notebook' ? 'notebooks' : view.kind === 'tag' ? 'tags' : 'home');
   // A name field for a new entry: at the top level, or inside a notebook (new sub-notebook).
   const [creating, setCreating] = useState<{ parent: string | null } | null>(null);
@@ -351,7 +355,7 @@ export function NavPanel({ view, onView, counts, notebooks, tags, onCreate, onRe
       )}
 
       {menu && (
-        <div onMouseDown={(e) => e.stopPropagation()} style={{ ...popoverStyle, position: 'fixed', top: Math.min(menu.y, window.innerHeight - 190), left: menu.x, zIndex: 10000, minWidth: 180, padding: 4 }}>
+        <div onMouseDown={(e) => e.stopPropagation()} style={{ ...popoverStyle, position: 'fixed', top: Math.min(menu.y, window.innerHeight - 230), left: menu.x, zIndex: 10000, minWidth: 180, padding: 4 }}>
           {menu.kind === 'notebooks' && (
             <>
               <button type="button" style={rowStyle(false)} onClick={() => { setRenaming(null); setCreating({ parent: menu.id }); setOpen(menu.id, true); setMenu(null); }}>
@@ -362,6 +366,14 @@ export function NavPanel({ view, onView, counts, notebooks, tags, onCreate, onRe
                   <Icon path={mdiFolderMoveOutline} size={16} /> Move to…
                 </button>
               )}
+              {onArchive && (() => {
+                const archived = !!notebooks.find((n) => n.id === menu.id)?.archived;
+                return (
+                  <button type="button" style={rowStyle(false)} onClick={() => { onArchive(menu.id, !archived); setMenu(null); }}>
+                    <Icon path={archived ? mdiArchiveArrowUpOutline : mdiArchiveArrowDownOutline} size={16} /> {archived ? 'Unarchive notebook' : 'Archive notebook'}
+                  </button>
+                );
+              })()}
             </>
           )}
           <button type="button" style={rowStyle(false)} onClick={() => { setCreating(null); setRenaming(menu.id); setMenu(null); }}>

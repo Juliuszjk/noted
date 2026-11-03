@@ -28,6 +28,7 @@ export * from './AppDialog';
 export * from './NotePicker';
 export * from './shortcuts';
 export * from './note-groups';
+export * from './notebook-archive';
 export * from './note-place';
 export * from './reminder-list';
 export * from './reminder-notify';

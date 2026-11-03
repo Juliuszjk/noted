@@ -136,6 +136,13 @@ changing a feature. Full pre-trim copies: `docs/private/claude-md-full-*.md` (no
   CatalogPicker shows the tree (paths while typing); typing "Linux/TODO" creates the levels, so
   does the sidebar's New notebook (rename refuses a "/"). Deleting a tag asks first. A bare name
   resolves (`ensureNotebookPath`) to a top-level notebook, else the only match, else a new one.
+  **Archived notebooks** (2026-11-03, `ui/src/notebook-archive.ts`, tested; desktop and phone): a
+  notebook with no live note in its subtree and at least one archived one (trashed notes do not
+  count; an empty notebook, or a parent of one, stays) is left out of the sidebar / drawer tree,
+  except in the Archive view or while a hidden notebook is open (then all show, Notebooks tab).
+  Derived from note metas, nothing synced. Notebook menu: Archive notebook / Unarchive notebook
+  (the latter when all its notes are archived) = every non-trashed note in it and its
+  sub-notebooks, locked ones too, per-note saves, after a confirm "Archive N notes in “X”?".
   Note list menu: Copy (title + plain text; not for locked notes) and Duplicate ("… (copy)",
   new tab; a copy never keeps `published`). The MCP refuses an ambiguous bare notebook name.
 - Note author (2026-11-03): settings `createdBy` ('claude' for notes made through the MCP), meta
@@ -515,7 +522,9 @@ drawer say "This device / phone only".
   create missing levels; a single name is found anywhere in the tree), `list_notebooks_tags` is
   an indented tree with "N with sub-notebooks", `list_notes notebook` includes sub-notebooks.
   Everything inside a protected notebook is protected too (checked before any catalog write).
-  create_note sets settings `createdBy: 'claude'`.
+  create_note sets settings `createdBy: 'claude'`; update_note_properties `created_by_claude`
+  sets or clears it on an existing note. `move_notebook` re-parents a notebook (`into` empty =
+  top level; target path created when missing; never into itself or a protected notebook).
 - Images: `read_note images: true` decrypts images (blob cache `~/.local/share/noted-mcp/blobs`)
   and draws drawings as PNG (resvg-wasm). Reminders: list / add (own in the catalog, or a chip in
   a note line) / update (done = `completeReminder`, snooze). `undo_last_change`: snapshot of

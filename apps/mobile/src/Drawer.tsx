@@ -5,6 +5,7 @@ import {
   mdiNoteTextOutline, mdiStarOutline, mdiArchiveOutline, mdiTrashCanOutline, mdiHomeOutline, mdiBookOutline, mdiWeb,
   mdiPound, mdiPlus, mdiCogOutline, mdiFileTreeOutline, mdiBellOutline, mdiCreationOutline, mdiBookPlusOutline,
   mdiFolderMoveOutline, mdiPencilOutline, mdiDeleteOutline, mdiArrowUp, mdiChevronDown, mdiChevronRight,
+  mdiArchiveArrowDownOutline, mdiArchiveArrowUpOutline,
 } from '@mdi/js';
 import * as SecureStore from 'expo-secure-store';
 import { notebookSubtree } from '@noted/sync';
@@ -24,6 +25,8 @@ export interface DrawerEntry {
   // (the list comes in tree order).
   parent?: string | null;
   depth?: number;
+  // Notebooks: every note in it (and below it) is archived (@noted/ui notebook-archive.ts).
+  archived?: boolean;
 }
 
 interface Props {
@@ -41,6 +44,8 @@ interface Props {
   onDelete: (kind: 'notebooks' | 'tags', id: string) => void;
   // Moves a notebook into another one (null = top level).
   onMove: (id: string, parent: string | null) => void;
+  // Archives (on) or unarchives every note in a notebook and its sub-notebooks (asks first).
+  onArchive: (id: string, on: boolean) => void;
   onSettings: () => void;
   // Connection state under the app name (sync runs on its own; a tap syncs now).
   // localOnly: this phone works without a server.
@@ -53,7 +58,7 @@ type Tab = 'home' | 'notebooks' | 'tags';
 const OPEN_KEY = 'noted_drawer_open_notebooks';
 
 // Side panel like Notesnook's: Notes / Favorites / Archive / Trash, notebooks and tags.
-export function Drawer({ view, counts, notebooks, tags, onView, onCreate, onRename, onDelete, onMove, onSettings, sync, onClose }: Props) {
+export function Drawer({ view, counts, notebooks, tags, onView, onCreate, onRename, onDelete, onMove, onArchive, onSettings, sync, onClose }: Props) {
   const [tab, setTab] = useState<Tab>(view.kind === 'notebook' ? 'notebooks' : view.kind === 'tag' ? 'tags' : 'home');
   const [creating, setCreating] = useState('');
   // A name field for a new entry: at the top (parent null) or a new sub-notebook under `parent`.
@@ -194,6 +199,7 @@ export function Drawer({ view, counts, notebooks, tags, onView, onCreate, onRena
     ...(kind === 'notebooks' ? [
       { key: 'sub', label: 'New sub-notebook', icon: mdiBookPlusOutline, onPress: () => { setOpen(e.id, true); setRenaming(null); setCreating(''); setCreatingIn({ parent: e.id }); } },
       { key: 'move', label: 'Move to…', icon: mdiFolderMoveOutline, onPress: () => setMover(e) },
+      { key: 'archive', label: e.archived ? 'Unarchive notebook' : 'Archive notebook', icon: e.archived ? mdiArchiveArrowUpOutline : mdiArchiveArrowDownOutline, onPress: () => onArchive(e.id, !e.archived) },
     ] : []),
     { key: 'rename', label: 'Rename', icon: mdiPencilOutline, onPress: () => { setCreatingIn(null); setRenaming({ id: e.id, name: e.name }); } },
     { key: 'delete', label: 'Delete', icon: mdiDeleteOutline, danger: true, onPress: () => (kind === 'notebooks' ? onDelete('notebooks', e.id) : confirmTagDelete(e)) },

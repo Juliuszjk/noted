@@ -41,7 +41,7 @@ import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { mdiDotsVertical, mdiBookOutline, mdiDockLeft, mdiFormatListText, mdiCreationOutline } from '@mdi/js';
 import {
   SettingsDialog, LockScreen, VaultDialog, LockedNote, NotePicker, NoteEditor, UnlockScreen, NoteList, TabBar, StatusBar, NavPanel, NoteProperties, CatalogPicker, HistoryPreview,
-  IconBtn, Icon, tabDropIndex, placeTab, confirmDialog, messageDialog, showDialog, linkDescendants, matchesShortcut, setShortcutOverrides, getShortcutOverrides, notesInView, Resizer, RESIZE_SNAP, LinkTree, RemindersList, reminderEntries, dueReminderCount, reminderNotices, parseNoticeId, MISSED_WITHIN_MS, NAV_MIN_WIDTH, NAV_RAIL_WIDTH, PdfPreview,
+  IconBtn, Icon, tabDropIndex, placeTab, confirmDialog, messageDialog, showDialog, linkDescendants, archivedNotebooks, visibleNotebooks, notebookArchiveTargets, matchesShortcut, setShortcutOverrides, getShortcutOverrides, notesInView, Resizer, RESIZE_SNAP, LinkTree, RemindersList, reminderEntries, dueReminderCount, reminderNotices, parseNoticeId, MISSED_WITHIN_MS, NAV_MIN_WIDTH, NAV_RAIL_WIDTH, PdfPreview,
 } from '@noted/ui';
 import type { NoteSummary, NoteListItem, TextStats, NoteAction, NoteView, PropertyFlags, HistoryEntry, ImportedNote, AttachmentEntry, ReminderEntry } from '@noted/ui';
 import { notePlaces, parseImport, IMPORT_SOURCES, expandZips, noteFilesFor } from '@noted/ui';
@@ -955,6 +955,25 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     targets.forEach((id) => updateNoteDoc(id, (doc) => setNoteFlag(doc, 'archived', on)));
   };
 
+  // "Archive notebook" / "Unarchive notebook": every note in it and its sub-notebooks (after
+  // asking); a notebook whose notes are all archived then leaves the sidebar.
+  const archiveNotebook = async (id: string, on: boolean) => {
+    const node = notebookTree.find((n) => n.id === id);
+    if (!node) return;
+    const targets = notebookArchiveTargets(listItems, subtreeOf(id), on);
+    if (!targets.length) { messageDialog(on ? 'Nothing to archive' : 'Nothing to unarchive', `“${node.name}” has no ${on ? 'notes that are not archived' : 'archived notes'}.`); return; }
+    const count = `${targets.length} note${targets.length === 1 ? '' : 's'}`;
+    const ok = await confirmDialog({
+      title: `${on ? 'Archive' : 'Unarchive'} ${count} in “${node.name}”?`,
+      message: on
+        ? 'Notes in its sub-notebooks too. The notebook leaves the sidebar once all its notes are archived; the Archive view still shows it.'
+        : 'Notes in its sub-notebooks too. They go back to Notes.',
+      confirm: on ? 'Archive' : 'Unarchive',
+    });
+    if (!ok) return;
+    targets.forEach((noteId) => updateNoteDoc(noteId, (doc) => setNoteFlag(doc, 'archived', on)));
+  };
+
   // Acts on one note or a selection of several.
   const noteAction = async (ids: string[], action: NoteAction) => {
     const each = (change: (doc: Y.Doc) => void) => ids.forEach((id) => updateNoteDoc(id, change));
@@ -1277,9 +1296,15 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     reminders: dueReminders,
   }), [listItems, dueReminders]);
   // In tree order; a parent counts the notes of its sub-notebooks too.
+  // Notebooks whose notes are all archived are left out, except in the Archive view
+  // (notebook-archive.ts).
+  const hiddenNotebooks = useMemo(() => archivedNotebooks(notebookTree, listItems), [notebookTree, listItems]);
   const navNotebooks = useMemo(
-    () => notebookTree.map((e) => ({ id: e.id, name: e.name, parent: e.parent, depth: e.depth, count: notesInView(listItems, { kind: 'notebook', id: e.id }, subtreeOf).length })),
-    [notebookTree, listItems, subtreeOf],
+    () => visibleNotebooks(notebookTree, hiddenNotebooks, prefs.view).map((e) => ({
+      id: e.id, name: e.name, parent: e.parent, depth: e.depth, archived: hiddenNotebooks.has(e.id),
+      count: notesInView(listItems, { kind: 'notebook', id: e.id }, subtreeOf).length,
+    })),
+    [notebookTree, hiddenNotebooks, prefs.view, listItems, subtreeOf],
   );
   const navTags = tagEntries.map((e) => ({ ...e, count: notesInView(listItems, { kind: 'tag', id: e.id }).length }));
   const catalogNames = useMemo(() => ({
@@ -1704,6 +1729,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                   if ('id' in prefs.view && prefs.view.id === id) setPref('view', { kind: 'notes' });
                 }}
                 onMove={(id, parent) => { changeCatalog((doc) => setNotebookParent(doc, id, parent)); }}
+                onArchive={archiveNotebook}
                 openNotebooks={prefs.navOpen}
                 onOpenNotebooks={(ids) => setPref('navOpen', ids)}
                 onHide={() => setPref('navHidden', true)}
