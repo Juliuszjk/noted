@@ -11,9 +11,9 @@ import { T, Icon, themed } from './ui';
 
 export type ReminderSheetResult = { state: ReminderState; text: string } | { delete: true };
 
-// The reminder picker of the Reminders view (the editor page has its own, reminder-picker.ts,
-// built from the same functions): text for a reminder of its own, quick choices, a month
-// calendar, time, repeat; Done / Delete for an existing one.
+// The phone's reminder picker (the Reminders view and chips in the editor; the desktop has
+// reminder-picker.ts, built from the same functions): text for a reminder of its own, quick
+// choices, a month calendar, time, repeat; Done / Delete for an existing one.
 export function ReminderSheet({ title, initial, text, times, onResult, onClose }: {
   title: string;
   initial?: ReminderState;

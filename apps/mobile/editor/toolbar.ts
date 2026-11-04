@@ -46,9 +46,7 @@ import { searchNotes } from '@noted/editor/note-search';
 import { normalizeLinkUrl } from '@noted/editor/link-utils';
 import { commitMathEdit, requestMathEdit } from '@noted/editor/math';
 import type { MathEditRequest } from '@noted/editor/math';
-import { commitReminderEdit, getReminderTimes } from '@noted/editor/reminder';
-import type { ReminderEditRequest } from '@noted/editor/reminder';
-import { renderReminderPicker } from '@noted/editor/reminder-picker';
+import { requestReminderEdit } from '@noted/editor/reminder';
 
 // Formatting toolbar above the keyboard (mobile WebView, plain DOM), modelled on Notesnook:
 //   main row:  +  B I U  ⋮ | − 16px + | Paragraph ▾ | Font ▾ | lists | note link, link,
@@ -274,7 +272,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   // it is tapped; the other sheets keep the keyboard and sit above it. A sheet never grows
   // taller than the space left above the bar.
   // `hideBar`: the toolbar row goes away too while the sheet is open (a sheet with its own
-  // buttons at the bottom, like the reminder picker).
+  // buttons at the bottom, like the colour picker).
   const showSheet = (name: string, title: string, build: (body: El) => void, onBack?: () => void, opts: { hideKeyboard?: boolean; hideBar?: boolean } = {}) => {
     if (openSheet === null) {
       returnToEditor = editor.isFocused;
@@ -397,6 +395,11 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
           if (sub?.kind === 'table') return tableSheet(() => insertSheet(items, title, parents, tiles));
           if (sub) return insertSheet(sub.items, item.title, path, sub.kind === 'tiles');
           if (item.title === 'Link to note') return noteLinkSheet();
+          // React Native's picker: no focus first (the keyboard flashed up behind it).
+          if (item.title === 'Reminder') {
+            closeSheet(false);
+            return void requestReminderEdit(editor, { mode: 'insert', pos: at().from });
+          }
           runInEditor(() => item.command?.({ editor, range: at() }));
         }, { icon, chevron: !!item.submenu }));
       }
@@ -746,20 +749,6 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       render();
       setTimeout(() => area.focus(), 50);
     });
-  };
-
-  // Reminder picker for "/reminder" and tapped chips (registered as onEditReminder). The
-  // keyboard stays down until the time field is tapped.
-  const openReminderPicker = (request: ReminderEditRequest) => {
-    showSheet('reminder', request.mode === 'edit' ? 'Reminder' : 'New reminder', (body) => {
-      renderReminderPicker(body, {
-        initial: request.mode === 'edit' ? request.attrs : undefined,
-        times: getReminderTimes(editor),
-        touch: true,
-        onCommit: (commit) => { closeSheet(); commitReminderEdit(editor, request, commit); },
-        onCancel: () => closeSheet(),
-      });
-    }, undefined, { hideKeyboard: true, hideBar: true });
   };
 
   // ---- ⋮ card and colours ----
@@ -1418,7 +1407,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       const value = `${Math.round(px)}px`;
       if (Math.abs((parseFloat(el.style.maxHeight) || 0) - px) > 4) el.style.maxHeight = value;
     };
-    // Without the toolbar row (the reminder picker) the sheet may take nearly the whole screen.
+    // Without the toolbar row (the colour picker) the sheet may take nearly the whole screen.
     const sheetShare = root.classList.contains('no-bar') ? 0.92 : 0.75;
     setMax(sheet, Math.max(160, Math.min(visible * sheetShare, visible - rows - 16)));
     setMax(slashPanel, Math.max(120, Math.min(visible * 0.45, visible - rows - 16)));
@@ -1807,5 +1796,5 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   // The drawing tools' "Custom colour" (drawing-bar.ts): the same picker, without the bar row.
   const pickColor = (title: string, initial: string | undefined, apply: (hex: string) => void) => colorPickerSheet(title, initial, apply, true);
 
-  return { pickColor, openMathEditor, openReminderPicker, openCatalog: catalogSheet, openExport: exportSheet, openNotePicker: (mode: 'goto' | 'linkto') => noteLinkSheet(mode), setKeyboard, refocus, setToolbarConfig, slash: slashRenderer, back };
+  return { pickColor, openMathEditor, openCatalog: catalogSheet, openExport: exportSheet, openNotePicker: (mode: 'goto' | 'linkto') => noteLinkSheet(mode), setKeyboard, refocus, setToolbarConfig, slash: slashRenderer, back };
 }

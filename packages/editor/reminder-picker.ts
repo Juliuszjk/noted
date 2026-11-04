@@ -7,8 +7,8 @@ import type { ReminderRepeat, ReminderState, ReminderTimes } from './reminder-ti
 import type { ReminderCommit } from './reminder';
 
 // The reminder picker: quick choices, a month calendar, time, repeat, and for an existing
-// reminder Done / Delete. Plain DOM rendered into a container the platform supplies (the
-// desktop's popover, the phone's sheet), so both share it.
+// reminder Done / Delete. Plain DOM rendered into the desktop's popover (the phone uses
+// React Native's ReminderSheet).
 
 const STYLE_ID = 'noted-reminder-picker-style';
 const CSS = `
@@ -47,10 +47,6 @@ const CSS = `
 .nrp-btn:hover { border-color: var(--border-focus); }
 .nrp-btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-fg, #fff); }
 .nrp-btn.danger { color: var(--c-red, #e5484d); }
-.nrp-touch .nrp-grid button { height: 38px; }
-.nrp-touch .nrp-actions { position: sticky; bottom: -12px; padding: 8px 0 12px; margin-bottom: -12px; background: var(--bg-surface-high); }
-.nrp-touch .nrp-quick button, .nrp-touch .nrp-btn { padding: 10px 12px; }
-.nrp-touch .nrp-seg button { padding: 8px 12px; }
 `;
 
 const ensureStyle = () => {
@@ -83,8 +79,6 @@ export interface ReminderPickerOptions {
   times: ReminderTimes;
   onCommit: (commit: ReminderCommit) => void;
   onCancel: () => void;
-  // Bigger targets for fingers (the phone).
-  touch?: boolean;
 }
 
 export interface ReminderPickerHandle {
@@ -104,7 +98,7 @@ export const renderReminderPicker = (container: HTMLElement, options: ReminderPi
   let shown = new Date(day.getFullYear(), day.getMonth(), 1);
   let repeat: ReminderRepeat | null = initial?.repeat ?? null;
 
-  const root = el('div', `nrp${options.touch ? ' nrp-touch' : ''}`);
+  const root = el('div', 'nrp');
 
   // Quick choices save at once (with the repeat chosen below); on an existing reminder they
   // work as "snooze".

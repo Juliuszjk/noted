@@ -28,8 +28,8 @@ import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protoc
 import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { compressImageBytes } from '@noted/media';
 import type { MathEditRequest } from '@noted/editor/math';
-import { setReminderTimes } from '@noted/editor/reminder';
-import type { ReminderEditRequest } from '@noted/editor/reminder';
+import { commitReminderEdit, getReminderTimes, setReminderTimes } from '@noted/editor/reminder';
+import type { ReminderCommit, ReminderEditRequest } from '@noted/editor/reminder';
 import { createToolbar, setCanPublish } from './toolbar';
 import { createDrawingBar } from './drawing-bar';
 import { restoreDrawingTools, showPenHover } from '@noted/editor/drawing';
@@ -182,7 +182,18 @@ let archivedIds = new Set<string>();
 let currentNoteId: string | null = null;
 // Set once the toolbar exists; math nodes and the insert menu open its LaTeX editor.
 let openMathEditor: ((request: MathEditRequest) => void) | null = null;
-let openReminderPicker: ((request: ReminderEditRequest) => void) | null = null;
+// The reminder picker is React Native's (the same sheet as the note menu); the chip waits here,
+// its position kept up to date while the sheet is open (sync may change the note meanwhile).
+let reminderRequest: ReminderEditRequest | null = null;
+const openReminderPicker = (request: ReminderEditRequest) => {
+  if (!editor) return;
+  reminderRequest = request;
+  // Told before the blur: the keyboard's hide event could reach React Native first.
+  const keyboardWasUp = editor.isFocused;
+  // From the keyboard (a selected chip, "/reminder"): the sheet takes the focus.
+  if (editor.isFocused) (editor.view.dom as HTMLElement).blur();
+  post({ type: 'editReminder', initial: request.mode === 'edit' ? request.attrs : null, times: getReminderTimes(editor), keyboardWasUp });
+};
 let openCatalog: ((kind: 'notebooks' | 'tags') => void) | null = null;
 let toolbarApi: ReturnType<typeof createToolbar> | null = null;
 let findBar: ReturnType<typeof createFindBar> | null = null;
@@ -322,6 +333,15 @@ const reportHistory = () => {
   post({ type: 'history', ...state });
 };
 
+// A tap on a reminder chip only opens its picker: no focus, so Chromium does not start scrolling
+// the caret into view (the note moved a little under the sheet). Its click still arrives.
+document.addEventListener('mousedown', (e) => {
+  const chip = (e.target as HTMLElement | null)?.closest?.('[data-reminder]');
+  if (!chip || !editor?.isEditable || !editor.view.dom.contains(chip)) return;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+
 // Tapping a note link asks React Native to open that note.
 document.addEventListener('click', (e) => {
   const link = (e.target as HTMLElement | null)?.closest?.('[data-note-link]');
@@ -454,7 +474,7 @@ const startEditor = () => {
         ydoc: bodyDoc ?? ydoc,
         placeholder: 'Start typing...',
         onEditMath: (request) => openMathEditor?.(request),
-        onEditReminder: (request) => openReminderPicker?.(request),
+        onEditReminder: (request) => openReminderPicker(request),
       }),
       // "/notebook" and "/tag" in the insert menu.
       NoteActions.configure({
@@ -557,7 +577,6 @@ const startEditor = () => {
   };
   toolbar.setToolbarConfig(toolbarConfig, tableToolbarConfig);
   openMathEditor = toolbar.openMathEditor;
-  openReminderPicker = toolbar.openReminderPicker;
   openCatalog = toolbar.openCatalog;
   getNoteSettings(ydoc).observe(renderChips);
   getNoteTagMap(ydoc).observe(renderChips);
@@ -570,6 +589,9 @@ const startEditor = () => {
   getNoteNotebookMap(ydoc).observe(reportNoteState);
   reportNoteState();
   editor.on('transaction', () => setTimeout(reportHistory, 0));
+  editor.on('transaction', ({ transaction }) => {
+    if (reminderRequest && transaction.docChanged) reminderRequest = { ...reminderRequest, pos: transaction.mapping.map(reminderRequest.pos) };
+  });
   reportHistory();
   findBar = createFindBar(editor);
   // "Update automatically" (published notes): a while after the last edit of the text or the
@@ -751,6 +773,10 @@ const receive = (raw: string) => {
     }
   } else if (msg.type === 'theme' && msg.colors && typeof msg.colors.background === 'string') {
     applyColors({ ...DEFAULT_THEME, ...msg.colors });
+  } else if (msg.type === 'reminderResult') {
+    const request = reminderRequest;
+    reminderRequest = null;
+    if (request && editor && msg.commit) commitReminderEdit(editor, request, msg.commit as ReminderCommit, false);
   } else if (msg.type === 'refocus') {
     // Back from the note menu: the cursor (and the keyboard) where they were.
     toolbarApi?.refocus();

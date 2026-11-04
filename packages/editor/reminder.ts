@@ -232,8 +232,9 @@ export type ReminderCommit =
   | { kind: 'delete' };
 
 // Applies the picker's result: a new chip (with a space after it), changed or removed one.
-export const commitReminderEdit = (editor: Editor, request: ReminderEditRequest, commit: ReminderCommit): void => {
-  const chain = editor.chain().focus();
+// `focus` false leaves the focus alone (the phone brings the keyboard back only when it was up).
+export const commitReminderEdit = (editor: Editor, request: ReminderEditRequest, commit: ReminderCommit, focus = true): void => {
+  const chain = focus ? editor.chain().focus() : editor.chain();
   if (request.mode === 'insert') {
     if (commit.kind === 'delete') return void chain.run();
     const attrs: ReminderAttrs = { id: newReminderId(), at: commit.at, repeat: commit.repeat, done: false, snooze: null };

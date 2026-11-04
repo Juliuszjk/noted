@@ -29,6 +29,8 @@ import type { CatalogEntry, CatalogKind } from '@noted/sync';
 import { mdiArrowLeft, mdiUndo, mdiRedo, mdiDotsVertical, mdiClose, mdiVectorLink, mdiCreationOutline } from '@mdi/js';
 import { T, Icon, themed, useThemeVersion } from './ui';
 import { NoteMenu } from './NoteMenu';
+import { ReminderSheet } from './ReminderSheet';
+import type { ReminderState, ReminderTimes } from '@noted/editor/reminder-time';
 import type { NoteAttachmentItem } from './NoteMenu';
 import type { NoteFlags } from './NoteMenu';
 import type { SplitSide } from './SplitIcon';
@@ -121,6 +123,8 @@ export function EditorScreen({
   const [historyList, setHistoryList] = useState<HistoryEntry[] | null>(null);
   // The keyboard was up when the note menu opened: closing the menu brings it back.
   const keyboardBeforeMenuRef = useRef(false);
+  // A reminder chip tapped (or /reminder): the picker opens like the note menu.
+  const [reminderEdit, setReminderEdit] = useState<{ key: number; initial: ReminderState | null; times: ReminderTimes } | null>(null);
   const [history, setHistory] = useState({ undo: false, redo: false });
   const [menuOpen, setMenuOpen] = useState(false);
   // Note menu "Attached files" (the page lists them when the menu opens).
@@ -454,6 +458,9 @@ export function EditorScreen({
         onSaveCopy(base64ToBytes(msg.state));
       } else if (msg.type === 'save') {
         saveFromEditor(msg);
+      } else if (msg.type === 'editReminder' && msg.times) {
+        takeFocusForModal(!!msg.keyboardWasUp);
+        setReminderEdit({ key: Date.now(), initial: msg.initial ?? null, times: msg.times });
       } else if (msg.type === 'log') {
         console.warn('[editor]', msg.message);
       }
@@ -651,11 +658,16 @@ export function EditorScreen({
     if (text) showToast(text);
   };
 
-  const openMenu = (page: 'main' | 'publish' | 'links' = 'main') => {
-    setMenuPage(page);
-    keyboardBeforeMenuRef.current = keyboardTopRef.current !== null;
+  // A modal (note menu, reminder picker) takes the window focus: the keyboard goes, and comes
+  // back on closing only if it was up.
+  const takeFocusForModal = (keyboardWasUp: boolean) => {
+    keyboardBeforeMenuRef.current = keyboardWasUp;
     Keyboard.dismiss();
     keyboardGone();
+  };
+  const openMenu = (page: 'main' | 'publish' | 'links' = 'main') => {
+    setMenuPage(page);
+    takeFocusForModal(keyboardTopRef.current !== null);
     setHistoryList(null);
     setAttachments(null);
     sendToEditor({ type: 'listAttachments' });
@@ -877,6 +889,23 @@ export function EditorScreen({
           then(key);
           return null;
         }} />
+      ) : null}
+      {reminderEdit ? (
+        <ReminderSheet
+          key={reminderEdit.key}
+          title={reminderEdit.initial ? 'Reminder' : 'New reminder'}
+          initial={reminderEdit.initial ?? undefined}
+          times={reminderEdit.times}
+          onResult={(result) => sendToEditor({
+            type: 'reminderResult',
+            commit: 'delete' in result ? { kind: 'delete' } : { kind: 'save', at: result.state.at, repeat: result.state.repeat, done: result.state.done },
+          })}
+          onClose={() => {
+            setReminderEdit(null);
+            sendToEditor({ type: 'reminderResult', commit: null });
+            if (keyboardBeforeMenuRef.current) focusPage({ type: 'refocus' });
+          }}
+        />
       ) : null}
       {menuOpen ? (
         <NoteMenu
