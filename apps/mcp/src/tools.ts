@@ -104,7 +104,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     if (path.length > 1 && firsts.length > 1 && !firsts.some((e) => e.path.length === 1)) {
       throw new Error(`Several notebooks are named "${path[0]}": ${firsts.map((e) => `"${e.path.join('/')}"`).join(', ')}. Use the full path.`);
     }
-    const found = resolveNotebookPath(cat, path);
+    const found = resolveNotebookPath(cat, path, prot);
     const last = found.length === path.length ? found[found.length - 1] : undefined;
     return last && !prot.has(last.id) ? list.find((e) => e.id === last.id) : undefined;
   };
@@ -248,12 +248,12 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     if (!wanted.length) return [];
     if (kind === 'notebooks') {
       // Checked before anything is written: no level may be (or sit in) a protected notebook.
+      // A name only a hidden notebook has is not looked up there: it becomes a new notebook.
       const { cat, prot, notebooks } = await names();
       for (const name of wanted) {
         if (findNotebook(notebooks, cat, prot, name)) continue;
         const path = splitNotebookPath(name);
-        if (isProtectedName(name) || path.some(isProtectedName) || resolveNotebookPath(cat, path).some((e) => prot.has(e.id))
-          || listCatalog(cat, 'notebooks').some((e) => prot.has(e.id) && fold(e.name.trim()) === fold(name.trim()))) {
+        if (isProtectedName(name) || path.some(isProtectedName)) {
           throw new Error('That notebook is not available to Claude.');
         }
       }
@@ -267,7 +267,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
         if (kind === 'tags') ids.push(ensureCatalogEntry(cat, kind, name.replace(/^#/, ''), () => crypto.randomUUID()).id);
         else {
           const visible = listNotebookTree(cat).filter((e) => !prot.has(e.id));
-          ids.push(findNotebook(visible, cat, prot, name)?.id ?? ensureNotebookPath(cat, splitNotebookPath(name), () => crypto.randomUUID()).id);
+          ids.push(findNotebook(visible, cat, prot, name)?.id ?? ensureNotebookPath(cat, splitNotebookPath(name), () => crypto.randomUUID(), prot).id);
         }
         if (listCatalog(cat, kind).length !== before) changed = true;
       }
@@ -406,7 +406,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     // Refused before catalogIds creates any missing level of `into`.
     const below = notebookSubtree(n.notebooks, source.id);
     const target = args.into.trim() ? findNotebook(n.notebooks, n.cat, n.prot, args.into) : undefined;
-    const reached = target ? [target] : resolveNotebookPath(n.cat, splitNotebookPath(args.into));
+    const reached = target ? [target] : resolveNotebookPath(n.cat, splitNotebookPath(args.into), n.prot);
     if (reached.some((e) => below.has(e.id))) return text('A notebook cannot go inside itself or one of its sub-notebooks.', true);
     const parent = args.into.trim() ? (await catalogIds('notebooks', [args.into]))[0] : null;
     let moved = false;

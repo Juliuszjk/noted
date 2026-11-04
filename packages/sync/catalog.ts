@@ -143,9 +143,9 @@ export const setNotebookParent = (doc: Y.Doc, id: string, parent: string | null)
   return true;
 };
 
-const childNamed = (doc: Y.Doc, parent: string | null, name: string): CatalogEntry | undefined => {
+const childNamed = (doc: Y.Doc, parent: string | null, name: string, hidden?: Set<string>): CatalogEntry | undefined => {
   const parents = notebookParents(doc);
-  return listCatalog(doc, 'notebooks').find((e) => (parents.get(e.id) ?? null) === parent && fold(e.name) === fold(name));
+  return listCatalog(doc, 'notebooks').find((e) => !hidden?.has(e.id) && (parents.get(e.id) ?? null) === parent && fold(e.name) === fold(name));
 };
 
 // A notebook with this name directly inside `parent` (null = top level), created if missing.
@@ -175,18 +175,19 @@ export const splitNotebookPath = (path: string): string[] => path.split('/').map
 
 // Finds the notebook of a path without changing anything: `found` = the notebooks that exist,
 // from the top (may be shorter than the path). The first name is looked up at the top level,
-// else anywhere when only one notebook has it ("Semestr 5/Algorithms").
-export const resolveNotebookPath = (doc: Y.Doc, path: string[]): CatalogEntry[] => {
+// else anywhere when only one notebook has it ("Semestr 5/Algorithms"). `hidden` notebooks
+// (the MCP's protected ones) are skipped at every level: a name only they have counts as missing.
+export const resolveNotebookPath = (doc: Y.Doc, path: string[], hidden?: Set<string>): CatalogEntry[] => {
   const found: CatalogEntry[] = [];
   if (!path.length) return found;
-  const first = childNamed(doc, null, path[0]) ?? (() => {
-    const hits = listCatalog(doc, 'notebooks').filter((e) => fold(e.name) === fold(path[0]));
+  const first = childNamed(doc, null, path[0], hidden) ?? (() => {
+    const hits = listCatalog(doc, 'notebooks').filter((e) => !hidden?.has(e.id) && fold(e.name) === fold(path[0]));
     return hits.length === 1 ? hits[0] : undefined;
   })();
   if (!first) return found;
   found.push(first);
   for (const name of path.slice(1)) {
-    const next = childNamed(doc, found[found.length - 1].id, name);
+    const next = childNamed(doc, found[found.length - 1].id, name, hidden);
     if (!next) break;
     found.push(next);
   }
@@ -195,9 +196,9 @@ export const resolveNotebookPath = (doc: Y.Doc, path: string[]): CatalogEntry[] 
 
 // The notebook of a path like ["Linux", "TODO"], creating the missing levels (a first name
 // found nowhere, or in several places but not at the top level, is created at the top level).
-export const ensureNotebookPath = (doc: Y.Doc, path: string[], newId: () => string): CatalogEntry => {
+export const ensureNotebookPath = (doc: Y.Doc, path: string[], newId: () => string, hidden?: Set<string>): CatalogEntry => {
   if (!path.length) throw new Error('Empty name');
-  const found = resolveNotebookPath(doc, path);
+  const found = resolveNotebookPath(doc, path, hidden);
   let at: CatalogEntry | null = found[found.length - 1] ?? null;
   for (const name of path.slice(found.length)) at = childNotebook(doc, at?.id ?? null, name, newId);
   return at!;

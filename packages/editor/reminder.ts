@@ -6,7 +6,7 @@ import type { Node as PmNode } from '@tiptap/pm/model';
 import { mdiBellOutline, mdiBellCheckOutline, mdiBellSleepOutline, mdiRepeat } from '@mdi/js';
 import {
   DEFAULT_REMINDER_TIMES, formatReminderTime, formatReminderDate, isReminderRepeat, reminderStatus, repeatLabel,
-  reminderDateLabel, reminderPlainText, reminderDue,
+  reminderDateLabel, reminderPlainText, reminderDue, newReminderId,
 } from './reminder-time';
 import type { ReminderRepeat, ReminderState, ReminderTimes } from './reminder-time';
 
@@ -41,13 +41,6 @@ declare module '@tiptap/core' {
     reminder: ReminderStorage;
   }
 }
-
-// Random id without crypto.randomUUID (the phone's editor page is not a secure context).
-export const newReminderId = (): string => {
-  const bytes = new Uint8Array(12);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-};
 
 export const reminderAttrs = (node: PmNode): ReminderAttrs => ({
   id: String(node.attrs.id ?? ''),

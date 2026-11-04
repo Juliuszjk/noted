@@ -116,17 +116,20 @@ export function NavPanel({ view, onView, counts, notebooks, tags, onCreate, onRe
     if (missing.length) onOpenNotebooks?.([...openNotebooks, ...missing]);
   }, [view, parentOf]);
 
+  // The drag handlers outlive the render that started them: a sync during the drag can change
+  // the tree, so they read the current one from here.
+  const latest = useRef({ subtree, parentOf, setOpen, onMove });
+  latest.current = { subtree, parentOf, setOpen, onMove };
   const beginDrag = (id: string, e: React.MouseEvent) => {
     if (e.button !== 0 || !onMove) return;
     dragStart.current = { id, x: e.clientX, y: e.clientY };
-    const banned = subtree(id);
     const move = (ev: MouseEvent) => {
       const start = dragStart.current;
       if (!start) return;
       if (Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) < 5 && !swallowClick.current) return;
       swallowClick.current = true;
       const target = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-nb]')?.dataset.nb ?? null;
-      setDrag({ id: start.id, x: ev.clientX, y: ev.clientY, over: target && !banned.has(target) ? target : null });
+      setDrag({ id: start.id, x: ev.clientX, y: ev.clientY, over: target && !latest.current.subtree(start.id).has(target) ? target : null });
     };
     const up = (ev: MouseEvent) => {
       window.removeEventListener('mousemove', move);
@@ -137,12 +140,15 @@ export function NavPanel({ view, onView, counts, notebooks, tags, onCreate, onRe
       if (!start || !swallowClick.current) return;
       const under = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
       const target = under?.closest<HTMLElement>('[data-nb]')?.dataset.nb ?? null;
-      if (target && !banned.has(target) && parentOf.get(start.id) !== target) {
-        onMove?.(start.id, target);
-        setOpen(target, true);
-      } else if (!target && under && under === listArea.current && parentOf.get(start.id)) {
+      const now = latest.current;
+      // A notebook deleted meanwhile (a sync) is not moved.
+      const exists = now.parentOf.has(start.id);
+      if (exists && target && !now.subtree(start.id).has(target) && now.parentOf.get(start.id) !== target) {
+        now.onMove?.(start.id, target);
+        now.setOpen(target, true);
+      } else if (exists && !target && under && under === listArea.current && now.parentOf.get(start.id)) {
         // Dropped on the empty part of the list: back to the top level (elsewhere: cancelled).
-        onMove?.(start.id, null);
+        now.onMove?.(start.id, null);
       }
       // The click that ends the drag must not select the notebook under the pointer.
       setTimeout(() => { swallowClick.current = false; }, 0);

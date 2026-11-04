@@ -13,7 +13,7 @@ import {
   runSyncEngine, uploadPendingBlobs, LocalNoteStore, mergingNoteStore, configureVerifierCache, configureLocalVault, moveVaultToServer, refreshServerInfo, buildNoteMeta, encodeNoteMeta,
   decodeNoteMeta, displayTitle, setTitle, markNoteCreated, setNoteFlag, getNoteFlag, setNoteTrashed,
   deleteNoteForever, unpublishQuietly, cleanUpGuestFilesHourly, afterLiveCatchUp, uploadPublished, deletePublished, publishedExists, publishExpired, getNotePublish, setNotePublish, setNoteNotebook, getNoteNotebooks, setNoteTag, getNoteTags, setNoteFont, getNoteFont, CATALOG_ID, isSystemNote,
-  listCatalog, getSharedEditorPrefs, refreshStaleNoteMeta, listOwnReminders, setOwnReminder, deleteOwnReminder, updateReminderInDoc, setSharedEditorPrefs, sharedPrefsChange, SHARED_EDITOR_PREFS, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, purgeExpiredTrash, listNotebookTree, notebookSubtree, notebookPathNames, setNotebookParent, ensureChildNotebook, ensureNotebookPath, splitNotebookPath, removeNotebook, getTitleText, getNoteSettings,
+  listCatalog, getSharedEditorPrefs, refreshStaleNoteMeta, listOwnReminders, setOwnReminder, deleteOwnReminder, updateReminderInDoc, renewReminderIds, setSharedEditorPrefs, sharedPrefsChange, SHARED_EDITOR_PREFS, ensureCatalogEntry, renameCatalogEntry, removeCatalogEntry, purgeExpiredTrash, listNotebookTree, notebookSubtree, notebookPathNames, setNotebookParent, ensureChildNotebook, ensureNotebookPath, splitNotebookPath, removeNotebook, getTitleText, getNoteSettings,
   currentAuthToken, sessionStillValid, setAuthEpoch, getAuthEpoch, exportAttachments, zipNoteWithFiles, backupVault, restoreServerVault, fetchVaultStatus, createBackup, restoreBackup, backupFileName, openBackup, compareBackup, restoreBackupNote, findUnusedBlobs, deleteServerBlobs, deletedNoteIds, purgeDeletedNotes, usedBlobIds, BLOB_GRACE_MS, noteBlobIds, docFromSealed, noteBodyText, applyDefaultTitle, setNoteBodyJson, appendNoteLink,
   fetchVault, passphraseOpens, parseVaultInfo, serializeVaultInfo, createLiveOwner, publishLive, LIVE_ORIGIN,
   getVaultSetup, createVault, openVault, changeVaultPassword, isNoteLocked, lockNote, unlockNote, readLockedBody, writeLockedBody, noteBodyJson, noteAttachments,
@@ -1029,9 +1029,14 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
 
   // A new note "… (copy)" from a note state, opened in a new tab ("Save a copy" in the
   // history, Duplicate in the note list).
-  const saveCopy = async (state: Uint8Array) => {
+  // A locked note's copy needs the vault key (new reminder ids inside its sealed body).
+  const saveCopy = (state: Uint8Array) => {
     const doc = new Y.Doc();
     Y.applyUpdate(doc, state);
+    if (isNoteLocked(doc)) withVaultKey((key) => { void insertCopy(doc, key); });
+    else void insertCopy(doc, null);
+  };
+  const insertCopy = async (doc: Y.Doc, vaultKey: Uint8Array | null) => {
     setTitle(doc, `${getTitleText(doc).toString().trim() || 'Untitled'} (copy)`);
     const settings = getNoteSettings(doc);
     settings.set('createdAt', Date.now());
@@ -1039,14 +1044,13 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     // The published link (static or live) stays with the original note only; the user made the copy.
     settings.delete('published');
     settings.delete('createdBy');
+    renewReminderIds(doc, vaultKey);
     const id = await insertNoteRecord(doc, true);
     if (id) openNote(id, { newTab: true });
-    return id;
   };
-  const saveHistoryCopy = async (state: Uint8Array) => {
-    const id = await saveCopy(state);
+  const saveHistoryCopy = (state: Uint8Array) => {
+    saveCopy(state);
     setPreview(null);
-    return id;
   };
 
   // Export (Markdown / text / HTML): a save dialog, then the file.

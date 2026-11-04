@@ -176,10 +176,19 @@ describe('MCP tools', () => {
     expect((await call('list_notes')).text).not.toContain('PIN');
     expect((await call('read_note', { id: 'n-bank' })).isError).toBe(true);
     expect((await call('list_notebooks_tags')).text).not.toContain('Bank');
-    for (const name of ['Bank', 'Protected/Bank', 'Protected/New']) {
+    for (const name of ['Protected/Bank', 'Protected/New']) {
       expect((await call('create_note', { title: 'x', markdown: 'y', notebooks: [name] })).isError).toBe(true);
     }
-    const catalog = docFromSealed(key, (await stores.notes.get(CATALOG_ID))!.yjs_state);
+    let catalog = docFromSealed(key, (await stores.notes.get(CATALOG_ID))!.yjs_state);
     expect(listNotebookTree(catalog).map((e) => e.name)).not.toContain('New');
+    // A name only a hidden notebook has is a new, visible notebook (no refusal that gives it away).
+    const made = await call('create_note', { title: 'Visible bank', markdown: 'y', notebooks: ['Bank', 'Bank/Sub'] });
+    expect(made.isError).toBeFalsy();
+    catalog = docFromSealed(key, (await stores.notes.get(CATALOG_ID))!.yjs_state);
+    const banks = listNotebookTree(catalog).filter((e) => e.name === 'Bank');
+    expect(banks.map((e) => e.path.join('/')).sort()).toEqual(['Bank', 'Protected/Bank']);
+    expect(listNotebookTree(catalog).find((e) => e.name === 'Sub')?.path).toEqual(['Bank', 'Sub']);
+    expect((await call('list_notes', { notebook: 'Bank' })).text).toContain('Visible bank');
+    expect((await call('list_notes', { notebook: 'Bank' })).text).not.toContain('PIN');
   });
 });

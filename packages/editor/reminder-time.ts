@@ -5,6 +5,13 @@
 
 export type ReminderRepeat = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
+// Random id without crypto.randomUUID (the phone's editor page is not a secure context).
+export const newReminderId = (): string => {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+};
+
 export const REMINDER_REPEATS: { value: ReminderRepeat | null; label: string }[] = [
   { value: null, label: 'Once' },
   { value: 'daily', label: 'Daily' },

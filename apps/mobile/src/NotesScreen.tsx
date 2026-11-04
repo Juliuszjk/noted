@@ -44,7 +44,7 @@ import { setVaultKey, getVaultKey } from './vault-session';
 import { allHistoryStates } from './history';
 import { cleanLocalStorage } from './store';
 import {
-  deletedNoteIds, findUnusedBlobs, purgeDeletedNotes, deleteServerBlobs, usedBlobIds, BLOB_GRACE_MS, noteBlobIds,
+  deletedNoteIds, findUnusedBlobs, purgeDeletedNotes, deleteServerBlobs, usedBlobIds, BLOB_GRACE_MS, noteBlobIds, renewReminderIds, isNoteLocked,
 } from '@noted/sync';
 import { SettingsScreen } from './SettingsScreen';
 import type { NoteMeta, CatalogKind, CatalogEntry, NotebookNode, SharedEditorPrefs, OwnReminder } from '@noted/sync';
@@ -709,15 +709,22 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
     if (record?.yjs_state) await saveCopy(unseal(masterKey, record.yjs_state));
   };
   // A new note "… (copy)" from a note state (Duplicate, or "Save a copy" of an older version).
+  // A locked note's copy needs the vault key (new reminder ids inside its sealed body).
   const saveCopy = async (state: Uint8Array) => {
     const doc = new Y.Doc();
     Y.applyUpdate(doc, state);
+    const key = getVaultKey();
+    if (isNoteLocked(doc) && !key) setVaultPrompt({ then: (opened) => { void insertCopy(doc, opened); } });
+    else await insertCopy(doc, key);
+  };
+  const insertCopy = async (doc: Y.Doc, vaultKey: Uint8Array | null) => {
     setTitle(doc, `${displayTitle(buildNoteMeta(doc))} (copy)`);
     getNoteSettings(doc).set('createdAt', Date.now());
     getNoteSettings(doc).delete('trashedAt');
     // The published link (static or live) stays with the original note only; the user made the copy.
     getNoteSettings(doc).delete('published');
     getNoteSettings(doc).delete('createdBy');
+    renewReminderIds(doc, vaultKey);
     const newId = randomUUID();
     const content = seal(masterKey, new TextEncoder().encode(encodeNoteMeta(buildNoteMeta(doc))));
     await dbStore.save(newId, content, seal(masterKey, Y.encodeStateAsUpdate(doc)), Date.now());

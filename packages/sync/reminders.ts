@@ -1,9 +1,10 @@
 import * as Y from 'yjs';
 import { seal, unseal } from '@noted/crypto';
-import { isReminderRepeat } from '@noted/editor/reminder-time';
+import { isReminderRepeat, newReminderId } from '@noted/editor/reminder-time';
 import type { ReminderState } from '@noted/editor/reminder-time';
 import { buildNoteMeta, decodeNoteMeta, encodeNoteMeta } from './note-meta';
 import { docFromSealed } from './doc';
+import { isNoteLocked, readLockedBody, writeLockedBody } from './locked';
 import type { LocalNoteStore } from './engine';
 
 // Reminders outside the editor: changing a reminder chip inside a note's doc (the Reminders
@@ -44,6 +45,30 @@ export const updateReminderInDoc = (doc: Y.Doc, id: string, change: ReminderStat
     else element.removeAttribute('snooze');
   }, origin);
   return true;
+};
+
+// Gives every reminder chip in a note new ids: a copy of a note (Duplicate, Save a copy) then
+// has reminders of its own, so ticking or snoozing one leaves the other note alone. A locked
+// note keeps its body sealed, so it needs the vault key.
+export const renewReminderIds = (doc: Y.Doc, vaultKey?: Uint8Array | null): void => {
+  if (isNoteLocked(doc)) {
+    const body = vaultKey ? readLockedBody(doc, vaultKey) : null;
+    if (!body || !vaultKey) return;
+    type Node = { type: string; attrs?: Record<string, unknown>; content?: Node[] };
+    const renew = (node: Node): Node => ({
+      ...node,
+      ...(node.type === 'reminder' ? { attrs: { ...node.attrs, id: newReminderId() } } : {}),
+      ...(node.content ? { content: node.content.map(renew) } : {}),
+    });
+    writeLockedBody(doc, vaultKey, renew(body as Node) as typeof body);
+    return;
+  }
+  const walk = (node: Y.XmlFragment | Y.XmlElement) => node.toArray().forEach((child) => {
+    if (!(child instanceof Y.XmlElement)) return;
+    if (child.nodeName === 'reminder') child.setAttribute('id', newReminderId());
+    else walk(child);
+  });
+  doc.transact(() => walk(doc.getXmlFragment(BODY_KEY)));
 };
 
 // ---- reminders of their own, kept in the catalog (Y.Map `reminders`: id -> value) ----
