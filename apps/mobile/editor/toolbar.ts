@@ -1608,7 +1608,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   // spelling suggestions box on underlined words (cannot be styled: black on black in Expo
   // Go) and, on the empty page below the note, scrolled the note up. Only short, still taps;
   // long presses (selection), drags (scrolling) and taps on links, checkboxes, note links,
-  // images, formulas, tables, the title and the bars keep the native handling.
+  // images, formulas, reminder chips, tables, the title and the bars keep the native handling.
   // The last block on the screen: blocks under a folded heading have no box (bottom 0 made
   // every tap a tap below the note).
   const lastShownBlock = () => {
@@ -1626,7 +1626,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
     if (!last || last === editor.view.dom.lastElementChild) return null;
     return editor.view.posAtDOM(last, last.childNodes.length);
   };
-  const NATIVE_TAP = 'a, input, textarea, label, button, select, img, .image-node, [data-note-link], [data-type="inline-math"], .outline-toggle, .heading-toggle, [data-type="drawing"], .db, '
+  const NATIVE_TAP = 'a, input, textarea, label, button, select, img, .image-node, [data-note-link], [data-type="inline-math"], [data-reminder], .outline-toggle, .heading-toggle, [data-type="drawing"], .db, '
     + '[data-type="block-math"], .tableWrapper, .attachment-card, .tb, .tb-notelink, .find-bar, .history-view, #chips, #title, #wordcount';
   // A tap on an image or a file card selects it without the keyboard (it pushed the image off
   // screen); a tap on the text brings the keyboard back.
