@@ -6,6 +6,7 @@ import { Table } from '@tiptap/extension-table';
 import { ColoredTableCell, ColoredTableHeader, SizedTableRow } from './table-cells';
 import { TableResize, FreshColumnsTableView } from './table-tools';
 import { SelectAllKeys } from './select-all';
+import { WordKeys } from './word-keys';
 import { ListSelect } from './list-select';
 import { MarkdownPaste } from './markdown-paste';
 import { ClipboardText } from './clipboard-text';
@@ -19,7 +20,7 @@ import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import TextAlign from '@tiptap/extension-text-align';
 import type * as Y from 'yjs';
-import { ListStyles } from './list-extensions';
+import { ListStyles, OutlineEnter } from './list-extensions';
 import { HeadingFold } from './heading-fold';
 import { CodeBlockIndent } from './code-extensions';
 import { Callout } from './callout';
@@ -73,6 +74,8 @@ export const createSchemaExtensions = ({ ydoc, placeholder, onEditMath, onEditRe
   TaskList,
   QuietTaskItem.configure({ nested: true }),
   ListStyles,
+  // Enter on a folded outline item goes under its hidden branch (list-extensions.ts).
+  OutlineEnter,
   // Collapsible headings (heading-fold.ts).
   HeadingFold,
   CodeBlockIndent,
@@ -104,6 +107,8 @@ export const createSchemaExtensions = ({ ydoc, placeholder, onEditMath, onEditRe
   TableResize,
   // Ctrl+A (code block first, then the whole note).
   SelectAllKeys,
+  // Ctrl+arrows stop at punctuation too, like code editors (word-keys.ts).
+  WordKeys,
   // Mouse selections over list markers reach the line start (list-select.ts, content.css).
   ListSelect,
   // Text written in Markdown pastes formatted.

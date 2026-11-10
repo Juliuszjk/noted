@@ -131,15 +131,17 @@ test.describe('folding', () => {
     await expect(page.getByText('Alpha text under one.')).toBeHidden();
   });
 
-  test('Enter at the end of a folded heading opens it and starts a line under it', async ({ page }) => {
+  test('Enter at the end of a folded heading keeps it folded and starts a heading after the section', async ({ page }) => {
     await openHarness(page, 'fold');
     const { x, y } = await middle(page);
     await page.mouse.click(x, y);
     await placeCursor(page, 'Section one', 'Section one'.length);
     await page.keyboard.press('Enter');
-    await page.keyboard.type('New line');
-    await expect(page.getByText('Alpha text under one.')).toBeVisible();
-    expect(await page.evaluate(() => (window as any).__h.html())).toMatch(/Section one<\/h2><p>New line<\/p>/);
+    await page.keyboard.type('New heading');
+    await expect(page.getByText('Alpha text under one.')).toBeHidden();
+    await expect(page.getByRole('heading', { name: 'New heading' })).toBeVisible();
+    expect(await collapsedHeadings(page)).toEqual(['Section one']);
+    expect(await page.evaluate(() => (window as any).__h.html())).toMatch(/Beta text under one\.<\/p><h2>New heading<\/h2><h2 data-foldable="true">Section two<\/h2>/);
   });
 
   test('a fold survives an undo of the typing after it', async ({ page }) => {

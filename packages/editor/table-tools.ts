@@ -16,6 +16,10 @@ const MOUSE_TOL = 4;
 const TOUCH_TOL = 10;
 const HOLD_MS = 250;
 
+// Meta on the transaction a dragged line makes: the phone leaves the scrolling alone (it
+// brought the caret, often far above the table, back into view).
+export const TABLE_RESIZE = 'notedTableResize';
+
 const isCell = (node: PMNode) => node.type.spec.tableRole === 'cell' || node.type.spec.tableRole === 'header_cell';
 
 // ---- commands ----
@@ -336,7 +340,7 @@ class Drag {
       tr.setNodeMarkup(start + offset, undefined, { ...row.attrs, height: this.sizes[0] });
     }
     this.cleanup();
-    if (tr.docChanged) this.view.dispatch(tr);
+    if (tr.docChanged) this.view.dispatch(tr.setMeta(TABLE_RESIZE, true));
     else this.cancel();
   }
 }

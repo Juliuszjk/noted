@@ -28,6 +28,10 @@ const boolAttr = (htmlName: string, attr: string) => ({
   renderHTML: (attrs: Record<string, any>) => (attrs[attr] ? { [htmlName]: 'true' } : {}),
 });
 
+// An open slash menu or [[ link picker (Tiptap Suggestion plugins) owns Enter.
+export const suggestionOpen = (state: EditorState): boolean => state.plugins.some((p) =>
+  /uggestion\$/.test((p as unknown as { key: string }).key) && !!(p.getState(state) as { active?: boolean } | undefined)?.active);
+
 const isFolded = (node: PmNode) => node.type.name === 'heading' && !!node.attrs.foldable && !!node.attrs.collapsed;
 
 // Whether `node` ends the section of a heading of `level` (a heading of the same or a higher level).
@@ -155,17 +159,28 @@ export const HeadingFold = Extension.create({
 
   addKeyboardShortcuts() {
     return {
-      // Enter at the end of a folded heading opens the fold: the new line goes right under the
-      // heading, which is inside the fold (everything up to the next heading belongs to it).
+      // Enter at the end of a folded heading: the fold stays closed and a new empty heading of
+      // the same level starts after the whole section (a paragraph there would belong to the
+      // section, everything up to the next heading does, and be hidden).
       Enter: ({ editor }) => {
         const { state, view } = editor;
         const { selection } = state;
         const { $from } = selection;
-        if (!selection.empty || !isFolded($from.parent) || $from.parentOffset !== $from.parent.content.size) return false;
-        const pos = $from.before();
-        const after = pos + $from.parent.nodeSize;
-        const tr = state.tr.setNodeMarkup(pos, undefined, { ...$from.parent.attrs, collapsed: false }).insert(after, state.schema.nodes.paragraph.create());
-        view.dispatch(tr.setSelection(TextSelection.create(tr.doc, after + 1)).scrollIntoView());
+        if (!selection.empty || !isFolded($from.parent) || $from.parentOffset !== $from.parent.content.size || suggestionOpen(state)) return false;
+        const { to } = foldedRange(state.doc, $from.before());
+        const $to = state.doc.resolve(to);
+        const heading = $from.parent.type;
+        if (!$to.parent.canReplaceWith($to.index(), $to.index(), heading)) {
+          // No room for a heading there: open the fold and start a line under the heading.
+          const pos = $from.before();
+          const after = pos + $from.parent.nodeSize;
+          const tr = state.tr.setNodeMarkup(pos, undefined, { ...$from.parent.attrs, collapsed: false }).insert(after, state.schema.nodes.paragraph.create());
+          view.dispatch(tr.setSelection(TextSelection.create(tr.doc, after + 1)).scrollIntoView());
+          return true;
+        }
+        // Same level and alignment, but a plain heading (not foldable).
+        const tr = state.tr.insert(to, heading.create({ ...$from.parent.attrs, foldable: false, collapsed: false }));
+        view.dispatch(tr.setSelection(TextSelection.create(tr.doc, to + 1)).scrollIntoView());
         return true;
       },
     };

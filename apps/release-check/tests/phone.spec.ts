@@ -127,6 +127,41 @@ test.describe('the phone editor page', () => {
     expect(Math.abs((await heading.boundingBox())!.y - top)).toBeLessThan(3);
   });
 
+  // Resizing a table far below the caret brought the caret back into view (the page jumped
+  // to the top of the note).
+  test('resizing a table far from the caret leaves the page where it is', async ({ page }) => {
+    const filler = (name: string) => Array.from({ length: 30 }, (_, i) => `<p>${name} paragraph ${i + 1}: the quick brown fox jumps over the lazy dog.</p>`).join('');
+    const html = `${filler('Before')}<table><tbody><tr><th><p>Name</p></th><th><p>Value</p></th></tr><tr><td><p>Cell A</p></td><td><p>Cell B</p></td></tr></tbody></table>${filler('After')}`;
+    await page.goto('/index.html');
+    await page.waitForFunction(() => !!(window as any).__h);
+    await openPhoneEditor(page, await page.evaluate((h) => (window as any).__h.noteState(h, 'Table'), html));
+    await page.getByText('Before paragraph 2:').tap();
+    await page.waitForFunction(() => document.activeElement?.classList.contains('ProseMirror'));
+    await send(page, { type: 'keyboard', inset: 320, shown: true });
+    // The keyboard's arrival brings the caret into view first.
+    await page.waitForTimeout(600);
+    await page.evaluate(() => document.querySelector('.ProseMirror table')!.scrollIntoView({ block: 'center' }));
+    await page.waitForTimeout(300);
+    const before = await page.evaluate(() => window.scrollY);
+    // A finger held on the line between the columns, then dragged.
+    const cdp = await page.context().newCDPSession(page);
+    const cell = (await page.locator('.ProseMirror th').first().boundingBox())!;
+    const x = cell.x + cell.width - 1;
+    const y = cell.y + cell.height / 2;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    await page.waitForTimeout(400);
+    for (let i = 1; i <= 5; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - 8 * i, y }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(600);
+    // The drag did resize (the first cell got a width).
+    expect(await page.evaluate(() => {
+      let width = null;
+      (document.querySelector('.ProseMirror') as any).editor.state.doc.descendants((node: any) => { if (width === null && node.type.name === 'tableHeader') width = node.attrs.colwidth; });
+      return width;
+    })).not.toBeNull();
+    expect(Math.abs(await page.evaluate(() => window.scrollY) - before)).toBeLessThan(3);
+  });
+
   for (const width of [360, 412]) {
     test(`no sideways scrolling at ${width} px with wide content`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });

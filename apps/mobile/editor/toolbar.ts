@@ -15,7 +15,7 @@ import { trackCorrections } from './autocorrect';
 import type { Correction } from './autocorrect';
 import { onDrawingChange, setMouseDraws } from '@noted/editor/drawing';
 import {
-  moveTableRowBy, moveTableColumnBy, selectTablePart, equalColumnWidths, equalRowHeights, resetRowHeights, TABLE_MOVE_MERGED,
+  moveTableRowBy, moveTableColumnBy, selectTablePart, equalColumnWidths, equalRowHeights, resetRowHeights, TABLE_MOVE_MERGED, TABLE_RESIZE,
 } from '@noted/editor/table-tools';
 import type { TableMoveResult } from '@noted/editor/table-tools';
 import { insertImageFromUrl } from '@noted/editor/blob-image';
@@ -1456,8 +1456,9 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   }
   editor.on('selectionUpdate', () => centerCaret());
   // A ticked checkbox elsewhere in the note must not bring the caret's line into view.
-  // Nor does folding a section (heading-fold.ts keeps the arrow under the finger).
-  editor.on('update', ({ transaction }) => { if (!transaction.getMeta(KEEP_SCROLL) && !transaction.getMeta(FOLD_TOGGLE)) centerCaret(); });
+  // Nor does folding a section (heading-fold.ts keeps the arrow under the finger), nor
+  // resizing a table by its lines.
+  editor.on('update', ({ transaction }) => { if (!transaction.getMeta(KEEP_SCROLL) && !transaction.getMeta(FOLD_TOGGLE) && !transaction.getMeta(TABLE_RESIZE)) centerCaret(); });
   // Focus coming back with the keyboard: the keyboard's arrival (onViewport) centres the line.
   editor.on('focus', () => { if (keyboardUp()) centerCaretSoon(); });
 

@@ -1,7 +1,7 @@
 import { Extension } from '@tiptap/core';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { toggleInPlace } from './heading-fold';
+import { suggestionOpen, toggleInPlace } from './heading-fold';
 
 export const BULLET_STYLES = ['disc', 'circle', 'square', 'square-open'] as const;
 export const NUMBER_STYLES = ['decimal', 'lower-alpha', 'upper-alpha', 'lower-roman', 'upper-roman', 'lower-greek'] as const;
@@ -82,5 +82,38 @@ export const ListStyles = Extension.create({
         },
       }),
     ];
+  },
+});
+
+// Enter at the end of a folded outline item's own line (not on an empty one, which leaves the
+// list as usual): the new item goes under the whole folded branch. Its own extension so only
+// this keymap runs before the list items' (priority 100).
+export const OutlineEnter = Extension.create({
+  name: 'outlineEnter',
+  priority: 200,
+  addKeyboardShortcuts() {
+    return {
+      // Enter at the end of a folded item's line: the new item goes under the whole folded
+      // branch (splitting the item would hand its hidden children to the new line).
+      Enter: ({ editor }) => {
+        const { state, view } = editor;
+        const { selection } = state;
+        const { $from } = selection;
+        if (!selection.empty || $from.depth < 2 || $from.index(-1) !== 0 || $from.parent.content.size === 0
+          || $from.parentOffset !== $from.parent.content.size || suggestionOpen(state)) return false;
+        const item = $from.node(-1);
+        if (item.type.name !== 'listItem' || !item.attrs.collapsed) return false;
+        let hidesBelow = false;
+        for (let i = $from.index(-1) + 1; i < item.childCount; i++) {
+          const name = item.child(i).type.name;
+          if (name === 'bulletList' || name === 'orderedList') hidesBelow = true;
+        }
+        if (!hidesBelow) return false;
+        const after = $from.after(-1);
+        const tr = state.tr.insert(after, item.type.create(null, state.schema.nodes.paragraph.create()));
+        view.dispatch(tr.setSelection(TextSelection.create(tr.doc, after + 2)).scrollIntoView());
+        return true;
+      },
+    };
   },
 });
