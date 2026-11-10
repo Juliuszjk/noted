@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Noted app icon: an N of three ruled notebook sheets. Raster files are made from this by scripts/build-icons.sh. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="1024" height="1024">
+      <defs>
+        <clipPath id="b-diag-4"><polygon points="35.5,31 47.5,31 72.5,77 60.5,77"/></clipPath>
+        <filter id="b-sh-4" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="1.2" stdDeviation="1.2" flood-color="#000000" flood-opacity="0.45"/>
+        </filter>
+      </defs>
+      <g filter="url(#b-sh-4)">
+        <rect x="33" y="33" width="13" height="43" rx="1.2" fill="#f3f1ec"/>
+      </g>
+      <line x1="33.5" y1="38" x2="45.5" y2="38" stroke="#a9b6c8" stroke-width="0.55"/><line x1="33.5" y1="42.4" x2="45.5" y2="42.4" stroke="#a9b6c8" stroke-width="0.55"/><line x1="33.5" y1="46.8" x2="45.5" y2="46.8" stroke="#a9b6c8" stroke-width="0.55"/><line x1="33.5" y1="51.199999999999996" x2="45.5" y2="51.199999999999996" stroke="#a9b6c8" stroke-width="0.55"/><line x1="33.5" y1="55.599999999999994" x2="45.5" y2="55.599999999999994" stroke="#a9b6c8" stroke-width="0.55"/><line x1="33.5" y1="59.99999999999999" x2="45.5" y2="59.99999999999999" stroke="#a9b6c8" stroke-width="0.55"/><line x1="33.5" y1="64.39999999999999" x2="45.5" y2="64.39999999999999" stroke="#a9b6c8" stroke-width="0.55"/><line x1="33.5" y1="68.8" x2="45.5" y2="68.8" stroke="#a9b6c8" stroke-width="0.55"/><line x1="33.5" y1="73.2" x2="45.5" y2="73.2" stroke="#a9b6c8" stroke-width="0.55"/>
+      <line x1="36.3" y1="33" x2="36.3" y2="76" stroke="#e5675c" stroke-width="0.7"/>
+      <g filter="url(#b-sh-4)">
+        <path d="M63 32 h8 l4 4 v40 a1.2 1.2 0 0 1 -1.2 1.2 h-9.6 a1.2 1.2 0 0 1 -1.2 -1.2 z" fill="#f3f1ec"/>
+      </g>
+      <line x1="63.5" y1="38" x2="74.5" y2="38" stroke="#a9b6c8" stroke-width="0.55"/><line x1="63.5" y1="42.4" x2="74.5" y2="42.4" stroke="#a9b6c8" stroke-width="0.55"/><line x1="63.5" y1="46.8" x2="74.5" y2="46.8" stroke="#a9b6c8" stroke-width="0.55"/><line x1="63.5" y1="51.199999999999996" x2="74.5" y2="51.199999999999996" stroke="#a9b6c8" stroke-width="0.55"/><line x1="63.5" y1="55.599999999999994" x2="74.5" y2="55.599999999999994" stroke="#a9b6c8" stroke-width="0.55"/><line x1="63.5" y1="59.99999999999999" x2="74.5" y2="59.99999999999999" stroke="#a9b6c8" stroke-width="0.55"/><line x1="63.5" y1="64.39999999999999" x2="74.5" y2="64.39999999999999" stroke="#a9b6c8" stroke-width="0.55"/><line x1="63.5" y1="68.8" x2="74.5" y2="68.8" stroke="#a9b6c8" stroke-width="0.55"/><line x1="63.5" y1="73.2" x2="74.5" y2="73.2" stroke="#a9b6c8" stroke-width="0.55"/>
+      <line x1="66.3" y1="32" x2="66.3" y2="77.2" stroke="#e5675c" stroke-width="0.7"/>
+      <path d="M71 32 v4 h4 z" fill="#c4c0b9"/>
+      <g filter="url(#b-sh-4)">
+        <polygon points="35.5,31 47.5,31 72.5,77 60.5,77" fill="#f3f1ec"/>
+      </g>
+      <g clip-path="url(#b-diag-4)"><line x1="34" y1="38" x2="74" y2="38" stroke="#a9b6c8" stroke-width="0.55"/><line x1="34" y1="42.4" x2="74" y2="42.4" stroke="#a9b6c8" stroke-width="0.55"/><line x1="34" y1="46.8" x2="74" y2="46.8" stroke="#a9b6c8" stroke-width="0.55"/><line x1="34" y1="51.199999999999996" x2="74" y2="51.199999999999996" stroke="#a9b6c8" stroke-width="0.55"/><line x1="34" y1="55.599999999999994" x2="74" y2="55.599999999999994" stroke="#a9b6c8" stroke-width="0.55"/><line x1="34" y1="59.99999999999999" x2="74" y2="59.99999999999999" stroke="#a9b6c8" stroke-width="0.55"/><line x1="34" y1="64.39999999999999" x2="74" y2="64.39999999999999" stroke="#a9b6c8" stroke-width="0.55"/><line x1="34" y1="68.8" x2="74" y2="68.8" stroke="#a9b6c8" stroke-width="0.55"/><line x1="34" y1="73.2" x2="74" y2="73.2" stroke="#a9b6c8" stroke-width="0.55"/></g></svg>

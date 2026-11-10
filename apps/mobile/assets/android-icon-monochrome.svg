@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Noted app icon: an N of three ruled notebook sheets. Raster files are made from this by scripts/build-icons.sh. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="1024" height="1024">
+  <defs><mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="108" height="108">
+    <rect width="108" height="108" fill="#000"/>
+    <rect x="33" y="33" width="13" height="43" rx="1.2" fill="#fff"/>
+    <rect x="62" y="32" width="13" height="45" rx="1.2" fill="#fff"/>
+    <rect x="35.6" y="33" width="1.6" height="43" fill="#000"/>
+    <rect x="64.6" y="32" width="1.6" height="45" fill="#000"/>
+    <polygon points="35.5,31 47.5,31 72.5,77 60.5,77" fill="#000" stroke="#000" stroke-width="3.2" stroke-linejoin="round"/>
+    <polygon points="35.5,31 47.5,31 72.5,77 60.5,77" fill="#fff"/>
+  </mask></defs>
+  <rect width="108" height="108" fill="#ffffff" mask="url(#m)"/>
+</svg>
