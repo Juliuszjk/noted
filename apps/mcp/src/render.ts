@@ -18,7 +18,7 @@ export interface Picture {
   mimeType: string;
 }
 
-const mimeOf = (bytes: Uint8Array): string | null => {
+export const mimeOf = (bytes: Uint8Array): string | null => {
   const at = (i: number, s: string) => [...s].every((c, k) => bytes[i + k] === c.charCodeAt(0));
   if (at(0, '\x89PNG')) return 'image/png';
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return 'image/jpeg';

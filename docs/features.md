@@ -532,7 +532,9 @@ drawer say "This device / phone only".
   sets or clears it on an existing note. `move_notebook` re-parents a notebook (`into` empty =
   top level; target path created when missing; never into itself or a protected notebook).
 - Images: `read_note images: true` decrypts images (blob cache `~/.local/share/noted-mcp/blobs`)
-  and draws drawings as PNG (resvg-wasm). Reminders: list / add (own in the catalog, or a chip in
+  and draws drawings as PNG (resvg-wasm). `![alt](/abs/path.png)` (also `~/`, `file://`) in
+  create / append / rewrite adds a local PNG / JPEG / GIF / WebP as is (`local-images.ts`):
+  sealed with its own key, uploaded at once; refused without a server; http images never loaded. Reminders: list / add (own in the catalog, or a chip in
   a note line) / update (done = `completeReminder`, snooze). `undo_last_change`: snapshot of
   title / body / notebooks / tags / flags before each change (table `history`); a created note goes to the trash.
 

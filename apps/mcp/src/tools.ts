@@ -7,7 +7,9 @@ import {
   getNoteSettings, listOwnReminders, markNoteCreated, notebookSubtree, noteBodyJson, noteBodyText, resolveNotebookPath, setNoteBodyJson, setNoteCreatedBy,
   setNotebookParent, setNoteFlag,
   setNoteNotebook, setNoteTag, setOwnReminder, setTitle, splitNotebookPath, updateReminderInDoc,
+  createBlob, uploadBlob,
 } from '@noted/sync';
+import { hasServer } from '@noted/config';
 import type { LocalBlobStore, NotebookNode, NoteMeta, OwnReminder } from '@noted/sync';
 import { completeReminder, isReminderRepeat, repeatLabel, reminderDue, reminderStatus } from '@noted/editor/reminder-time';
 import type { ReminderRepeat, ReminderState } from '@noted/editor/reminder-time';
@@ -19,6 +21,7 @@ import { jsonToY } from '@noted/sync/json-to-y';
 import { HiddenNoteError, isProtectedName } from './notes';
 import type { Notes, NoteInfo } from './notes';
 import { drawingPicture, imagePicture } from './render';
+import { storeLocalImages } from './local-images';
 
 // The tools Claude gets. Every call first syncs (at most every few seconds), changes are
 // pushed at once. Calls run one at a time.
@@ -33,6 +36,7 @@ Notes are shown as Markdown. Things Markdown cannot hold appear as tokens:
 - ⟦image N⟧, ⟦drawing N⟧, ⟦file N⟧ on a line of their own: an image, a hand drawing (can hold handwriting or code) or an attached file. read_note with images: true shows images and drawings to you.
 - ⟦page-break N⟧ on a line of its own: the note's PDF starts a new page there (nothing else shows it).
 - ⟦reminder N: …⟧ inline: a reminder chip (date shown after the colon). ⟦link N: Title⟧ inline: a link to another note.
+To add a picture from a file on this computer, write ![alt](/absolute/path.png) (PNG, JPEG, GIF or WebP; also ~/... or file:///...) in Markdown you write; it is stored like an image added in the app. Web (http) images are never downloaded.
 When you rewrite a note, keep every token where it should go (move them freely); a token you drop is refused unless you list it in "remove". [[Exact note title]] creates a link to a note.
 Prefer the small edits (replace_text, append_to_note, set_task_done) over rewrite_note when only a part changes; blocks you leave unchanged in rewrite_note keep their exact formatting (colours, highlights), changed blocks get plain Markdown formatting.
 When you complete half-written sentences or fill gaps in the user's notes, mark what you added as *[…]* (italic in square brackets) so they can tell it from their own words, unless they ask otherwise.
@@ -137,6 +141,21 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     if (note.meta.trashedAt) throw new Error('The note is in the trash; restore it in the app first.');
     if (getNoteFlag(note.doc, 'readOnly')) throw new Error('The note is read-only (note properties in the app).');
     return { ...note, before: notes.snapshot(note.doc) };
+  };
+
+  // A picture from a local file: sealed with its own key like the apps' images, kept in the
+  // blob cache and uploaded at once, so the other devices can show it. Without a server it is
+  // refused: this cache is the MCP's own, no app would ever pick the file up from it.
+  const storeImage = async (bytes: Uint8Array) => {
+    if (!hasServer()) throw new Error('Images from files need a Noted server (this vault is local-only, other devices could never get the file).');
+    const ref = await createBlob(blobs, bytes, () => crypto.randomUUID());
+    try {
+      await uploadBlob(key, ref.id, (await blobs.get(ref.id))!);
+    } catch (e) {
+      throw new Error(`Image upload failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    await blobs.markUploaded(ref.id);
+    return ref;
   };
 
   const saved = async (id: string, doc: Y.Doc, action: string, before: ReturnType<Notes['snapshot']> | null, what: string) => {
@@ -278,12 +297,13 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
 
   server.registerTool('create_note', {
     title: 'Create a note',
-    description: 'Creates a note from Markdown. Notebooks / tags by name (created when missing); a notebook may be a path like "Linux/TODO" (missing levels are created).',
+    description: 'Creates a note from Markdown (![alt](/absolute/path.png) adds a picture from a local file). Notebooks / tags by name (created when missing); a notebook may be a path like "Linux/TODO" (missing levels are created).',
     inputSchema: { title: z.string(), markdown: z.string(), notebooks: z.array(z.string()).optional(), tags: z.array(z.string()).optional() },
   }, (args) => run(async () => {
     const { resolveTitle } = titleLookups(await notes.list());
     const blocks = newBlocks(args.markdown, resolveTitle);
     if ('error' in blocks) return text(blocks.error, true);
+    await storeLocalImages(blocks.blocks, storeImage);
     const doc = new Y.Doc();
     markNoteCreated(doc);
     // Shown in the apps as made by Claude (list mark, "From Claude" view).
@@ -298,7 +318,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
 
   server.registerTool('append_to_note', {
     title: 'Add to a note',
-    description: 'Adds Markdown to a note: at the end, at the start, or after the block (paragraph, list, ...) containing after_text. Tasks added right after a task list join it.',
+    description: 'Adds Markdown to a note (![alt](/absolute/path.png) adds a picture from a local file): at the end, at the start, or after the block (paragraph, list, ...) containing after_text. Tasks added right after a task list join it.',
     inputSchema: { id: z.string(), markdown: z.string(), after_text: z.string().optional(), at_start: z.boolean().optional() },
   }, (args) => run(async () => {
     const { doc, before } = await editable(args.id);
@@ -318,6 +338,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
         index--;
       }
     }
+    await storeLocalImages(blocks.blocks, storeImage);
     insertBlocks(doc, index, blocks.blocks);
     return saved(args.id, doc, 'append_to_note', before, 'Added.');
   }, true));
@@ -346,7 +367,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
 
   server.registerTool('rewrite_note', {
     title: 'Rewrite a note',
-    description: 'Replaces the whole body with Markdown (use the Markdown and tokens from read_note). Every ⟦image/drawing/file/reminder⟧ token must stay unless listed in `remove` (e.g. ["drawing 1"]). Unchanged blocks keep their exact formatting.',
+    description: 'Replaces the whole body with Markdown (use the Markdown and tokens from read_note). Every ⟦image/drawing/file/reminder⟧ token must stay unless listed in `remove` (e.g. ["drawing 1"]). Unchanged blocks keep their exact formatting. ![alt](/absolute/path.png) adds a picture from a local file.',
     inputSchema: { id: z.string(), markdown: z.string(), remove: z.array(z.string()).optional() },
   }, (args) => run(async () => {
     const { doc, before } = await editable(args.id);
@@ -355,6 +376,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     const remove = (args.remove ?? []).map((r) => r.replace(/[⟦⟧]/g, '').split(':')[0].trim());
     const parsed = parseRewrite(view, args.markdown.replace(/^# .*\n+/, (line) => (line.slice(2).trim() === (before.title || 'Untitled') ? '' : line)), lookups.resolveTitle, remove);
     if ('error' in parsed) return text(parsed.error, true);
+    await storeLocalImages(parsed.items.flatMap((i) => ('json' in i ? [i.json] : [])), storeImage);
     applyRewrite(doc, parsed.items, view.blocks.map((b) => b.json));
     const kept = parsed.items.filter((i) => 'keep' in i).length;
     return saved(args.id, doc, 'rewrite_note', before, `Rewritten (${kept} of ${parsed.items.length} blocks unchanged).`);
