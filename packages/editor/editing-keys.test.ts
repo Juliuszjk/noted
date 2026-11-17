@@ -7,6 +7,8 @@ import { createSchemaExtensions } from './extensions';
 import { sliceText } from './clipboard-text';
 import { SlashCommands } from './slash';
 import { suggestionOpen } from './heading-fold';
+import { slashItems } from './slash-items';
+import { insertTableAt } from './table-actions';
 
 let editor: Editor;
 afterEach(() => editor?.destroy());
@@ -80,6 +82,65 @@ describe('collapsible headings', () => {
     e.commands.insertContent('New');
     expect(e.getHTML()).toContain('<h2 data-foldable="true" data-collapsed="true">A</h2><p>a1</p><h2>New</h2>');
     expect(hidden()).toEqual(['a1']);
+  });
+
+  it('a block inserted from a folded heading goes to the end of its section, which opens', () => {
+    const e = make(doc.replace('data-foldable="true"', 'data-foldable="true" data-collapsed="true"'));
+    e.commands.insertContentAt(2, ' /x');
+    const callout = slashItems.find((i) => i.title === 'Callout')!.submenu!.items[0];
+    callout.command!({ editor: e, range: { from: 3, to: 5 } });
+    const blocks = e.getJSON().content!.map((n) => n.type);
+    expect(blocks.slice(0, 6)).toEqual(['heading', 'paragraph', 'heading', 'paragraph', 'callout', 'heading']);
+    expect(e.state.doc.firstChild!.textContent).toBe('A');
+    expect(e.state.doc.firstChild!.attrs.collapsed).toBe(false);
+    expect(hidden()).toEqual([]);
+  });
+
+  it('a table inserted from a folded heading goes to the end of its section', () => {
+    const e = make(doc.replace('data-foldable="true"', 'data-foldable="true" data-collapsed="true"'));
+    e.commands.setTextSelection(2);
+    insertTableAt(e, { from: 2, to: 2 }, 2, 2);
+    expect(e.getJSON().content!.map((n) => n.type).slice(0, 6)).toEqual(['heading', 'paragraph', 'heading', 'paragraph', 'table', 'heading']);
+    expect(e.state.doc.firstChild!.attrs.collapsed).toBe(false);
+  });
+
+  it('an empty line ending the folded section takes the new block', () => {
+    const e = make(doc.replace('data-foldable="true"', 'data-foldable="true" data-collapsed="true"').replace('<p>a2</p>', '<p>a2</p><p></p>'));
+    e.commands.setTextSelection(2);
+    insertTableAt(e, { from: 2, to: 2 }, 2, 2);
+    expect(e.getJSON().content!.map((n) => n.type).slice(0, 6)).toEqual(['heading', 'paragraph', 'heading', 'paragraph', 'table', 'heading']);
+  });
+
+  it('a folded sub-heading ending the section opens too', () => {
+    const e = make('<h1 data-foldable="true" data-collapsed="true">A</h1><h2 data-foldable="true" data-collapsed="true">B</h2><p>b1</p><h1>C</h1>');
+    e.commands.setTextSelection(2);
+    insertTableAt(e, { from: 2, to: 2 }, 2, 2);
+    expect(e.getJSON().content!.map((n) => n.type).slice(0, 5)).toEqual(['heading', 'heading', 'paragraph', 'table', 'heading']);
+    expect(hidden()).toEqual([]);
+  });
+
+  it('the phone "+" sheet (no slash typed) keeps spaces at the end of the heading', () => {
+    const e = make(doc.replace('data-foldable="true"', 'data-foldable="true" data-collapsed="true"'));
+    e.commands.insertContentAt(2, ' ');
+    expect(e.state.doc.firstChild!.textContent).toBe('A ');
+    e.commands.setTextSelection(3);
+    insertTableAt(e, { from: 3, to: 3 }, 2, 2);
+    expect(e.state.doc.firstChild!.textContent).toBe('A ');
+  });
+
+  it('a heading row still changes the folded heading itself', () => {
+    const e = make(doc.replace('data-foldable="true"', 'data-foldable="true" data-collapsed="true"'));
+    e.commands.setTextSelection(2);
+    const h3 = slashItems.find((i) => i.title === 'Heading')!.submenu!.items[2];
+    h3.command!({ editor: e, range: { from: 2, to: 2 } });
+    expect(e.state.doc.firstChild!.attrs.level).toBe(3);
+  });
+
+  it('a drawing in a folded section is hidden too', () => {
+    const e = make(doc.replace('data-foldable="true"', 'data-foldable="true" data-collapsed="true"'));
+    e.commands.insertContentAt(e.state.doc.child(0).nodeSize, { type: 'drawing' });
+    expect(e.state.doc.child(1).type.name).toBe('drawing');
+    expect(e.view.dom.querySelector('[data-type="drawing"]')!.classList.contains('heading-folded')).toBe(true);
   });
 
   it('the slash command makes a collapsible heading, a toggle makes it plain again', () => {

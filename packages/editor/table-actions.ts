@@ -1,10 +1,12 @@
 import type { Editor } from '@tiptap/core';
 import { parseCsv, csvToTableJson } from './csv';
+import { openFoldForInsert } from './heading-fold';
 
 type Range = { from: number; to: number };
 
 export const insertTableAt = (editor: Editor, range: Range, cols: number, rows: number): void => {
-  editor.chain().focus().deleteRange(range).insertTable({ rows, cols, withHeaderRow: true }).run();
+  const at = openFoldForInsert(editor, range);
+  editor.chain().focus().deleteRange(at).insertTable({ rows, cols, withHeaderRow: true }).run();
 };
 
 // Removes the "/" text, then asks for a CSV file and inserts it as a table at the cursor.
@@ -23,7 +25,8 @@ export const importCsvInto = (editor: Editor, range: Range): void => {
       const file = input.files?.[0];
       if (!file) return;
       const table = csvToTableJson(parseCsv(await file.text()));
-      editor.chain().focus().insertContent(table).run();
+      const at = openFoldForInsert(editor, { from: editor.state.selection.from, to: editor.state.selection.from });
+      editor.chain().focus().insertContentAt(at, table).run();
     } catch (error) {
       console.error('CSV import failed:', error);
     } finally {

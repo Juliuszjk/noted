@@ -84,7 +84,11 @@ changing a feature. Full pre-trim copies: `docs/private/claude-md-full-*.md` (no
   following siblings up to a heading of the same or higher level (node decorations
   `.heading-folded`, display none). Enter at the end of a folded heading keeps it folded and
   starts an empty heading of the same level after the section; Enter at the end of a folded
-  outline item starts a new item after its hidden branch (`list-extensions.ts`).
+  outline item starts a new item after its hidden branch (`list-extensions.ts`). A block made
+  from a folded heading (slash menu / phone "+" rows wrapped in `block()` in `slash-items.ts`,
+  tables via `insertTableAt`) goes to the end of the section, which opens (`openFoldForInsert`;
+  reuses an empty last line, drops the space typed before "/"); heading rows, inline items and
+  note actions still act in place. `.heading-folded` is `!important` (drawings set display).
 - Find / replace: `NoteSearch` (`search.ts`, decorations). Select all (`select-all.ts`): code
   block first, then the note; paints AllSelection itself. Copy (`clipboard-text.ts`): text/plain
   one line per block with list markers, formulas as `$…$` / `$$…$$` (painted selected:

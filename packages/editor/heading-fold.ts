@@ -92,6 +92,34 @@ export const toggleInPlace = (view: EditorView, pos: number, tr: Transaction) =>
   requestAnimationFrame(keep);
 };
 
+// A block inserted from a folded heading (slash menu, the phone's "+" sheet) goes to the end of
+// its section, which opens: in the heading it landed hidden at the section's start, or turned
+// the heading itself into the block. Returns the range the insert should use.
+export const openFoldForInsert = (editor: { state: EditorState; view: EditorView }, range: { from: number; to: number }) => {
+  const { state } = editor;
+  const $from = state.doc.resolve(range.from);
+  if (!isFolded($from.parent)) return range;
+  const pos = $from.before();
+  // The space typed before "/" at the heading's end goes too (the block goes elsewhere).
+  let start = range.from;
+  if (range.to > range.from && range.to === $from.end()) while (start > $from.start() && state.doc.textBetween(start - 1, start) === ' ') start--;
+  const tr = state.tr.delete(start, range.to);
+  tr.setNodeMarkup(pos, undefined, { ...tr.doc.nodeAt(pos)!.attrs, collapsed: false });
+  const { from, to } = foldedRange(tr.doc, pos);
+  // A folded sub-heading whose section also ends there opens too (the block would be hidden).
+  tr.doc.nodesBetween(from, to, (node, at) => {
+    if (isFolded(node) && foldedRange(tr.doc, at).to === to) tr.setNodeMarkup(at, undefined, { ...node.attrs, collapsed: false });
+    return false;
+  });
+  // An empty line already ending the section is used, not left above the new block.
+  const last = to > from ? tr.doc.resolve(to).nodeBefore : null;
+  let at = to + 1;
+  if (last?.type.name === 'paragraph' && !last.content.size) at = to - 1;
+  else tr.insert(to, state.schema.nodes.paragraph.create());
+  editor.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, at)));
+  return { from: at, to: at };
+};
+
 const foldKey = new PluginKey<DecorationSet>('headingFold');
 
 const decorate = (state: EditorState): DecorationSet => {

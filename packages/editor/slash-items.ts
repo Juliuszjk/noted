@@ -1,5 +1,6 @@
 import type { SlashItem } from './slash';
 import { importCsvInto } from './table-actions';
+import { openFoldForInsert } from './heading-fold';
 import { CALLOUT_VARIANTS } from './callout';
 import { requestMathEdit } from './math';
 import { pickImagesInto, pickAttachmentsInto, requestImageUrl } from './blob-image';
@@ -13,6 +14,13 @@ import {
   mdiLinkVariant, mdiPaperclip, mdiCommentOutline, mdiMathIntegral, mdiFunctionVariant, mdiSigma, mdiNoteTextOutline,
   mdiLinkVariantPlus, mdiArrowRightBoldBoxOutline, mdiBookOutline, mdiPound, mdiExportVariant, mdiWeb, mdiFilePdfBox, mdiFormatPageBreak,
 } from '@mdi/js';
+
+// A row that makes a new block: run from a folded heading, it goes to the end of the section,
+// which opens (heading-fold.ts). Rows acting on the heading itself or inline stay in place.
+const block = (item: SlashItem): SlashItem => ({
+  ...item,
+  command: ({ editor, range }) => item.command?.({ editor, range: openFoldForInsert(editor, range) }),
+});
 
 // Slash menu content, shared by every platform that offers a "/" menu. The menu is a tree:
 // rows with a `submenu` open a second (or third) panel, rows with a `command` run it.
@@ -36,7 +44,7 @@ const collapsibleHeadingItems: SlashItem[] = ([1, 2, 3] as const).map((level) =>
   command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setNode('heading', { level, foldable: true, collapsed: false }).run(),
 }));
 
-const numberedTile = (title: string, style: string, markers: string[], keywords: string[]): SlashItem => ({
+const numberedTile = (title: string, style: string, markers: string[], keywords: string[]): SlashItem => block({
   title,
   keywords,
   preview: { kind: 'markers', markers },
@@ -47,7 +55,7 @@ const numberedTile = (title: string, style: string, markers: string[], keywords:
   },
 });
 
-const bulletTile = (title: string, style: string, marker: string, keywords: string[]): SlashItem => ({
+const bulletTile = (title: string, style: string, marker: string, keywords: string[]): SlashItem => block({
   title,
   keywords,
   preview: { kind: 'markers', markers: [marker, marker, marker] },
@@ -92,14 +100,14 @@ const bulletList: SlashItem = {
   },
 };
 
-const taskList: SlashItem = {
+const taskList: SlashItem = block({
   title: 'Task list',
   icon: mdiFormatListCheckbox,
   keywords: ['todo', 'checklist', 'checkbox'],
   command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleTaskList().run(),
-};
+});
 
-const outlineList: SlashItem = {
+const outlineList: SlashItem = block({
   title: 'Outline list',
   icon: mdiFileTreeOutline,
   keywords: ['collapsible', 'fold', 'toggle', 'tree'],
@@ -108,7 +116,7 @@ const outlineList: SlashItem = {
     if (!editor.isActive('bulletList')) chain.toggleBulletList();
     chain.updateAttributes('bulletList', { outline: true }).run();
   },
-};
+});
 
 const tableItem: SlashItem = {
   title: 'Table',
@@ -131,7 +139,7 @@ const calloutItem: SlashItem = {
   keywords: ['admonition', 'alert', 'box', 'highlight block'],
   submenu: {
     kind: 'list',
-    items: CALLOUT_VARIANTS.map((variant) => ({
+    items: CALLOUT_VARIANTS.map((variant) => block({
       title: `${variant.label} callout`,
       keywords: [...variant.keywords],
       preview: { kind: 'icon', icon: variant.icon },
@@ -158,7 +166,7 @@ const mathMenu: SlashItem = {
     kind: 'list',
     items: [
       mathItem('Inline math', 'inline', ['latex', 'equation', 'formula', 'inline']),
-      mathItem('Math block', 'block', ['latex', 'equation', 'formula', 'display', 'block']),
+      block(mathItem('Math block', 'block', ['latex', 'equation', 'formula', 'display', 'block'])),
     ],
   },
 };
@@ -175,12 +183,12 @@ const reminderItem: SlashItem = {
 };
 
 // An empty drawing block; a pen or the mouse draws in it (drawing.ts).
-const drawingItem: SlashItem = {
+const drawingItem: SlashItem = block({
   title: 'Drawing',
   keywords: ['draw', 'sketch', 'pen', 'handwriting', 'ink', 'stylus', 'rysunek', 'rysuj'],
   icon: mdiDraw,
   command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertContent({ type: 'drawing' }).run(),
-};
+});
 
 // Types "[[" so the note picker (NoteLinkSuggestion) opens.
 const noteLinkItem: SlashItem = {
@@ -197,28 +205,28 @@ const imageItem: SlashItem = {
   submenu: {
     kind: 'list',
     items: [
-      {
+      block({
         title: 'Upload image',
         icon: mdiUpload,
         keywords: ['picture', 'photo', 'upload', 'disk', 'screenshot'],
         command: ({ editor, range }) => pickImagesInto(editor, range),
-      },
-      {
+      }),
+      block({
         title: 'Image from URL',
         icon: mdiLinkVariant,
         keywords: ['picture', 'link', 'web', 'download', 'url'],
         command: ({ editor, range }) => requestImageUrl(editor, range),
-      },
+      }),
     ],
   },
 };
 
-const fileItem: SlashItem = {
+const fileItem: SlashItem = block({
   title: 'File',
   icon: mdiPaperclip,
   keywords: ['attachment', 'attach', 'upload', 'pdf', 'document'],
   command: ({ editor, range }) => pickAttachmentsInto(editor, range),
-};
+});
 
 // Put the note into a notebook (category) or tag it; the picker is app UI (NoteActions).
 const notebookItem: SlashItem = {
@@ -298,36 +306,36 @@ const linkToItem: SlashItem = {
 
 export const slashItems: SlashItem[] = [
   { title: 'Heading', icon: mdiFormatHeaderPound, keywords: ['title', 'header', 'collapsible', 'toggle'], submenu: { kind: 'list', items: [...headingItems, ...collapsibleHeadingItems] } },
-  {
+  block({
     title: 'Quote',
     icon: mdiFormatQuoteClose,
     keywords: ['blockquote', 'citation'],
     command: ({ editor, range }) => editor.chain().focus().deleteRange(range).toggleBlockquote().run(),
-  },
+  }),
   {
     title: 'List',
     icon: mdiFormatListBulleted,
     keywords: ['bullet', 'numbered', 'todo', 'task', 'checklist', 'outline'],
     submenu: { kind: 'list', items: [bulletList, numberedList, taskList, outlineList] },
   },
-  {
+  block({
     title: 'Divider',
     icon: mdiMinusBoxMultipleOutline,
     keywords: ['horizontal rule', 'hr', 'line', 'separator'],
     command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
-  },
-  {
+  }),
+  block({
     title: 'Page break',
     icon: mdiFormatPageBreak,
     keywords: ['pg', 'new page', 'pdf', 'print', 'nowa strona', 'podzial strony'],
     command: ({ editor, range }) => editor.chain().focus().deleteRange(range).insertPageBreak().run(),
-  },
-  {
+  }),
+  block({
     title: 'Code block',
     icon: mdiCodeBraces,
     keywords: ['code', 'snippet', 'pre'],
     command: ({ editor, range }) => editor.chain().focus().deleteRange(range).setCodeBlock().run(),
-  },
+  }),
   tableItem,
   imageItem,
   fileItem,

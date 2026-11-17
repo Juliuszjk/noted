@@ -223,7 +223,8 @@
 }
 .ProseMirror .heading-toggle::before { content: "\25BE"; }
 .ProseMirror .heading-toggle[data-collapsed="true"]::before { content: "\25B8"; }
-.ProseMirror .heading-folded { display: none; }
+/* !important: block rules further down (drawings) set their own display. */
+.ProseMirror .heading-folded { display: none !important; }
 
 .ProseMirror img { max-width: 100%; height: auto; border-radius: 6px; }
 .ProseMirror .ProseMirror-selectednode { outline: 2px solid var(--primary); }
