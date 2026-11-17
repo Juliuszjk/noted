@@ -417,7 +417,7 @@ const tableResizePlugin = () => {
 
     // Touch: hold a finger still for a moment (HOLD_MS), then drag. On a line it resizes;
     // inside a cell it selects cells up to the one under the finger (like dragging the mouse
-    // across cells). Moving at once scrolls as usual, a plain tap stays a tap.
+    // across cells). Moving at once scrolls as usual (not from a line), a plain tap stays a tap.
     let touch: { x: number; y: number; hit: Hit | null; cell: number | null; armed: boolean; selecting: boolean; timer: ReturnType<typeof setTimeout> } | null = null;
     const endTouch = () => {
       if (touch) clearTimeout(touch.timer);
@@ -430,6 +430,10 @@ const tableResizePlugin = () => {
       const hit = hitTest(view, e.target, t.clientX, t.clientY, TOUCH_TOL);
       const cell = hit ? null : cellAtPoint(view, t.clientX, t.clientY);
       if (!hit && cell === null) return;
+      // A touch on a line is the table's alone: Chromium's long press on it focused the note
+      // (caret at its start, the keyboard came up and the phone scrolled there) and could
+      // cancel the drag. It no longer scrolls the page either.
+      if (hit && e.cancelable) e.preventDefault();
       const started = { x: t.clientX, y: t.clientY, hit, cell, armed: false, selecting: false, timer: setTimeout(() => {
         if (touch !== started) return;
         started.armed = true;
@@ -482,7 +486,7 @@ const tableResizePlugin = () => {
     dom.addEventListener('contextmenu', onContextMenu, true);
     dom.addEventListener('mousemove', onHover);
     dom.addEventListener('mousedown', onMouseDown, true);
-    dom.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+    dom.addEventListener('touchstart', onTouchStart, { capture: true, passive: false });
     dom.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
     dom.addEventListener('touchend', onTouchEnd, { capture: true, passive: false });
     dom.addEventListener('touchcancel', onTouchEnd, { capture: true, passive: false });

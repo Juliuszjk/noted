@@ -1431,7 +1431,7 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
   let centerFrame = 0;
   // Kept for the callers (a tap below the note); nothing special any more.
   let alignBottomOnce = false;
-  const centerCaret = (_force = false) => {
+  const centerCaret = (_force = false, rechecking = false) => {
     cancelAnimationFrame(centerFrame);
     centerFrame = requestAnimationFrame(() => {
       alignBottomOnce = false;
@@ -1444,12 +1444,30 @@ export function createToolbar(editor: Editor, ctx: ToolbarContext) {
       if (caret.bottom > area.bottom - MARGIN) {
         releaseHold();
         window.scrollBy({ top: caret.bottom - (area.bottom - MARGIN), behavior: 'instant' as ScrollBehavior });
+        if (!rechecking) recheck = { y: window.scrollY, until: performance.now() + 1000 };
       } else if (caret.top < area.top + MARGIN) {
         releaseHold();
         window.scrollBy({ top: caret.top - (area.top + MARGIN), behavior: 'instant' as ScrollBehavior });
+        if (!rechecking) recheck = { y: window.scrollY, until: performance.now() + 1000 };
       }
     });
   };
+  // Chromium's own scrolling to the caret as the keyboard comes is animated for a table cell:
+  // it went on from where it was and undid the jump above, leaving the cell under the bar.
+  // Its scrolling ends with the caret still on the page, just under the bar: then, shortly
+  // after a jump of ours, the caret is checked once more (that check arms no other). Scrolling
+  // that took the caret off the page was someone else's on purpose and stays. A finger on the
+  // screen cancels the check.
+  let recheck: { y: number; until: number } | null = null;
+  window.addEventListener('scrollend', () => {
+    if (!recheck || performance.now() > recheck.until) { recheck = null; return; }
+    if (Math.abs(window.scrollY - recheck.y) <= 1 || !editor.state.selection.empty) return;
+    const caret = editor.view.coordsAtPos(Math.min(editor.state.selection.head, editor.state.doc.content.size));
+    if (caret.bottom <= visibleArea().bottom - MARGIN || caret.top >= window.innerHeight) return;
+    recheck = null;
+    centerCaret(false, true);
+  });
+  document.addEventListener('touchstart', () => { recheck = null; }, { passive: true, capture: true });
   function centerCaretSoon() {
     setTimeout(() => centerCaret(), 60);
     setTimeout(() => centerCaret(), 400);
