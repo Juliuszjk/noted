@@ -43,7 +43,34 @@ const THEME = `
   .ProseMirror { outline: none; }
   .ProseMirror img { max-width: 100%; height: auto; }
   .ProseMirror input[type=checkbox] { pointer-events: none; }
+  .ProseMirror details.heading-section > summary { display: block; list-style: none; }
+  .ProseMirror details.heading-section > summary::-webkit-details-marker { display: none; }
+  .ProseMirror details.heading-section:not([open]) > summary .heading-toggle::before { content: "\\25B8"; }
 `;
+
+const level = (el: Element) => Number(/^H([1-6])$/.exec(el.tagName)?.[1] ?? 0);
+
+// The frame runs no scripts, so a collapsible heading becomes the summary of a <details> holding
+// its section (the blocks up to the next heading of the same or a higher level, as in the
+// editor): the browser folds it. Outer sections go first and take their sub-sections along.
+const foldableSections = (root: Element) => {
+  root.querySelectorAll('.heading-folded').forEach((el) => el.classList.remove('heading-folded'));
+  root.querySelectorAll('[data-foldable="true"]').forEach((heading) => {
+    const own = level(heading);
+    if (!own) return;
+    const details = heading.ownerDocument.createElement('details');
+    details.className = 'heading-section';
+    details.open = heading.getAttribute('data-collapsed') !== 'true';
+    heading.removeAttribute('data-collapsed');
+    heading.querySelector('.heading-toggle')?.removeAttribute('data-collapsed');
+    const section: Element[] = [];
+    for (let next = heading.nextElementSibling; next && !(level(next) && level(next) <= own); next = next.nextElementSibling) section.push(next);
+    heading.before(details);
+    const summary = heading.ownerDocument.createElement('summary');
+    summary.append(heading);
+    details.append(summary, ...section);
+  });
+};
 
 // Defence in depth (the frame runs no scripts anyway): no script-like elements or handlers,
 // links open outside.
@@ -60,6 +87,7 @@ const clean = (html: string): string => {
       el.setAttribute('rel', 'noopener noreferrer');
     }
   });
+  foldableSections(root);
   return root.innerHTML;
 };
 

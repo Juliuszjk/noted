@@ -48,6 +48,28 @@ test.describe('static publishing', () => {
     expect(await reader.locator('#note').getAttribute('sandbox')).not.toContain('allow-scripts');
   });
 
+  test('folded headings open and close without scripts', async ({ page, context }) => {
+    await owner(page, 'fold');
+    const toggles = page.locator('.heading-toggle');
+    await toggles.nth(0).dispatchEvent('mousedown');
+    await toggles.nth(2).dispatchEvent('mousedown');
+    const { url } = await publishStatic(page);
+    const reader = await context.newPage();
+    await reader.goto(url);
+    const note = noteFrame(reader);
+    await expect(note.getByText('Alpha text under one.')).toBeHidden();
+    await expect(note.getByText('Gamma text under two.')).toBeVisible();
+    await expect(note.getByText('Delta text under three.')).toBeHidden();
+    await note.locator('.heading-toggle').nth(0).click();
+    await expect(note.getByText('Alpha text under one.')).toBeVisible();
+    await note.locator('.heading-toggle').nth(2).click();
+    await expect(note.getByText('Delta text under three.')).toBeVisible();
+    // Folding the outer section takes the nested one along.
+    await note.locator('.heading-toggle').nth(1).click();
+    await expect(note.getByText('Gamma text under two.')).toBeHidden();
+    await expect(note.getByText('Delta text under three.')).toBeHidden();
+  });
+
   test('a wrong key says so', async ({ page, context }) => {
     await owner(page, 'fold');
     const { url } = await publishStatic(page);
