@@ -77,6 +77,7 @@ export const replaceText = (doc: Y.Doc, find: string, replace: string, all = fal
   if (!hits.length) return { error: `"${find}" is not in the note (text across a reminder, link or line break cannot be matched).` };
   if (hits.length > 1 && !all) return { error: `"${find}" occurs ${hits.length} times: give more text around it, or set all: true.` };
   const links = [...replace.matchAll(NOTE_LINK)].map((m) => ({ at: m.index ?? 0, length: m[0].length, title: m[1].trim(), id: resolveTitle(m[1].trim()) }));
+  let linked = false;
   doc.transact(() => {
     // From the end, so earlier hits keep their text and index.
     for (const { text, index } of hits.reverse()) {
@@ -85,10 +86,11 @@ export const replaceText = (doc: Y.Doc, find: string, replace: string, all = fal
       if (replace) text.insert(index, replace, format ? { ...format } : {});
       // Code holds only text: "[[...]]" there stays literal.
       if (format?.code || (text.parent as Y.XmlElement | null)?.nodeName === 'codeBlock') continue;
+      linked = true;
       for (const link of [...links].reverse()) if (link.id) insertLink(text, index + link.at, link.length, link.id);
     }
   });
-  return { count: hits.length, unlinked: links.filter((l) => !l.id).map((l) => l.title) };
+  return { count: hits.length, unlinked: linked ? links.filter((l) => !l.id).map((l) => l.title) : [] };
 };
 
 // Index of the top-level block whose text contains `anchor` (must be one).

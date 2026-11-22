@@ -185,12 +185,13 @@ describe('edits in place', () => {
         para(text('run x', [{ type: 'code' }])),
       ],
     });
-    replaceText(doc, 'foo', 'foo [[Build]]', false, titles);
+    expect(replaceText(doc, 'foo', 'foo [[Build]] [[Nope]]', false, titles)).toEqual({ count: 1, unlinked: [] });
     replaceText(doc, 'run x', 'run [[Build]]', false, titles);
-    expect(body(doc)[0]).toEqual({ type: 'codeBlock', content: [text('foo [[Build]]')] });
+    expect(body(doc)[0]).toEqual({ type: 'codeBlock', content: [text('foo [[Build]] [[Nope]]')] });
     expect(body(doc)[1].content).toEqual([text('run [[Build]]', [{ type: 'code' }])]);
-    const blocks = newBlocks('```\n[[Build]]\n```\n\n`[[Build]]` and [[Build]]', titles);
+    const blocks = newBlocks('```\n[[Build]]\n```\n\n`[[Build]] [[Nope]]` and [[Build]]', titles);
     if ('error' in blocks) throw new Error(blocks.error);
+    expect(blocks.unlinked).toEqual([]);
     expect(JSON.stringify(blocks.blocks[0])).not.toContain('noteLink');
     expect(blocks.blocks[1].content?.filter((n) => n.type === 'noteLink')).toHaveLength(1);
   });

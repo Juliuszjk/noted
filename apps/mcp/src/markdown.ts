@@ -108,7 +108,7 @@ export interface Restore {
 
 const isCode = (node: JSONContent) => !!node.marks?.some((mark) => mark.type === 'code');
 
-const splitText = (text: string, ctx: Restore, inParagraph: boolean): JSONContent[] => {
+const splitText = (text: string, ctx: Restore, inParagraph: boolean, code = false): JSONContent[] => {
   const out: JSONContent[] = [];
   let last = 0;
   const pattern = new RegExp(`${TOKEN.source}|${NOTE_LINK.source}`, 'g');
@@ -124,7 +124,7 @@ const splitText = (text: string, ctx: Restore, inParagraph: boolean): JSONConten
         ctx.used.set(key, (ctx.used.get(key) ?? 0) + 1);
         node = clone(original);
       }
-    } else if (m[3]) {
+    } else if (m[3] && !code) {
       const id = ctx.resolveTitle(m[3].trim());
       if (id) node = { type: 'noteLink', attrs: { noteId: id } };
       else ctx.unlinked.push(m[3].trim());
@@ -142,10 +142,10 @@ const splitText = (text: string, ctx: Restore, inParagraph: boolean): JSONConten
 // Puts the original nodes back in place of their tokens. Block tokens inside a paragraph split
 // it (the node goes between the parts).
 const restoreIn = (nodes: JSONContent[], ctx: Restore): JSONContent[] => nodes.flatMap((node): JSONContent[] => {
-  // Code holds only text: "[[...]]" there stays literal.
-  if (node.type === 'codeBlock' || isCode(node)) return [node];
+  // A code block holds only text: "[[...]]" there stays literal (as in inline code below).
+  if (node.type === 'codeBlock') return [node];
   if (node.type === 'text') {
-    const parts = splitText(node.text ?? '', ctx, false);
+    const parts = splitText(node.text ?? '', ctx, false, isCode(node));
     return parts.map((p) => (p.type === 'text' && node.marks ? { ...p, marks: node.marks } : p));
   }
   if (node.type === 'paragraph' && node.content) {
@@ -166,11 +166,11 @@ const restoreIn = (nodes: JSONContent[], ctx: Restore): JSONContent[] => nodes.f
       run = [];
     };
     for (const child of node.content) {
-      if (child.type !== 'text' || isCode(child)) {
+      if (child.type !== 'text') {
         run.push(...restoreIn([child], ctx));
         continue;
       }
-      for (const part of splitText(child.text ?? '', ctx, true)) {
+      for (const part of splitText(child.text ?? '', ctx, true, isCode(child))) {
         if (part.type && BLOCK_KINDS[part.type]) {
           split = true;
           flush();
