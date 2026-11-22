@@ -2,7 +2,7 @@
   "expo": {
     "name": "Noted",
     "slug": "noted",
-    "version": "0.1.15",
+    "version": "0.1.16",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -17,7 +17,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "io.github.juliuszjk.noted",
-      "versionCode": 1015,
+      "versionCode": 1016,
       "allowBackup": false,
       "permissions": [
         "USE_EXACT_ALARM",
