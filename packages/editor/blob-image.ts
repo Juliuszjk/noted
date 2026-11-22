@@ -466,17 +466,23 @@ export const insertFiles = async (editor: Editor, files: File[], pos?: number): 
 export const insertImageFiles = (editor: Editor, files: File[], pos?: number) =>
   insertFiles(editor, files.filter(isImageFile), pos);
 
-const pickFiles = (accept: string, onPicked: (files: File[]) => Promise<unknown>) => {
+// `onCancel`: the picker closed without files (e.g. folds the section opened for them again).
+const pickFiles = (accept: string, onPicked: (files: File[]) => Promise<unknown>, onCancel?: () => void) => {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = accept;
   input.multiple = true;
   input.style.display = 'none';
   const cleanup = () => input.remove();
-  input.addEventListener('cancel', cleanup);
+  input.addEventListener('cancel', () => {
+    cleanup();
+    onCancel?.();
+  });
   input.addEventListener('change', async () => {
     try {
-      await onPicked(Array.from(input.files ?? []));
+      const files = Array.from(input.files ?? []);
+      if (!files.length) onCancel?.();
+      else await onPicked(files);
     } finally {
       cleanup();
     }
@@ -486,10 +492,11 @@ const pickFiles = (accept: string, onPicked: (files: File[]) => Promise<unknown>
 };
 
 // Slash menu "File": any files, inserted as attachments (images too, in original quality).
-export const pickAttachmentsInto = (editor: Editor, range: { from: number; to: number }): void => {
+// `range.cancel` (from openFoldForInsert) runs when the picker is closed without files.
+export const pickAttachmentsInto = (editor: Editor, range: { from: number; to: number; cancel?: () => void }): void => {
   editor.chain().focus().deleteRange(range).run();
   const handlers = editor.storage.image?.handlers;
-  if (!handlers?.uploadFile) return;
+  if (!handlers?.uploadFile) return range.cancel?.();
   pickFiles('', async (files) => {
     const nodes = [];
     for (const file of files) {
@@ -502,7 +509,7 @@ export const pickAttachmentsInto = (editor: Editor, range: { from: number; to: n
       }
     }
     if (nodes.length && !editor.isDestroyed) editor.chain().focus().insertContent(nodes).run();
-  });
+  }, range.cancel);
 };
 
 // Slash menu "Image from URL": the UI asks for the address (see storage.requestUrl).
@@ -525,10 +532,10 @@ export const insertImageFromUrl = async (editor: Editor, url: string, pos: numbe
   }
 };
 
-// Opens a file picker and inserts the chosen images (slash menu "Image").
-export const pickImagesInto = (editor: Editor, range: { from: number; to: number }): void => {
+// Opens a file picker and inserts the chosen images (slash menu "Image"). `range.cancel` as above.
+export const pickImagesInto = (editor: Editor, range: { from: number; to: number; cancel?: () => void }): void => {
   editor.chain().focus().deleteRange(range).run();
-  pickFiles('image/*,.heic,.heif', (files) => insertImageFiles(editor, files));
+  pickFiles('image/*,.heic,.heif', (files) => insertImageFiles(editor, files), range.cancel);
 };
 
 const dataUrlToBytes = (dataUrl: string): Uint8Array | null => {

@@ -163,6 +163,9 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     return text(`${what}${warning ? `\n(Saved locally; sync: ${warning})` : ''}`);
   };
 
+  // Tells Claude which "[[Title]]" stayed text because no note has that title.
+  const unlinkedNote = (unlinked: string[]) => (unlinked.length ? `\nNot linked (no note with that exact title, left as text): ${[...new Set(unlinked)].map((t) => `[[${t}]]`).join(', ')}.` : '');
+
   // ---- reading ----
 
   server.registerTool('list_notes', {
@@ -313,7 +316,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     for (const id of await catalogIds('notebooks', args.notebooks ?? [])) setNoteNotebook(doc, id, true);
     for (const id of await catalogIds('tags', args.tags ?? [])) setNoteTag(doc, id, true);
     const id = crypto.randomUUID();
-    return saved(id, doc, 'create_note', null, `Created "${args.title.trim()}" (id: ${id}).`);
+    return saved(id, doc, 'create_note', null, `Created "${args.title.trim()}" (id: ${id}).${unlinkedNote(blocks.unlinked)}`);
   }, true));
 
   server.registerTool('append_to_note', {
@@ -340,7 +343,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     }
     await storeLocalImages(blocks.blocks, storeImage);
     insertBlocks(doc, index, blocks.blocks);
-    return saved(args.id, doc, 'append_to_note', before, 'Added.');
+    return saved(args.id, doc, 'append_to_note', before, `Added.${unlinkedNote(blocks.unlinked)}`);
   }, true));
 
   server.registerTool('replace_text', {
@@ -349,9 +352,9 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     inputSchema: { id: z.string(), find: z.string(), replace: z.string(), all: z.boolean().optional() },
   }, (args) => run(async () => {
     const { doc, before } = await editable(args.id);
-    const result = replaceText(doc, args.find, args.replace, args.all);
+    const result = replaceText(doc, args.find, args.replace, args.all, titleLookups(await notes.list()).resolveTitle);
     if ('error' in result) return text(result.error, true);
-    return saved(args.id, doc, 'replace_text', before, `Replaced ${result.count}×.`);
+    return saved(args.id, doc, 'replace_text', before, `Replaced ${result.count}×.${unlinkedNote(result.unlinked)}`);
   }, true));
 
   server.registerTool('set_task_done', {
@@ -379,7 +382,7 @@ export const registerTools = (server: McpServer, notes: Notes, key: Uint8Array, 
     await storeLocalImages(parsed.items.flatMap((i) => ('json' in i ? [i.json] : [])), storeImage);
     applyRewrite(doc, parsed.items, view.blocks.map((b) => b.json));
     const kept = parsed.items.filter((i) => 'keep' in i).length;
-    return saved(args.id, doc, 'rewrite_note', before, `Rewritten (${kept} of ${parsed.items.length} blocks unchanged).`);
+    return saved(args.id, doc, 'rewrite_note', before, `Rewritten (${kept} of ${parsed.items.length} blocks unchanged).${unlinkedNote(parsed.unlinked)}`);
   }, true));
 
   server.registerTool('update_note_properties', {

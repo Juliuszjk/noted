@@ -111,6 +111,28 @@ describe('collapsible headings', () => {
     expect(e.getJSON().content!.map((n) => n.type).slice(0, 6)).toEqual(['heading', 'paragraph', 'heading', 'paragraph', 'table', 'heading']);
   });
 
+  it('cancelling the image or file picker folds the section again', () => {
+    const folded = doc.replace('data-foldable="true"', 'data-foldable="true" data-collapsed="true"');
+    const upload = slashItems.find((i) => i.title === 'Image')!.submenu!.items.find((i) => i.title === 'Upload image')!;
+    const file = slashItems.find((i) => i.title === 'File')!;
+    for (const [item, html] of [[upload, folded], [file, folded], [upload, folded.replace('<p>a2</p>', '<p>a2</p><p></p>')]] as const) {
+      const e = make(html);
+      const before = e.getJSON();
+      e.storage.image.handlers = { uploadFile: async () => ({ id: 'x', key: 'k' }) };
+      e.commands.insertContentAt(2, '/img');
+      e.commands.setTextSelection(6);
+      item.command!({ editor: e, range: { from: 2, to: 6 } });
+      expect(e.state.doc.firstChild!.attrs.collapsed).toBe(false);
+      const input = document.body.querySelector('input[type=file]')!;
+      input.dispatchEvent(new Event('cancel'));
+      expect(document.body.querySelector('input[type=file]')).toBeNull();
+      // The slash text stays removed; the line added for the image goes (an empty line that was there stays).
+      expect(e.getJSON()).toEqual(before);
+      expect(e.state.selection.from).toBe(2);
+      e.destroy();
+    }
+  });
+
   it('a folded sub-heading ending the section opens too', () => {
     const e = make('<h1 data-foldable="true" data-collapsed="true">A</h1><h2 data-foldable="true" data-collapsed="true">B</h2><p>b1</p><h1>C</h1>');
     e.commands.setTextSelection(2);

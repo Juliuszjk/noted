@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import type { JSONContent } from '@tiptap/core';
 import { jsonToY } from '@noted/sync/json-to-y';
-import type { RewriteItem } from './markdown';
+import { NOTE_LINK, type RewriteItem } from './markdown';
 
 // Changes of a note body made in the Yjs doc itself, touching only what changes, so concurrent
 // edits on other devices merge as usual and everything else (images, drawings, formatting)
@@ -40,9 +40,33 @@ const formatAt = (text: Y.XmlText, index: number): Record<string, unknown> | und
   return last;
 };
 
+// Puts a note link in place of `length` characters at `index`: the text after them moves to a
+// new Y.XmlText behind the link (inline nodes are siblings of the text runs).
+const insertLink = (text: Y.XmlText, index: number, length: number, noteId: string) => {
+  const parent = text.parent as Y.XmlElement;
+  // (A Y.XmlText not in a doc yet reports length 0, so count by hand.)
+  const tail = new Y.XmlText();
+  let tailLength = 0;
+  let at = 0;
+  for (const d of text.toDelta() as { insert: unknown; attributes?: Record<string, unknown> }[]) {
+    if (typeof d.insert !== 'string') continue;
+    const rest = d.insert.slice(Math.max(index + length - at, 0));
+    if (rest) tail.insert(tailLength, rest, d.attributes ?? {});
+    tailLength += rest.length;
+    at += d.insert.length;
+  }
+  text.delete(index, text.length - index);
+  const link = new Y.XmlElement('noteLink');
+  link.setAttribute('noteId', noteId);
+  const position = parent.toArray().indexOf(text);
+  if (!text.length) parent.delete(position, 1);
+  parent.insert(text.length ? position + 1 : position, tailLength ? [link, tail] : [link]);
+};
+
 // Replaces `find` with `replace` inside lines of text (not across a reminder or link). Every
-// occurrence when `all`, otherwise `find` must occur once.
-export const replaceText = (doc: Y.Doc, find: string, replace: string, all = false): { count: number } | { error: string } => {
+// occurrence when `all`, otherwise `find` must occur once. "[[Title]]" in `replace` becomes a
+// link when `resolveTitle` knows the title; the ones it does not know are returned in `unlinked`.
+export const replaceText = (doc: Y.Doc, find: string, replace: string, all = false, resolveTitle: (title: string) => string | null = () => null): { count: number; unlinked: string[] } | { error: string } => {
   if (!find) return { error: 'The text to find is empty.' };
   if (find.includes('\n') || replace.includes('\n')) return { error: 'replace_text works inside one line; use rewrite_note or insert for several lines.' };
   const hits: { text: Y.XmlText; index: number }[] = [];
@@ -52,14 +76,19 @@ export const replaceText = (doc: Y.Doc, find: string, replace: string, all = fal
   }
   if (!hits.length) return { error: `"${find}" is not in the note (text across a reminder, link or line break cannot be matched).` };
   if (hits.length > 1 && !all) return { error: `"${find}" occurs ${hits.length} times: give more text around it, or set all: true.` };
+  const links = [...replace.matchAll(NOTE_LINK)].map((m) => ({ at: m.index ?? 0, length: m[0].length, title: m[1].trim(), id: resolveTitle(m[1].trim()) }));
   doc.transact(() => {
+    // From the end, so earlier hits keep their text and index.
     for (const { text, index } of hits.reverse()) {
       const format = formatAt(text, index);
       text.delete(index, find.length);
       if (replace) text.insert(index, replace, format ? { ...format } : {});
+      // Code holds only text: "[[...]]" there stays literal.
+      if (format?.code || (text.parent as Y.XmlElement | null)?.nodeName === 'codeBlock') continue;
+      for (const link of [...links].reverse()) if (link.id) insertLink(text, index + link.at, link.length, link.id);
     }
   });
-  return { count: hits.length };
+  return { count: hits.length, unlinked: links.filter((l) => !l.id).map((l) => l.title) };
 };
 
 // Index of the top-level block whose text contains `anchor` (must be one).

@@ -94,8 +94,10 @@ export const toggleInPlace = (view: EditorView, pos: number, tr: Transaction) =>
 
 // A block inserted from a folded heading (slash menu, the phone's "+" sheet) goes to the end of
 // its section, which opens: in the heading it landed hidden at the section's start, or turned
-// the heading itself into the block. Returns the range the insert should use.
-export const openFoldForInsert = (editor: { state: EditorState; view: EditorView }, range: { from: number; to: number }) => {
+// the heading itself into the block. Returns the range the insert should use; when a section was
+// opened, also `cancel`, which folds it again and removes the empty line it added (a file picker
+// closed without a choice), unless the note changed since.
+export const openFoldForInsert = (editor: { state: EditorState; view: EditorView }, range: { from: number; to: number }): { from: number; to: number; cancel?: () => void } => {
   const { state } = editor;
   const $from = state.doc.resolve(range.from);
   if (!isFolded($from.parent)) return range;
@@ -105,19 +107,32 @@ export const openFoldForInsert = (editor: { state: EditorState; view: EditorView
   if (range.to > range.from && range.to === $from.end()) while (start > $from.start() && state.doc.textBetween(start - 1, start) === ' ') start--;
   const tr = state.tr.delete(start, range.to);
   tr.setNodeMarkup(pos, undefined, { ...tr.doc.nodeAt(pos)!.attrs, collapsed: false });
+  const opened = [pos];
   const { from, to } = foldedRange(tr.doc, pos);
   // A folded sub-heading whose section also ends there opens too (the block would be hidden).
   tr.doc.nodesBetween(from, to, (node, at) => {
-    if (isFolded(node) && foldedRange(tr.doc, at).to === to) tr.setNodeMarkup(at, undefined, { ...node.attrs, collapsed: false });
+    if (isFolded(node) && foldedRange(tr.doc, at).to === to) {
+      tr.setNodeMarkup(at, undefined, { ...node.attrs, collapsed: false });
+      opened.push(at);
+    }
     return false;
   });
   // An empty line already ending the section is used, not left above the new block.
   const last = to > from ? tr.doc.resolve(to).nodeBefore : null;
   let at = to + 1;
-  if (last?.type.name === 'paragraph' && !last.content.size) at = to - 1;
+  const added = !(last?.type.name === 'paragraph' && !last.content.size);
+  if (!added) at = to - 1;
   else tr.insert(to, state.schema.nodes.paragraph.create());
   editor.view.dispatch(tr.setSelection(TextSelection.create(tr.doc, at)));
-  return { from: at, to: at };
+  const after = editor.view.state.doc;
+  const cancel = () => {
+    if (editor.view.isDestroyed || !editor.view.state.doc.eq(after)) return;
+    const undo = editor.view.state.tr;
+    if (added) undo.delete(to, to + 2);
+    for (const p of opened) undo.setNodeMarkup(p, undefined, { ...undo.doc.nodeAt(p)!.attrs, collapsed: true });
+    editor.view.dispatch(undo.setSelection(TextSelection.create(undo.doc, start)));
+  };
+  return { from: at, to: at, cancel };
 };
 
 const foldKey = new PluginKey<DecorationSet>('headingFold');

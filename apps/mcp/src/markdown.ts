@@ -22,6 +22,8 @@ const INLINE_KINDS: Record<string, InlineKind> = { reminder: 'reminder', noteLin
 
 export const TOKEN = /⟦(image|drawing|file|page-break|reminder|link) (\d+)(?::[^⟧]*)?⟧/g;
 const TOKEN_ONLY = /^⟦(image|drawing|file|page-break) (\d+)(?::[^⟧]*)?⟧$/;
+// "[[Exact note title]]" Claude writes for a link to a note.
+export const NOTE_LINK = /\[\[([^\]\n]+)\]\]/g;
 
 export interface NoteView {
   // The body as Markdown (blocks separated by blank lines).
@@ -100,12 +102,16 @@ export interface Restore {
   resolveTitle: (title: string) => string | null;
   used: Map<string, number>;
   errors: string[];
+  // "[[Title]]" that matched no note (left as text).
+  unlinked: string[];
 }
+
+const isCode = (node: JSONContent) => !!node.marks?.some((mark) => mark.type === 'code');
 
 const splitText = (text: string, ctx: Restore, inParagraph: boolean): JSONContent[] => {
   const out: JSONContent[] = [];
   let last = 0;
-  const pattern = new RegExp(`${TOKEN.source}|\\[\\[([^\\]\\n]+)\\]\\]`, 'g');
+  const pattern = new RegExp(`${TOKEN.source}|${NOTE_LINK.source}`, 'g');
   for (const m of text.matchAll(pattern)) {
     const at = m.index ?? 0;
     let node: JSONContent | null = null;
@@ -121,6 +127,7 @@ const splitText = (text: string, ctx: Restore, inParagraph: boolean): JSONConten
     } else if (m[3]) {
       const id = ctx.resolveTitle(m[3].trim());
       if (id) node = { type: 'noteLink', attrs: { noteId: id } };
+      else ctx.unlinked.push(m[3].trim());
     }
     if (!node) continue;
     if (at > last) out.push(textNode(text.slice(last, at)));
@@ -135,6 +142,8 @@ const splitText = (text: string, ctx: Restore, inParagraph: boolean): JSONConten
 // Puts the original nodes back in place of their tokens. Block tokens inside a paragraph split
 // it (the node goes between the parts).
 const restoreIn = (nodes: JSONContent[], ctx: Restore): JSONContent[] => nodes.flatMap((node): JSONContent[] => {
+  // Code holds only text: "[[...]]" there stays literal.
+  if (node.type === 'codeBlock' || isCode(node)) return [node];
   if (node.type === 'text') {
     const parts = splitText(node.text ?? '', ctx, false);
     return parts.map((p) => (p.type === 'text' && node.marks ? { ...p, marks: node.marks } : p));
@@ -157,7 +166,7 @@ const restoreIn = (nodes: JSONContent[], ctx: Restore): JSONContent[] => nodes.f
       run = [];
     };
     for (const child of node.content) {
-      if (child.type !== 'text') {
+      if (child.type !== 'text' || isCode(child)) {
         run.push(...restoreIn([child], ctx));
         continue;
       }
@@ -180,8 +189,8 @@ export type RewriteItem = { keep: number } | { json: JSONContent };
 // Claude's Markdown for the whole body -> blocks: unchanged ones by index of the original,
 // the rest as new nodes. Fails when an image / drawing / file / reminder of the note is missing
 // (unless named in `remove`) or a token is unknown / repeated.
-export const parseRewrite = (view: NoteView, markdown: string, resolveTitle: (title: string) => string | null, remove: string[] = []): { items: RewriteItem[] } | { error: string } => {
-  const ctx: Restore = { nodes: view.nodes, resolveTitle, used: new Map(), errors: [] };
+export const parseRewrite = (view: NoteView, markdown: string, resolveTitle: (title: string) => string | null, remove: string[] = []): { items: RewriteItem[]; unlinked: string[] } | { error: string } => {
+  const ctx: Restore = { nodes: view.nodes, resolveTitle, used: new Map(), errors: [], unlinked: [] };
   const unchanged = new Map<string, number[]>();
   view.blocks.forEach((b, i) => {
     if (b.md) unchanged.set(b.md, [...(unchanged.get(b.md) ?? []), i]);
@@ -217,13 +226,13 @@ export const parseRewrite = (view: NoteView, markdown: string, resolveTitle: (ti
   const missing = [...view.nodes.keys()].filter((key) => !ctx.used.has(key) && !key.startsWith('link') && !remove.includes(key));
   if (missing.length) ctx.errors.push(`Missing: ${missing.map((k) => `⟦${k}⟧`).join(', ')}. Keep every token, or list it in "remove" to delete it.`);
   if (ctx.errors.length) return { error: ctx.errors.join('\n') };
-  return { items };
+  return { items, unlinked: ctx.unlinked };
 };
 
 // New content (create / append / insert): Markdown -> block nodes, "[[Title]]" links resolved;
 // tokens are not allowed (they belong to one note).
-export const newBlocks = (markdown: string, resolveTitle: (title: string) => string | null): { blocks: JSONContent[] } | { error: string } => {
-  const ctx: Restore = { nodes: new Map(), resolveTitle, used: new Map(), errors: [] };
+export const newBlocks = (markdown: string, resolveTitle: (title: string) => string | null): { blocks: JSONContent[]; unlinked: string[] } | { error: string } => {
+  const ctx: Restore = { nodes: new Map(), resolveTitle, used: new Map(), errors: [], unlinked: [] };
   const blocks = restoreIn(markdownBlocks(markdown), ctx);
-  return ctx.errors.length ? { error: ctx.errors.join('\n') } : { blocks };
+  return ctx.errors.length ? { error: ctx.errors.join('\n') } : { blocks, unlinked: ctx.unlinked };
 };

@@ -150,10 +150,57 @@ describe('note as Markdown', () => {
 describe('edits in place', () => {
   it('replaces text inside a line and keeps its formatting', () => {
     const doc = lecture();
-    expect(replaceText(doc, 'words', 'letters')).toEqual({ count: 1 });
+    expect(replaceText(doc, 'words', 'letters')).toEqual({ count: 1, unlinked: [] });
     expect(body(doc)[1].content?.[1]).toEqual(text('letters', [{ type: 'textStyle', attrs: { color: '#ff0000' } }]));
     expect('error' in replaceText(doc, 'e', 'x')).toBe(true);
     expect('error' in replaceText(doc, 'missing', 'x')).toBe(true);
+  });
+
+  it('turns [[Title]] in replaced text into note links', () => {
+    const titles = (t: string) => (t === 'Bixby na Linuxa (Apollo)' ? 'n9' : null);
+    const doc = lecture();
+    const result = replaceText(doc, 'chapter 2', 'chapter 2 → [[Bixby na Linuxa (Apollo)]] and [[Nope]]!', false, titles);
+    expect(result).toEqual({ count: 1, unlinked: ['Nope'] });
+    expect(body(doc)[4].content?.[0].content?.[0].content).toEqual([
+      text('read chapter 2 → '),
+      { type: 'noteLink', attrs: { noteId: 'n9' } },
+      text(' and [[Nope]]!'),
+    ]);
+    // Formatting of the text around the link stays, and a link at the start leaves no empty run.
+    replaceText(doc, 'Red ', '[[Bixby na Linuxa (Apollo)]]', false, titles);
+    expect(body(doc)[1].content).toEqual([
+      { type: 'noteLink', attrs: { noteId: 'n9' } },
+      text('words', [{ type: 'textStyle', attrs: { color: '#ff0000' } }]),
+      text(' stay'),
+    ]);
+  });
+
+  it('leaves [[Title]] in code as text', () => {
+    const titles = (t: string) => (t === 'Build' ? 'n4' : null);
+    const doc = new Y.Doc();
+    setNoteBodyJson(doc, {
+      type: 'doc',
+      content: [
+        { type: 'codeBlock', content: [text('foo')] },
+        para(text('run x', [{ type: 'code' }])),
+      ],
+    });
+    replaceText(doc, 'foo', 'foo [[Build]]', false, titles);
+    replaceText(doc, 'run x', 'run [[Build]]', false, titles);
+    expect(body(doc)[0]).toEqual({ type: 'codeBlock', content: [text('foo [[Build]]')] });
+    expect(body(doc)[1].content).toEqual([text('run [[Build]]', [{ type: 'code' }])]);
+    const blocks = newBlocks('```\n[[Build]]\n```\n\n`[[Build]]` and [[Build]]', titles);
+    if ('error' in blocks) throw new Error(blocks.error);
+    expect(JSON.stringify(blocks.blocks[0])).not.toContain('noteLink');
+    expect(blocks.blocks[1].content?.filter((n) => n.type === 'noteLink')).toHaveLength(1);
+  });
+
+  it('reports [[Title]] links in new content that match no note', () => {
+    const titles = (t: string) => (t === 'Własna paczka ikon (Android, Pix Material Expressive)' ? 'n3' : null);
+    const blocks = newBlocks('- [ ] icons → [[Własna paczka ikon (Android, Pix Material Expressive)]]\n- [ ] [[Missing (x)]]', titles);
+    if ('error' in blocks) throw new Error(blocks.error);
+    expect(blocks.unlinked).toEqual(['Missing (x)']);
+    expect(blocks.blocks[0].content?.[0].content?.[0].content?.[1]).toEqual({ type: 'noteLink', attrs: { noteId: 'n3' } });
   });
 
   it('ticks a task and adds tasks to the list it follows', () => {
