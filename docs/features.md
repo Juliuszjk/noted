@@ -410,6 +410,11 @@ drawer say "This device / phone only".
 
 ## Mobile app (later additions)
 
+- Lost phone saves (incident): a swiped-away app keeps its process and the expo-sqlite handle
+  dies; `openHealingDatabase` (`src/store.ts`) reopens it and EditorScreen retries unsaved
+  updates (`unsavedRef`). Release logs: `adb logcat -s ReactNativeJS`.
+- After a server wipe, phones must clear their app data (`adb shell pm clear`) or they upload
+  their old notes again.
 - Text selection (2026-10-18): double taps go to Chromium (a selection set by code gets no
   handles); `selectionScroll` in toolbar.ts scrolls gently above the bar before Chromium's own
   fast edge scrolling; WebView haptics are off (`with-stylus.js`, handle ticks buzzed). The
@@ -542,6 +547,13 @@ drawer say "This device / phone only".
   sealed with its own key, uploaded at once; refused without a server; http images never loaded. Reminders: list / add (own in the catalog, or a chip in
   a note line) / update (done = `completeReminder`, snooze). `undo_last_change`: snapshot of
   title / body / notebooks / tags / flags before each change (table `history`); a created note goes to the trash.
+
+## Updates and identifiers
+
+- Desktop identifier `io.github.juliuszjk.noted` (dev and the installed build share its SQLite file).
+- Updates only in CI builds (`VITE_NOTED_UPDATES` / `EXPO_PUBLIC_NOTED_UPDATES`): desktop
+  `src/updates.ts` (tauri-plugin-updater, signed `latest.json`), phone `src/updates.ts` (GitHub
+  latest release). Repo address: `RELEASES_PAGE` / `LATEST_RELEASE_API` in `@noted/config`.
 
 ## Security, sync and data model (full notes; CLAUDE.md keeps the invariants)
 
