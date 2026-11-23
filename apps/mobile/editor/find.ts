@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import { mdiChevronUp, mdiChevronDown, mdiClose, mdiFormatLetterCase, mdiFindReplace } from '@mdi/js';
-import { getSearchState } from '@noted/editor/search';
+import { getSearchState, findQueryFor } from '@noted/editor/search';
 
 // Find and replace bar of the mobile editor page (opened from the note menu): pinned to the top
 // of the visible area, matches painted by the NoteSearch extension. The current match is
@@ -82,9 +82,18 @@ export function createFindBar(editor: Editor) {
     if (replaceOpen) replaceInput.focus();
   });
 
+  // A match in a folded section opens once typing pauses (each opening changes the note).
+  let openTimer: ReturnType<typeof setTimeout> | undefined;
+  const openFolds = () => {
+    clearTimeout(openTimer);
+    if (editor.isDestroyed || !editor.commands.revealMatch()) return;
+    reveal();
+  };
   input.addEventListener('input', () => {
     editor.commands.setSearch(input.value, caseSensitive);
     reveal();
+    clearTimeout(openTimer);
+    openTimer = setTimeout(openFolds, 600);
   });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); step(1); }
@@ -115,21 +124,31 @@ export function createFindBar(editor: Editor) {
   window.addEventListener('scroll', place, { passive: true });
   editor.on('transaction', () => { if (bar.classList.contains('open')) render(); });
 
-  const open = () => {
+  // `listQuery`: the note list's search the note was opened from; the keyboard stays down
+  // so the match is in view.
+  const open = (listQuery?: string) => {
+    // Only the title matched: nothing to show in the text.
+    const found = listQuery ? findQueryFor(editor.state.doc, listQuery) : null;
+    if (listQuery && !found) return;
     if (editor.isFocused) (editor.view.dom as HTMLElement).blur();
     bar.classList.add('open');
     document.body.classList.add('finding');
     place();
     render();
-    // The selection (when it is a few words) is what to look for.
-    const { from, to } = editor.state.selection;
-    const selected = editor.state.doc.textBetween(from, to, ' ');
-    if (selected && !selected.includes('\n') && selected.length < 100) input.value = selected;
+    if (found) input.value = found;
+    else {
+      // The selection (when it is a few words) is what to look for.
+      const { from, to } = editor.state.selection;
+      const selected = editor.state.doc.textBetween(from, to, ' ');
+      if (selected && !selected.includes('\n') && selected.length < 100) input.value = selected;
+    }
     editor.commands.setSearch(input.value, caseSensitive);
-    setTimeout(() => { input.focus(); input.select(); }, 60);
+    if (found) openFolds();
+    else setTimeout(() => { input.focus(); input.select(); }, 60);
     reveal();
   };
   function close() {
+    clearTimeout(openTimer);
     bar.classList.remove('open');
     document.body.classList.remove('finding');
     editor.commands.clearSearch();

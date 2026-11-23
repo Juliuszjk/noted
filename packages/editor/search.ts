@@ -4,6 +4,7 @@ import type { Node as PmNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { FOLD_TOGGLE, revealPos } from './heading-fold';
 
 // Find and replace in the open note (Ctrl+F on desktop, the note menu on mobile). Matches are
 // painted with decorations only; nothing is stored in the document.
@@ -20,13 +21,29 @@ export interface SearchState {
 
 export const searchKey = new PluginKey<SearchState>('noteSearch');
 
-const fold = (text: string, caseSensitive: boolean) => (caseSensitive ? text : text.toLocaleLowerCase());
+// Without "Match case" accents are ignored too ("zrodlo" finds "Źródło"), like the note list.
+const foldChar = (c: string) => c.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase().replace(/ł/g, 'l');
+
+// The text folded for comparing, with the index in `text` each folded character came from
+// (null: the same index, as for case-sensitive or plain ASCII text).
+const foldMapped = (text: string, caseSensitive: boolean): { folded: string; map: number[] | null } => {
+  if (caseSensitive) return { folded: text, map: null };
+  if (/^[\x00-\x7f]*$/.test(text)) return { folded: text.toLowerCase(), map: null };
+  let folded = '';
+  const map: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const f = foldChar(text[i]);
+    folded += f;
+    for (let k = 0; k < f.length; k++) map.push(i);
+  }
+  return { folded, map };
+};
 
 // All matches of `query` in the text of the document. A match never crosses a block or an
 // inline node that is not text (note link, math, image).
 export const findMatches = (doc: PmNode, query: string, caseSensitive = false): SearchMatch[] => {
-  if (!query) return [];
-  const needle = fold(query, caseSensitive);
+  const needle = foldMapped(query, caseSensitive).folded;
+  if (!needle) return [];
   const matches: SearchMatch[] = [];
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return true;
@@ -35,9 +52,16 @@ export const findMatches = (doc: PmNode, query: string, caseSensitive = false): 
     let runStart = -1;
     const flush = () => {
       if (run) {
-        const hay = fold(run, caseSensitive);
-        for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + needle.length)) {
-          matches.push({ from: runStart + i, to: runStart + i + needle.length });
+        const { folded, map } = foldMapped(run, caseSensitive);
+        for (let i = folded.indexOf(needle); i !== -1; i = folded.indexOf(needle, i + needle.length)) {
+          if (!map) {
+            matches.push({ from: runStart + i, to: runStart + i + needle.length });
+            continue;
+          }
+          // Accents after the last letter (decomposed text) belong to the match.
+          let end = map[i + needle.length - 1] + 1;
+          while (end < run.length && !foldChar(run[end])) end++;
+          matches.push({ from: runStart + map[i], to: runStart + end });
         }
       }
       run = '';
@@ -53,6 +77,17 @@ export const findMatches = (doc: PmNode, query: string, caseSensitive = false): 
     return false;
   });
   return matches;
+};
+
+// What to look for in a note opened from the note list's search: the whole query when the
+// note's text has it, else its longest word the text has (the list matches words anywhere),
+// null when only the title matched.
+export const findQueryFor = (doc: PmNode, query: string): string | null => {
+  const text = query.trim();
+  if (!text) return null;
+  if (findMatches(doc, text).length) return text;
+  const words = text.split(/\s+/).sort((a, b) => b.length - a.length);
+  return words.find((w) => findMatches(doc, w).length) ?? null;
 };
 
 const closestIndex = (matches: SearchMatch[], pos: number) => {
@@ -79,14 +114,20 @@ declare module '@tiptap/core' {
       clearSearch: () => ReturnType;
       // Moves to the next / previous match, selects it and scrolls it into view.
       searchStep: (direction: 1 | -1) => ReturnType;
+      // Opens the folds hiding the current match (setSearch leaves them while typing).
+      revealMatch: () => ReturnType;
       replaceMatch: (replacement: string) => ReturnType;
       replaceAllMatches: (replacement: string) => ReturnType;
     };
   }
 }
 
-const selectMatch = (tr: Transaction, match: SearchMatch | undefined) => {
+// Selects the match; with `reveal` also opens folded headings / outline items that hide it
+// (not on each typed letter: opening is a change of the note that syncs).
+const selectMatch = (tr: Transaction, match: SearchMatch | undefined, reveal = true) => {
   if (!match) return tr;
+  // The phone scrolls to the match itself (find.ts), not to the caret; opening is not undone.
+  if (reveal && revealPos(tr, match.from)) tr.setMeta(FOLD_TOGGLE, true).setMeta('addToHistory', false);
   return tr.setSelection(TextSelection.create(tr.doc, match.from, match.to)).scrollIntoView();
 };
 
@@ -104,7 +145,7 @@ export const NoteSearch = Extension.create({
           const i = closestIndex(matches, state.selection.from);
           if (i >= 0) {
             meta.index = i;
-            selectMatch(tr, matches[i]);
+            selectMatch(tr, matches[i], false);
           }
         }
         return true;
@@ -123,6 +164,13 @@ export const NoteSearch = Extension.create({
         }
         return true;
       },
+      revealMatch: () => ({ tr, state, dispatch }) => {
+        const s = searchKey.getState(state)!;
+        const match = s.matches[s.index];
+        if (!match) return false;
+        if (dispatch) selectMatch(tr, match);
+        return true;
+      },
       replaceMatch: (replacement) => ({ tr, state, dispatch }) => {
         const s = searchKey.getState(state)!;
         const match = s.matches[s.index];
@@ -134,7 +182,8 @@ export const NoteSearch = Extension.create({
           const next = findMatches(tr.doc, s.query, s.caseSensitive);
           const i = closestIndex(next, match.from + replacement.length);
           tr.setMeta(searchKey, { index: i } satisfies Meta);
-          selectMatch(tr, next[i]);
+          // Not opened here: the replace must stay undoable (opening is left out of history).
+          selectMatch(tr, next[i], false);
         }
         return true;
       },

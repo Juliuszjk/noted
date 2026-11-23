@@ -34,6 +34,7 @@ import { setNoteFont, setTitle } from '@noted/sync';
 import type { JSONContent } from '@tiptap/core';
 import { TopToolbar } from './TopToolbar';
 import { FindBar } from './FindBar';
+import { findQueryFor } from '@noted/editor/search';
 import { setLigatures, restoreDrawingTools, serializeDrawingTools, onDrawingChange } from '@noted/editor';
 import type { ToolbarConfig } from '@noted/editor';
 import { ExportDialog } from './ExportDialog';
@@ -71,8 +72,12 @@ export function NoteEditor({
   noteId, ydoc, onUpdate, onOpenLink, notes = [], onOpenNote, onCreateNote, blobs,
   toolbarMode = 'floating', toolbarSlot = null, tableMenuSlot = null, tableToolbarConfig = null, drawingMenuSlot = null, drawingToolbarConfig = null, drawingTools, onStats, fullWidth = false, readOnly = false, spellcheck = true,
   onNoteAction, restore, findSlot = null, onSaveExport, onPublish, toolbarConfig = null, ligatures = true, codeThemeByLanguage, reminderTimes,
-  secondary = false, slashItems, noteLinks = true, extraExtensions = [], onEditor, onSavePdf,
+  secondary = false, slashItems, noteLinks = true, extraExtensions = [], onEditor, onSavePdf, find = null, onFindShown,
 }: {
+  // Opened from the note list's search: the find bar opens on it (a new token = a new request);
+  // onFindShown: the request was used.
+  find?: { token: number; text: string } | null,
+  onFindShown?: () => void,
   // Guests of a live note (apps/web): fewer insert menu entries, no "[[" note links, and
   // extensions of their own (other people's cursors).
   slashItems?: SlashItem[],
@@ -215,7 +220,12 @@ export function NoteEditor({
     if (rootRef.current) observer.observe(rootRef.current);
     return () => observer.disconnect();
   }, [findOpen, findSlot]);
+  const [findQuery, setFindQuery] = useState<{ token: number; text: string } | null>(null);
+  // Ctrl+F on an open bar keeps its query (it only selects the text).
+  const findOpenRef = useRef(false);
+  findOpenRef.current = findOpen;
   const openFind = useCallback(() => {
+    if (!findOpenRef.current) setFindQuery(null);
     setFindOpen(true);
     window.dispatchEvent(new Event('noted:find'));
   }, []);
@@ -719,6 +729,20 @@ export function NoteEditor({
   useEffect(() => {
     if (editor) setNoteTitles(editor, new Map(notes.map((n) => [n.id, n.title])));
   }, [editor, notes]);
+  // After the collaboration binding filled the editor; only when the text (not just the title)
+  // has the query. Used once: App forgets the request (onFindShown).
+  useEffect(() => {
+    if (!find || !editor) return;
+    const timer = setTimeout(() => {
+      if (editor.isDestroyed) return;
+      onFindShown?.();
+      const text = findQueryFor(editor.state.doc, find.text);
+      if (!text) return;
+      setFindQuery({ token: find.token, text });
+      setFindOpen(true);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [find?.token, editor]);
 
   return (
     <div ref={rootRef} style={{ position: 'relative' }} data-note-font={noteFont ?? undefined}>
@@ -727,13 +751,13 @@ export function NoteEditor({
       {editor && findOpen && (findSlot
         ? createPortal(
           <div style={{ position: 'absolute', top: 8, right: findPlace.right, width: findPlace.width }}>
-            <FindBar editor={editor} onClose={() => setFindOpen(false)} />
+            <FindBar key={findQuery?.token} editor={editor} initialQuery={findQuery?.text} onClose={() => setFindOpen(false)} />
           </div>,
           findSlot,
         )
         : (
           <div style={{ position: 'sticky', top: 8, height: 0, zIndex: 50 }}>
-            <FindBar editor={editor} onClose={() => setFindOpen(false)} />
+            <FindBar key={findQuery?.token} editor={editor} initialQuery={findQuery?.text} onClose={() => setFindOpen(false)} />
           </div>
         ))}
       <NoteTitle ydoc={ydoc} editor={editor} readOnly={readOnly} onChange={() => onUpdate(noteId, ydoc)} />

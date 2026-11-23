@@ -670,7 +670,10 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
   const closeSplit = () => showEditors(activeId, null);
 
   // From the list: the current tab shows this note (a new tab when none is open).
-  const openFromList = (id: string) => {
+  // A note found by the list's search opens with its find bar on the match (EditorScreen `find`).
+  const [findRequest, setFindRequest] = useState<{ id: string; token: number; text: string } | null>(null);
+  const openFromList = (id: string, search?: string) => {
+    setFindRequest(search?.trim() ? { id, token: Date.now(), text: search.trim() } : null);
     setTabs((list) => (list.includes(id) ? list : activeId && list.includes(activeId) ? list.map((t) => (t === activeId ? id : t)) : [...list, id]));
     setBackStack([]);
     showEditor(id);
@@ -1030,7 +1033,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
           return (
           <TouchableOpacity
             style={[styles.noteItem, { paddingLeft: 8 }, selected.includes(item.id) && { backgroundColor: T.secondary_container }]}
-            onPress={() => (selecting ? toggleSelected(item.id) : openFromList(item.id))}
+            onPress={() => (selecting ? toggleSelected(item.id) : openFromList(item.id, query))}
             onLongPress={() => toggleSelected(item.id)}
             delayLongPress={350}
           >
@@ -1140,9 +1143,10 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
           >
             <EditorScreen
               noteId={e.id}
+              find={findRequest?.id === e.id ? findRequest : null}
               visible={!e.closing}
               onEditorFocus={() => setTypingIn(e.id)}
-              onClosed={() => setEditors((list) => list.filter((x) => x.key !== e.key))}
+              onClosed={() => { setEditors((list) => list.filter((x) => x.key !== e.key)); setFindRequest((f) => (f?.id === e.id ? null : f)); }}
               titles={titles}
               catalog={editorCatalog}
               onOpenNote={isSplit ? (id) => { if (metas.has(id)) { addTab(id); showEditors(activeId, { id, side: split!.side }); } } : openFromLink}

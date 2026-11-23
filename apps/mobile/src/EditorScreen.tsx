@@ -45,6 +45,8 @@ import { getLiveOwner, onLiveNoteChanged, onLiveAwareness } from './live';
 import { publishLive, afterLiveCatchUp } from '@noted/sync';
 
 interface EditorScreenProps {
+  // Opened from the note list's search: the page's find bar shows the match (new token = new request).
+  find?: { token: number; text: string } | null;
   // Settings > Backup > compare: show this note's backup version next to it once the page is ready.
   backupCompare?: { token: number; state: Uint8Array; createdAt: number } | null;
   // The comparison is on screen: the list forgets it, so opening the note again shows the note.
@@ -110,7 +112,7 @@ const showToast = (text: string) => (Platform.OS === 'android' ? ToastAndroid.sh
 export function EditorScreen({
   noteId, visible, onClosed, catalog, onOpenView, onCreateEntry, onCreateLinkedNote, tabsCount, onShowTabs,
   masterKey, dbStore, blobStore, onBack, triggerSync, titles, places, archivedIds, onOpenNote, onOpenSplit, onArchived, compact, inSplit,
-  edited, links, backlinks, onDuplicate, onSaveCopy, onRemoved, vaultSetup, onCreateVault, backupCompare, onBackupShown, onEditorFocus,
+  edited, links, backlinks, onDuplicate, onSaveCopy, onRemoved, vaultSetup, onCreateVault, backupCompare, onBackupShown, onEditorFocus, find,
 }: EditorScreenProps) {
   // Locked note: closed until the vault is open; the page is reloaded (pageKey) after the lock
   // changes or the vault closes.
@@ -291,6 +293,17 @@ export function EditorScreen({
     sendToEditor({ type: 'showBackup', state: bytesToBase64(c.state), createdAt: c.createdAt });
   };
   useEffect(sendBackupCompare, [backupCompare?.token]);
+  // The list's search, sent once when (or as soon as) the page is ready.
+  const findSentRef = useRef(0);
+  const findRef = useRef(find);
+  findRef.current = find;
+  const sendFind = () => {
+    const f = findRef.current;
+    if (!f || !readyRef.current || findSentRef.current === f.token) return;
+    findSentRef.current = f.token;
+    sendToEditor({ type: 'find', query: f.text });
+  };
+  useEffect(sendFind, [find?.token]);
   // The note itself stays covered until the page shows the comparison (no flash of the note).
   const [comparing, setComparing] = useState(false);
   useEffect(() => {
@@ -313,6 +326,7 @@ export function EditorScreen({
         sendToEditor({ type: 'catalog', ...catalogRef.current });
         pushState('init');
         sendBackupCompare();
+        sendFind();
       } else if (msg.type === 'blob' && typeof msg.id === 'string') {
         // The WebView decrypts with the key from the note; here we only fetch sealed bytes.
         fetchSealedBlob(masterKey, blobStore, msg.id).then(

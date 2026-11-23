@@ -89,7 +89,12 @@ changing a feature. Full pre-trim copies: `docs/private/claude-md-full-*.md` (no
   tables via `insertTableAt`) goes to the end of the section, which opens (`openFoldForInsert`;
   reuses an empty last line, drops the space typed before "/"); heading rows, inline items and
   note actions still act in place. `.heading-folded` is `!important` (drawings set display).
-- Find / replace: `NoteSearch` (`search.ts`, decorations). Select all (`select-all.ts`): code
+- Find / replace: `NoteSearch` (`search.ts`, decorations); accents ignored unless "Match case".
+  Selecting a match opens the folded headings / outline items hiding it (`revealPos`,
+  heading-fold.ts); the apps put it mid-screen (FindBar `reveal`, phone `find.ts`). A note opened
+  from the list's search opens its find bar on that query (`findQueryFor`: the whole query, else
+  its longest word the note has): desktop NoteEditor `find`, phone EditorScreen `find` ->
+  page `{type:'find', query}` (no keyboard). Select all (`select-all.ts`): code
   block first, then the note; paints AllSelection itself. Copy (`clipboard-text.ts`): text/plain
   one line per block with list markers, formulas as `$…$` / `$$…$$` (painted selected:
   `.math-in-selection`, math.ts). Markdown paste (`markdown-paste.ts`, `marked`) for

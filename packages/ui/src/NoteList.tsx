@@ -39,8 +39,9 @@ interface Props {
   // A notebook with sub-notebooks: its own notes, then a section per sub-notebook.
   notebook?: RowOptions['notebook'];
   // Plain click: open in the current tab. Middle click: new tab. Ctrl+click / Shift+click
-  // select several notes; the right-click menu then acts on all of them.
-  onOpen: (id: string, newTab: boolean) => void;
+  // select several notes; the right-click menu then acts on all of them. `query`: the search
+  // the note was found by (the editor shows the match).
+  onOpen: (id: string, newTab: boolean, query?: string) => void;
   onAction: (ids: string[], action: NoteAction) => void;
   // Whole text of a note, for searching inside notes (not only titles).
   textOf?: (id: string) => string;
@@ -150,7 +151,7 @@ export function NoteList({ title, items, activeId, sort, onSort, view, grouping,
     } else {
       setSelected([]);
       setAnchor(id);
-      onOpen(id, false);
+      onOpen(id, false, query.trim() || undefined);
     }
   };
 
@@ -273,7 +274,7 @@ export function NoteList({ title, items, activeId, sort, onSort, view, grouping,
                 if (e.shiftKey) e.preventDefault();
                 else if (e.button === 0 && !e.ctrlKey && !e.metaKey) onDragNote?.(n.id, e);
               }}
-              onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); onOpen(n.id, true); } }}
+              onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); onOpen(n.id, true, query.trim() || undefined); } }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 // Right-click outside the selection acts on that note alone.

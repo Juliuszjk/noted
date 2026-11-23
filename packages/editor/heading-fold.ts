@@ -69,6 +69,34 @@ const hiddenRanges = (doc: PmNode): { from: number; to: number }[] => {
   return ranges;
 };
 
+// Opens every folded heading and outline item that hides `pos` (a search match, a jump to a
+// place in the note). Returns whether anything opened.
+export const revealPos = (tr: Transaction, pos: number): boolean => {
+  const $pos = tr.doc.resolve(pos);
+  const open: number[] = [];
+  for (let d = 0; d < $pos.depth; d++) {
+    const container = $pos.node(d);
+    const index = $pos.index(d);
+    // A folded item hides its nested lists, not its own first line.
+    if (d > 0 && container.type.name === 'listItem' && container.attrs.collapsed && index > 0) open.push($pos.before(d));
+    // Headings before the block, walking up: one hides it while every heading after it (the
+    // block included) is of a lower level.
+    const own = container.child(index);
+    let lowest = own.type.name === 'heading' ? Number(own.attrs.level) : Infinity;
+    for (let i = index - 1; i >= 0 && lowest > 1; i--) {
+      const child = container.child(i);
+      if (child.type.name !== 'heading') continue;
+      const level = Number(child.attrs.level);
+      if (level < lowest) {
+        if (isFolded(child)) open.push($pos.posAtIndex(i, d));
+        lowest = level;
+      }
+    }
+  }
+  for (const at of open) tr.setNodeMarkup(at, undefined, { ...tr.doc.nodeAt(at)!.attrs, collapsed: false });
+  return open.length > 0;
+};
+
 // Meta on the transaction a fold arrow makes: the apps leave the scrolling alone (the phone
 // brought the caret, often far away, back into view).
 export const FOLD_TOGGLE = 'notedFoldToggle';

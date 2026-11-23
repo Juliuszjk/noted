@@ -480,9 +480,15 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
 
   // Opens a note: switches to its tab if it has one; otherwise replaces the current tab, or
   // opens a new tab (newTab, or no tab open yet).
+  // A note opened from the list's search: its editor shows the match (NoteEditor `find`).
+  const [findRequest, setFindRequest] = useState<{ id: string; token: number; text: string } | null>(null);
+  // Only once: back on that note later (another tab) it opens as usual.
+  useEffect(() => {
+    if (findRequest && activeNote?.id !== findRequest.id) setFindRequest(null);
+  }, [activeNote?.id]);
   const openNote = (id: string, options: { newTab?: boolean; fromHistory?: boolean } = {}) => {
     const note = notesRef.current.find((n) => n.id === id);
-    if (!note || isSystemNote(id) || !selectNote(note)) return;
+    if (!note || isSystemNote(id) || !selectNote(note)) return false;
     const current = activeRef.current?.id;
     const prev = tabsRef.current;
     let next = prev;
@@ -494,6 +500,7 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
     tabsRef.current = next;
     setTabs(next);
     if (!options.fromHistory) pushHistory(id);
+    return true;
   };
 
   const closeTab = (id: string) => {
@@ -1786,7 +1793,10 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                 onDragNote={beginNoteDrag}
                 names={listNames}
                 notebook={viewNotebook}
-                onOpen={(id, newTab) => openNote(id, { newTab })}
+                onOpen={(id, newTab, query) => {
+                  const opened = openNote(id, { newTab });
+                  setFindRequest(opened && query ? { id, token: Date.now(), text: query } : null);
+                }}
                 onAction={noteAction}
                 textOf={textOf}
                 onEmptyTrash={prefs.view.kind === 'trash' ? () => noteAction(viewItems.map((n) => n.id), 'deleteForever') : undefined}
@@ -1894,6 +1904,8 @@ function NotesApp({ masterKey, onLogout, restoreText }: { masterKey: Uint8Array;
                 <NoteEditor
                   key={lockedCopy ? `${activeNote.id}:locked` : activeNote.id}
                   noteId={activeNote.id}
+                  find={findRequest?.id === activeNote.id ? findRequest : null}
+                  onFindShown={() => setFindRequest(null)}
                   extraExtensions={lockedCopy ? [] : liveCaret}
                   ydoc={lockedCopy?.doc ?? activeNote.ydoc}
                   onUpdate={lockedCopy ? saveLockedCopy : handleEditorUpdate}

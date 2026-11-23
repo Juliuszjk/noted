@@ -422,6 +422,8 @@ const handFile = async (type: 'openFile' | 'saveFile', ref: BlobRef, name: strin
 
 // Settings > Backup > compare: this note as it was in a backup, next to the note now.
 let pendingBackup: { state: string; createdAt?: number } | null = null;
+// The note list's search the note was opened with, waiting for the editor (like pendingBackup).
+let pendingFind: string | null = null;
 function showBackup(msg: { state: string; createdAt?: number }) {
   if (!editor) return;
   flush();
@@ -654,6 +656,11 @@ const receive = (raw: string) => {
       // After the collaboration binding filled the editor.
       setTimeout(() => showBackup(waiting), 150);
     }
+    if (pendingFind) {
+      const query = pendingFind;
+      pendingFind = null;
+      setTimeout(() => findBar?.open(query), 150);
+    }
   } else if (msg.type === 'remote') {
     if (editor && msg.state) Y.applyUpdate(ydoc, fromBase64(msg.state), REMOTE);
   } else if (msg.type === 'blobData') {
@@ -781,7 +788,9 @@ const receive = (raw: string) => {
     // Back from the note menu: the cursor (and the keyboard) where they were.
     toolbarApi?.refocus();
   } else if (msg.type === 'find') {
-    findBar?.open();
+    if (typeof msg.query !== 'string') findBar?.open();
+    else if (findBar) findBar.open(msg.query);
+    else pendingFind = msg.query;
   } else if (msg.type === 'pdfPane') {
     pdfPaneWanted = { open: !!msg.open, reset: !!msg.reset };
     pdfFlow?.setPane(!!msg.open, !!msg.reset);

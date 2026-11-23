@@ -10,9 +10,11 @@ const textBtn = { padding: '4px 10px', border: '1px solid var(--border)', border
 
 // Find and replace in the open note (Ctrl+F, or the magnifier in the top toolbar). Enter goes
 // to the next match, Shift+Enter to the previous one, Escape closes the bar.
-export function FindBar({ editor, onClose }: { editor: Editor; onClose: () => void }) {
+// `initialQuery`: what the note list's search found in the note it opened (findQueryFor).
+export function FindBar({ editor, onClose, initialQuery }: { editor: Editor; onClose: () => void; initialQuery?: string }) {
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const [query, setQuery] = useState(() => {
+    if (initialQuery) return initialQuery;
     const { from, to } = editor.state.selection;
     const selected = editor.state.doc.textBetween(from, to, ' ');
     return selected.includes('\n') ? '' : selected.slice(0, 100);
@@ -30,8 +32,35 @@ export function FindBar({ editor, onClose }: { editor: Editor; onClose: () => vo
       editor.commands.clearSearch();
     };
   }, [editor]);
+  // The current match goes to the middle of the note when it is near an edge (under the find
+  // bar or the toolbar); ProseMirror only scrolls it just inside.
+  const reveal = () => requestAnimationFrame(() => {
+    const el = editor.view.dom.querySelector('.search-match-current');
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.top < 140 || r.bottom > window.innerHeight - 60) el.scrollIntoView({ block: 'center' });
+  });
+  const step = (direction: 1 | -1) => {
+    editor.commands.searchStep(direction);
+    reveal();
+  };
+  // A match in a folded section opens once typing pauses (each opening changes the note), at
+  // once for a query the bar opened with.
+  const first = useRef(true);
   useEffect(() => {
     editor.commands.setSearch(query, caseSensitive);
+    reveal();
+    const open = () => {
+      if (editor.isDestroyed || !editor.commands.revealMatch()) return;
+      reveal();
+    };
+    if (first.current) {
+      first.current = false;
+      if (initialQuery) open();
+      return;
+    }
+    const timer = setTimeout(open, 600);
+    return () => clearTimeout(timer);
   }, [query, caseSensitive]);
   // Ctrl+F again while the bar is open selects the search text.
   useEffect(() => {
@@ -61,13 +90,13 @@ export function FindBar({ editor, onClose }: { editor: Editor; onClose: () => vo
           value={query}
           placeholder="Find in note"
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => keys(e, () => editor.commands.searchStep(e.shiftKey ? -1 : 1))}
+          onKeyDown={(e) => keys(e, () => step(e.shiftKey ? -1 : 1))}
           style={field}
         />
         <span style={{ minWidth: 64, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>{count}</span>
         <IconBtn icon={mdiFormatLetterCase} title="Match case" active={caseSensitive} onClick={() => setCaseSensitive((v) => !v)} />
-        <IconBtn icon={mdiChevronUp} title="Previous match (Shift+Enter)" onClick={() => editor.commands.searchStep(-1)} />
-        <IconBtn icon={mdiChevronDown} title="Next match (Enter)" onClick={() => editor.commands.searchStep(1)} />
+        <IconBtn icon={mdiChevronUp} title="Previous match (Shift+Enter)" onClick={() => step(-1)} />
+        <IconBtn icon={mdiChevronDown} title="Next match (Enter)" onClick={() => step(1)} />
         <IconBtn icon={mdiClose} title="Close (Escape)" onClick={close} />
       </div>
       {replaceOpen && (
@@ -76,10 +105,10 @@ export function FindBar({ editor, onClose }: { editor: Editor; onClose: () => vo
             value={replacement}
             placeholder="Replace with"
             onChange={(e) => setReplacement(e.target.value)}
-            onKeyDown={(e) => keys(e, () => editor.commands.replaceMatch(replacement))}
+            onKeyDown={(e) => keys(e, () => { editor.commands.replaceMatch(replacement); reveal(); })}
             style={field}
           />
-          <button type="button" style={textBtn} disabled={!s.matches.length} onClick={() => editor.commands.replaceMatch(replacement)}>Replace</button>
+          <button type="button" style={textBtn} disabled={!s.matches.length} onClick={() => { editor.commands.replaceMatch(replacement); reveal(); }}>Replace</button>
           <button type="button" style={textBtn} disabled={!s.matches.length} onClick={() => editor.commands.replaceAllMatches(replacement)}>Replace all</button>
         </div>
       )}
