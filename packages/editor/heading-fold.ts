@@ -69,6 +69,8 @@ const hiddenRanges = (doc: PmNode): { from: number; to: number }[] => {
   return ranges;
 };
 
+const LISTS = new Set(['bulletList', 'orderedList', 'taskList']);
+
 // Opens every folded heading and outline item that hides `pos` (a search match, a jump to a
 // place in the note). Returns whether anything opened.
 export const revealPos = (tr: Transaction, pos: number): boolean => {
@@ -77,8 +79,8 @@ export const revealPos = (tr: Transaction, pos: number): boolean => {
   for (let d = 0; d < $pos.depth; d++) {
     const container = $pos.node(d);
     const index = $pos.index(d);
-    // A folded item hides its nested lists, not its own first line.
-    if (d > 0 && container.type.name === 'listItem' && container.attrs.collapsed && index > 0) open.push($pos.before(d));
+    // A folded item hides its nested lists, not its own paragraphs.
+    if (d > 0 && container.type.name === 'listItem' && container.attrs.collapsed && LISTS.has(container.child(index).type.name)) open.push($pos.before(d));
     // Headings before the block, walking up: one hides it while every heading after it (the
     // block included) is of a lower level.
     const own = container.child(index);

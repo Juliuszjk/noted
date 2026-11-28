@@ -89,6 +89,13 @@ export function createFindBar(editor: Editor) {
     if (editor.isDestroyed || !editor.commands.revealMatch()) return;
     reveal();
   };
+  // The next match may sit in a folded section: it opens in its own transaction (the replace
+  // stays undoable).
+  const replace = () => {
+    editor.commands.replaceMatch(replaceInput.value);
+    editor.commands.revealMatch();
+    reveal();
+  };
   input.addEventListener('input', () => {
     editor.commands.setSearch(input.value, caseSensitive);
     reveal();
@@ -99,13 +106,13 @@ export function createFindBar(editor: Editor) {
     if (e.key === 'Enter') { e.preventDefault(); step(1); }
   });
   replaceInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); editor.commands.replaceMatch(replaceInput.value); reveal(); }
+    if (e.key === 'Enter') { e.preventDefault(); replace(); }
   });
 
   row.append(input, count, iconButton(mdiChevronUp, 'Previous match', () => step(-1)), iconButton(mdiChevronDown, 'Next match', () => step(1)), caseButton, replaceButton, iconButton(mdiClose, 'Close', () => close()));
   replaceRow.append(
     replaceInput,
-    textButton('Replace', () => { editor.commands.replaceMatch(replaceInput.value); reveal(); }),
+    textButton('Replace', () => { replace(); }),
     textButton('All', () => editor.commands.replaceAllMatches(replaceInput.value)),
   );
   bar.append(row, replaceRow);
@@ -130,6 +137,8 @@ export function createFindBar(editor: Editor) {
     // Only the title matched: nothing to show in the text.
     const found = listQuery ? findQueryFor(editor.state.doc, listQuery) : null;
     if (listQuery && !found) return;
+    // The list's search ignores case and accents: so does the bar opened from it.
+    if (listQuery) caseSensitive = false;
     if (editor.isFocused) (editor.view.dom as HTMLElement).blur();
     bar.classList.add('open');
     document.body.classList.add('finding');

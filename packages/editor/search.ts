@@ -22,7 +22,7 @@ export interface SearchState {
 export const searchKey = new PluginKey<SearchState>('noteSearch');
 
 // Without "Match case" accents are ignored too ("zrodlo" finds "Źródło"), like the note list.
-const foldChar = (c: string) => c.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase().replace(/ł/g, 'l');
+const foldChar = (c: string) => c.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/ł/g, 'l');
 
 // The text folded for comparing, with the index in `text` each folded character came from
 // (null: the same index, as for case-sensitive or plain ASCII text).
@@ -123,7 +123,8 @@ declare module '@tiptap/core' {
 }
 
 // Selects the match; with `reveal` also opens folded headings / outline items that hide it
-// (not on each typed letter: opening is a change of the note that syncs).
+// (not on each typed letter: opening is a change of the note that syncs; never in a read-only
+// note).
 const selectMatch = (tr: Transaction, match: SearchMatch | undefined, reveal = true) => {
   if (!match) return tr;
   // The phone scrolls to the match itself (find.ts), not to the caret; opening is not undone.
@@ -154,20 +155,20 @@ export const NoteSearch = Extension.create({
         if (dispatch) tr.setMeta(searchKey, { query: '', index: -1 } satisfies Meta);
         return true;
       },
-      searchStep: (direction) => ({ tr, state, dispatch }) => {
+      searchStep: (direction) => ({ tr, state, dispatch, editor }) => {
         const s = searchKey.getState(state)!;
         if (!s.matches.length) return false;
         const index = (s.index + direction + s.matches.length) % s.matches.length;
         if (dispatch) {
           tr.setMeta(searchKey, { index } satisfies Meta);
-          selectMatch(tr, s.matches[index]);
+          selectMatch(tr, s.matches[index], editor.isEditable);
         }
         return true;
       },
-      revealMatch: () => ({ tr, state, dispatch }) => {
+      revealMatch: () => ({ tr, state, dispatch, editor }) => {
         const s = searchKey.getState(state)!;
         const match = s.matches[s.index];
-        if (!match) return false;
+        if (!match || !editor.isEditable) return false;
         if (dispatch) selectMatch(tr, match);
         return true;
       },

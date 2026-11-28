@@ -998,7 +998,7 @@ export function NotesScreen({ masterKey, dbStore, blobStore, onLogout, onLockNow
           extraData={themeVersion}
           keyExtractor={(row) => row.key}
           renderItem={({ item: row }) => (
-            <TouchableOpacity style={styles.treeRow} onPress={() => openFromList(row.id)} onLongPress={() => setActionsFor(row.id)} delayLongPress={350}>
+            <TouchableOpacity style={styles.treeRow} onPress={() => openFromList(row.id, query)} onLongPress={() => setActionsFor(row.id)} delayLongPress={350}>
               <Text style={styles.treePrefix}>{row.prefix}</Text>
               <Text style={[styles.treeTitle, row.depth === 0 && { fontWeight: 'bold' }, row.cycle && { opacity: 0.6 }]} numberOfLines={1}>
                 {row.title}{row.cycle ? ' ↻' : ''}

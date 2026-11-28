@@ -44,6 +44,13 @@ export function FindBar({ editor, onClose, initialQuery }: { editor: Editor; onC
     editor.commands.searchStep(direction);
     reveal();
   };
+  // The next match may sit in a folded section: it opens in its own transaction (the replace
+  // stays undoable, the opening stays out of history).
+  const replace = () => {
+    editor.commands.replaceMatch(replacement);
+    editor.commands.revealMatch();
+    reveal();
+  };
   // A match in a folded section opens once typing pauses (each opening changes the note), at
   // once for a query the bar opened with.
   const first = useRef(true);
@@ -105,10 +112,10 @@ export function FindBar({ editor, onClose, initialQuery }: { editor: Editor; onC
             value={replacement}
             placeholder="Replace with"
             onChange={(e) => setReplacement(e.target.value)}
-            onKeyDown={(e) => keys(e, () => { editor.commands.replaceMatch(replacement); reveal(); })}
+            onKeyDown={(e) => keys(e, replace)}
             style={field}
           />
-          <button type="button" style={textBtn} disabled={!s.matches.length} onClick={() => { editor.commands.replaceMatch(replacement); reveal(); }}>Replace</button>
+          <button type="button" style={textBtn} disabled={!s.matches.length} onClick={replace}>Replace</button>
           <button type="button" style={textBtn} disabled={!s.matches.length} onClick={() => editor.commands.replaceAllMatches(replacement)}>Replace all</button>
         </div>
       )}

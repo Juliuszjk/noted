@@ -67,6 +67,31 @@ describe('find and replace', () => {
     expect(folds).toEqual({ Outer: false, Inner: false, item: false, Other: true });
   });
 
+  it('leaves folds alone in a read-only note', () => {
+    const editor = make('<h2 data-foldable="true" data-collapsed="true">Head</h2><p>needle</p><p>needle</p>');
+    editor.setEditable(false);
+    editor.commands.setSearch('needle');
+    expect(editor.commands.revealMatch()).toBe(false);
+    editor.commands.searchStep(1);
+    expect(getSearchState(editor).index).toBe(1);
+    expect(editor.state.doc.firstChild!.attrs.collapsed).toBe(true);
+  });
+
+  it('opens a folded outline item only for a match in its nested list', () => {
+    const editor = make('<ul data-outline="true"><li data-collapsed="true"><p>item</p><p>second needle</p><ul><li><p>child</p></li></ul></li></ul>');
+    const item = () => {
+      let collapsed = false;
+      editor.state.doc.descendants((node) => { if (node.type.name === 'listItem' && node.firstChild?.textContent === 'item') collapsed = !!node.attrs.collapsed; });
+      return collapsed;
+    };
+    editor.commands.setSearch('needle');
+    editor.commands.revealMatch();
+    expect(item()).toBe(true);
+    editor.commands.setSearch('child');
+    editor.commands.revealMatch();
+    expect(item()).toBe(false);
+  });
+
   it('picks a word the note has for a list search', () => {
     const editor = make('<p>alpha beta</p>');
     expect(findQueryFor(editor.state.doc, 'alpha beta')).toBe('alpha beta');
